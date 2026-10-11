@@ -1,0 +1,16 @@
+[package]
+name = "atelier-web-server"
+description = "Atelier Cloud front door: serves the cloud app and the editor on one origin"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+# No TLS features: the upstream is a local dev process (the editor container or `trunk serve`),
+# and a lighter dependency tree keeps the first build quick. HTTP/1 is always available; pointing
+# PHOTOCRAFT_UPSTREAM at an https:// URL needs `rustls-tls` added here.
+reqwest = { version = "0.12", default-features = false }
+tower-http = { version = "0.6", features = ["fs"] }
+serde_json = "1"

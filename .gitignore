@@ -1,0 +1,6 @@
+# Rust build output for the front door (185 MB on a release build).
+/server/target
+
+# macOS
+.DS_Store
+**/.DS_Store

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Atelier Cloud</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 15px/1.55 -apple-system, system-ui, sans-serif; margin: 3rem auto; max-width: 46rem; padding: 0 1.25rem; }
+    h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+    .hello { font-size: 1.1rem; color: #0a7 !important; margin: 0 0 1.5rem; font-weight: 600; }
+    code, pre { background: rgba(127,127,127,.15); padding: .1em .35em; border-radius: 3px; font-size: .9em; }
+    table { border-collapse: collapse; width: 100%; margin: .5rem 0 1.5rem; }
+    th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid rgba(127,127,127,.25); vertical-align: top; }
+    th { width: 12rem; font-weight: 600; }
+    .ok { color: #0a7; } .warn { color: #c80; } .bad { color: #c33; }
+    .muted { opacity: .7; }
+    pre { white-space: pre-wrap; word-break: break-word; padding: .6rem; }
+    button { font: inherit; padding: .3em .9em; border-radius: 5px; border: 1px solid rgba(127,127,127,.4); background: transparent; cursor: pointer; }
+    a { color: inherit; }
+  </style>
+
+  <h1>Atelier Cloud</h1>
+  <p class="hello">Hello, world.</p>
+
+  <p>
+    This is the cloudspace provider, the second app in the surround design. It is served from the
+    <strong>same origin</strong> as the editor at <a href="/">/</a>, which is the whole point: OPFS is
+    keyed by origin, so being on <code id="origin">…</code> together is what lets both apps see one
+    cloudspace.
+  </p>
+
+  <h2 style="font-size:1.05rem;margin:2rem 0 .25rem">Storage</h2>
+  <table>
+    <tr><th>Origin Private File System</th><td id="opfs">checking…</td></tr>
+    <tr><th>Persistence</th><td id="persist">checking…</td></tr>
+    <tr><th>Usage / quota</th><td id="quota">checking…</td></tr>
+  </table>
+
+  <h2 style="font-size:1.05rem;margin:2rem 0 .25rem">Cloudspace contents</h2>
+  <p class="muted" style="margin-top:0">
+    <code>atelier-cloud/</code> is the shared tree from the design contract (design §3.1). Nothing has
+    written there yet, because the editor patch does not exist — this is the M1 starting point.
+  </p>
+  <pre id="tree">checking…</pre>
+  <p><button id="refresh">Refresh</button></p>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+    const SPACE = "atelier-cloud";
+
+    document.getElementById("origin").textContent = location.origin;
+
+    const human = (n) =>
+      n < 1024 ? `${n} B`
+      : n < 1048576 ? `${(n / 1024).toFixed(1)} KB`
+      : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB`
+      : `${(n / 1073741824).toFixed(2)} GB`;
+
+    const set = (id, html, cls = "") => { el(id).innerHTML = `<span class="${cls}">${html}</span>`; };
+
+    async function opfsAvailable() {
+      if (!navigator.storage?.getDirectory) return null;
+      try { return await navigator.storage.getDirectory(); } catch { return null; }
+    }
+
+    async function listTree(root) {
+      let space;
+      try {
+        space = await root.getDirectoryHandle(SPACE);
+      } catch {
+        return `atelier-cloud/ does not exist yet.`;
+      }
+      let out = `${SPACE}/`;
+      const projects = await (async () => {
+        try { return await space.getDirectoryHandle("projects"); } catch { return null; }
+      })();
+      if (!projects) return out + `\n  (no projects/ directory yet)`;
+      out += `\n  projects/`;
+      let any = false;
+      for await (const [name, handle] of projects.entries()) {
+        any = true;
+        out += `\n    ${name}/`;
+        if (handle.kind !== "directory") continue;
+        for await (const [file, fh] of handle.entries()) {
+          if (fh.kind !== "file") { out += `\n      ${file}/`; continue; }
+          const size = (await fh.getFile()).size;
+          out += `\n      ${file}  (${human(size)})`;
+        }
+      }
+      if (!any) out += `\n    (no projects yet)`;
+      return out;
+    }
+
+    async function refresh() {
+      set("opfs", "checking…");
+      const root = await opfsAvailable();
+
+      if (!root) {
+        set("opfs", "unavailable — this browser has no OPFS, or storage is blocked (private mode?)", "bad");
+        set("persist", "—"); set("quota", "—");
+        el("tree").textContent = "no OPFS to inspect";
+        return;
+      }
+      set("opfs", "available", "ok");
+
+      // `persisted()` reports the current state; `persist()` asks for it. Asking can prompt in
+      // Firefox, so only report — the app should ask deliberately (design §4.5).
+      try {
+        const on = await navigator.storage.persisted();
+        set("persist", on
+          ? "granted — this origin will not be evicted under storage pressure"
+          : "best-effort — the browser may evict <em>everything</em> for this origin (design §4.4)",
+          on ? "ok" : "warn");
+      } catch { set("persist", "unknown"); }
+
+      try {
+        const { usage, quota } = await navigator.storage.estimate();
+        set("quota", `${human(usage)} used of ${human(quota)}${quota ? ` (${(usage / quota * 100).toFixed(1)}%)` : ""}`);
+      } catch { set("quota", "unavailable"); }
+
+      try { el("tree").textContent = await listTree(root); }
+      catch (e) { el("tree").textContent = `could not read the cloudspace: ${e}`; }
+    }
+
+    el("refresh").addEventListener("click", refresh);
+    refresh();
+  </script>
+</html>
