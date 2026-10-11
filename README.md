@@ -14,7 +14,7 @@ door that puts both apps on one origin. No OPFS contract work, no patch, no serv
 atelier_web/
 ├── README.md          this file
 ├── run.sh             start both apps together (see below)
-├── server/            the front door: Rust + axum (design §2.2 `serve/`)
+├── server/            the front door: Rust + axum (the §2.2/§2.3 box, co-located here)
 │   ├── Cargo.toml
 │   └── src/main.rs
 ├── web/               Atelier Cloud itself — currently one hello-world page
@@ -98,7 +98,14 @@ editor is not running, `/` returns a 503 page that says how to start it instead 
 that is the most common state during development.
 
 Later (design §9) this same process grows into the real service: accounts, projects, revisions and the
-tool registry. It is the `serve/` box of §2.2, not a throwaway dev tool.
+tool registry. It is the front-door box of design §2.2/§2.3, not a throwaway dev tool.
+
+## Repositories
+
+This directory is **its own git repository** (`main`), because the design keeps the provider developed
+separately from the editor. The surrounding tree is a second repo that holds the design and pins
+`photocraft` as a submodule — see [`../project_status.md`](../project_status.md) for the
+layout and for how this becomes a submodule too once it has a remote.
 
 ## `file_samples/`
 
