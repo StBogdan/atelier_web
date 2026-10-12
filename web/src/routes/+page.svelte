@@ -20,6 +20,7 @@
 	let source = $state<'empty' | 'sample' | 'file'>('empty');
 	let sample = $state('');
 	let file = $state<File | null>(null);
+	let fileInput = $state<HTMLInputElement | null>(null);
 	const now = Date.now();
 
 	onMount(() => {
@@ -41,7 +42,17 @@
 		source = samples.length ? 'sample' : 'empty';
 		sample = samples[0]?.file ?? '';
 		file = null;
+		if (fileInput) fileInput.value = '';
 		dialog?.showModal();
+	}
+
+	/**
+	 * The field has to work on its own: the label's control is the radio, and a label ignores clicks on
+	 * its own interactive descendants, so a disabled field swallowed the click and no picker appeared.
+	 */
+	function chooseFile(event: Event & { currentTarget: HTMLInputElement }) {
+		source = 'file';
+		file = event.currentTarget.files?.[0] ?? null;
 	}
 
 	async function create() {
@@ -153,8 +164,8 @@
 				<input
 					type="file"
 					accept=".pcraft"
-					disabled={source !== 'file'}
-					onchange={(event) => (file = event.currentTarget.files?.[0] ?? null)}
+					bind:this={fileInput}
+					onchange={chooseFile}
 				/>
 			</label>
 		</fieldset>
