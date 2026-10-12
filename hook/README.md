@@ -12,12 +12,12 @@ apply.sh                   apply / check / revert / build it against any ref
 
 | File | Change |
 |---|---|
-| `apps/photocraft-web/src/atelier_cloud.rs` | new: the whole cloudspace hook, and the Home screen link |
+| `apps/photocraft-web/src/atelier_cloud.rs` | new: the whole cloudspace hook, and the link's label and URL |
 | `apps/photocraft-web/src/main.rs` | one line: `mod atelier_cloud;` |
 | `apps/photocraft-web/src/web.rs` | `services()`: `file_dialog` and `write` route through the module, plus `home_link` |
 | `apps/photocraft-web/Cargo.toml` | the `web-sys` features the OPFS bindings need |
 | `crates/ui-egui/src/lib.rs` | one `Services` field: `home_link` |
-| `crates/ui-egui/src/canvas.rs` | the Home screen draws it beside "Join us on Discord" |
+| `crates/ui-egui/src/panels.rs` | the title bar draws it to the left of its Discord link |
 
 The `Cargo.toml` hunk has to be there: `FileSystemDirectoryHandle`, `FileSystemFileHandle` and
 `FileSystemWritableFileStream` are the bindings design [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable) names, and none of
@@ -25,8 +25,8 @@ them is switched on for the web runner today. Features are not dependencies, so 
 wasm dependency graph.
 
 The two `crates/ui-egui` hunks are the patch's only footprint outside the web runner, and they are
-deliberate: one `Services` field carrying a label and a URL, and the Home screen drawing it. Take them
-out and the way back to the workspace is a link floating over the canvas rather than part of the app.
+deliberate: one `Services` field carrying a label and a URL, and the title bar drawing it. Take them out
+and the way back to the workspace is a link floating over the canvas rather than part of the app.
 Everything else upstream (engine, format, `crates/io`, the `Services` trait) is untouched.
 
 The patch speaks only the contract names in `../contract/protocol.md`, never provider internals, so a

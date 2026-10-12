@@ -56,7 +56,7 @@ Then open **<http://127.0.0.1:3000/cloud/>**.
 | <http://127.0.0.1:3000/cloud/> | Atelier Cloud: the workspace grid and storage health |
 | <http://127.0.0.1:3000/cloud/workspace/&lt;id&gt; | one workspace: the Changes panel, commit, download, discard |
 | <http://127.0.0.1:3000/cloud/settings> | storage, persistence, and what the cloudspace holds |
-| <http://127.0.0.1:3000/> | PhotoCraft, the editor; launched into a workspace it shows *Back to Atelier Cloud* |
+| <http://127.0.0.1:3000/> | PhotoCraft, the editor; launched into a workspace its title bar links back to it |
 | <http://127.0.0.1:3000/api/health> | `{"service":"atelier-web","status":"ok","hello":"world"}` |
 
 `run.sh` starts the editor container if it is stopped, waits for the editor to answer, then runs the front
@@ -154,8 +154,8 @@ session writes back to `atelier-cloud://<id>/<name>.pcraft`, which the patch tur
 of design [Saving](../docs/atelier_web_design.md#saving).
 
 The nav's *Editor* link carries the same `?project=<id>`, for the workspace that changed most recently, so
-it lands in the editor with something to show and a *Back to Atelier Cloud* button. Opening `:3000/`
-without a project is the bare editor: no document, no button.
+it lands in the editor with something to show and a *Back to Atelier Cloud* link in the title bar, to
+the left of Discord. Opening `:3000/` without a project is the bare editor: no document, no link.
 
 A first workspace needs a document, and a browser cannot convert a PSD, so three `.pcraft` documents are
 committed under `web/static/samples/`. They are generated from `file_samples/` with the editor's own

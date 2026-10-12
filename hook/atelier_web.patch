@@ -560,32 +560,6 @@ index b6e3c82d..240dcc52 100644
          // Preferences live in the browser's localStorage.
          load_prefs: Some(Box::new(|| local_storage()?.get_item(PREFS_KEY).ok().flatten())),
          save_prefs: Some(Box::new(|text: &str| local_storage().ok_or("no localStorage")?.set_item(PREFS_KEY, text).map_err(|e| format!("{e:?}")))),
-diff --git a/crates/ui-egui/src/canvas.rs b/crates/ui-egui/src/canvas.rs
-index ac5eacbe..8d46841e 100644
---- a/crates/ui-egui/src/canvas.rs
-+++ b/crates/ui-egui/src/canvas.rs
-@@ -2300,7 +2300,20 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
-                 home_recent(app, ui, &recent);
-             }
-             ui.add_space(26.0);
--            crate::links::discord_button(app, ui, 190.0);
-+            // A shell that launched the editor gets a button of its own beside "Join us on Discord":
-+            // two centred as a pair, and the lone one centred exactly as it was.
-+            let buttons = if app.services.home_link.is_some() { 2.0 } else { 1.0 };
-+            ui.horizontal(|ui| {
-+                ui.add_space(((card.width() - buttons * 190.0 - (buttons - 1.0) * 12.0) / 2.0).max(0.0));
-+                ui.spacing_mut().item_spacing.x = 12.0;
-+                if let Some((label, url)) = app.services.home_link.clone() {
-+                    if crate::widgets::secondary_button(ui, &label, 190.0).clicked() {
-+                        // In place, not a new tab: the launcher is where this page came from.
-+                        ui.ctx().open_url(egui::OpenUrl::same_tab(url));
-+                    }
-+                }
-+                crate::links::discord_button(app, ui, 190.0);
-+            });
-             ui.add_space(10.0);
-             crate::links::link_row(app, ui);
-         });
 diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
 index 49a0332b..37a62861 100644
 --- a/crates/ui-egui/src/lib.rs
@@ -601,3 +575,39 @@ index 49a0332b..37a62861 100644
      /// Preferences ▸ General ▸ Beep When Done: the platform's default beep, played when a
      /// background job finishes successfully. `None` in the web build (and in tests).
      pub beep: Option<fn()>,
+diff --git a/crates/ui-egui/src/panels.rs b/crates/ui-egui/src/panels.rs
+index 41ba45a3..a02b1026 100644
+--- a/crates/ui-egui/src/panels.rs
++++ b/crates/ui-egui/src/panels.rs
+@@ -645,6 +645,22 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+                             crate::links::open(app, ui.ctx(), crate::links::DISCORD);
+                         }
+                     }
++                    // A shell that launched the editor gets its own way back, to the left of that
++                    // community link. It is added last, so a narrow bar drops it first (the shell's
++                    // own Home screen carries nothing extra: this is the editor's only chrome for it).
++                    if let Some((label, url)) = app.services.home_link.clone() {
++                        if ui.available_width() >= BACK_ROOM {
++                            let back = egui::Button::image_and_text(
++                                icons::image("chevron-left", 14.0, t.text_dim),
++                                egui::RichText::new(label).color(t.text_dim).size(12.0),
++                            )
++                            .frame(false);
++                            if ui.add(back).on_hover_text(url.clone()).clicked() {
++                                // In place, not a new tab: the launcher is where this page came from.
++                                ui.ctx().open_url(egui::OpenUrl::same_tab(url));
++                            }
++                        }
++                    }
+                     if rtl { ui.min_rect().right() } else { ui.min_rect().left() }
+                 };
+                 free = if rtl { (controls_end, menus_end) } else { (menus_end, controls_end) };
+@@ -703,6 +719,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
+ const TITLE_GAP: f32 = 16.0;
+ /// Free room the title bar needs after its other controls to show the Discord button.
+ const DISCORD_ROOM: f32 = 120.0;
++/// Free room the launcher's own link needs, to the left of it.
++const BACK_ROOM: f32 = 190.0;
+ /// The workspace switcher's narrowest width, and one 28 pt title-bar icon with its spacing.
+ const WORKSPACE_MIN: f32 = 90.0;
+ const ICON_SLOT: f32 = 34.0;
