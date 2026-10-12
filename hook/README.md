@@ -1,7 +1,8 @@
 # The PhotoCraft patch
 
-One new file and three small hunks, applied to a PhotoCraft checkout. Design [The PhotoCraft Patch](../../docs/atelier_web_design.md#the-photocraft-patch) (what it does) and
-[Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable) (why it stays this small).
+One new file and five hunks, applied to a PhotoCraft checkout. This is the only place the patch is
+documented. The design says why it exists ([The PhotoCraft Patch](../../docs/atelier_web_design.md#the-photocraft-patch), [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable));
+everything operational is here, next to the file.
 
 ```
 atelier_web.patch          the patch, a `git diff` against the recorded upstream ref
@@ -70,10 +71,41 @@ The save follows the [Saving](../../docs/atelier_web_design.md#saving) sequence:
 staging, then the document. `FileSystemWritableFileStream::close()` swaps the finished file in, so
 the document is never seen half-written.
 
+Which dialogs it claims:
+
+| Request | Claimed when | Otherwise |
+|---|---|---|
+| `File ▸ Open` (several files, no extension filter) | a project with a document is bound | the browser's picker, unchanged |
+| `Save`/`Save As` suggesting `.pcraft`, `.psd`, `.psb` or `.ora` | a project is bound | the download name, unchanged |
+| Export As (PNG, JPEG, TIFF, TGA, WebP) | never | downloads, unchanged |
+| Place, scripts, presets (the request carries extensions) | never | unchanged |
+
+Those two tests are all of it: `File ▸ Open` asks for several files and a command reading one file does
+not, and an export suggests a flat format. In a bound session that holds a document, `File ▸ Open`
+reopens it, which makes it the way back to the file on disk. In a workspace with no document yet the
+request is not claimed, the editor's own picker opens, and the save that follows lands in the project.
+
+## Code-wise
+
+- **No new crates.** OPFS is `web-sys`: `FileSystemDirectoryHandle`, `FileSystemFileHandle`,
+  `FileSystemWritableFileStream`. Those features are the whole `Cargo.toml` hunk, so the wasm dependency
+  graph is unchanged. The release build is 25,435,729 bytes, inside Cloudflare's 25 MiB per-file cap.
+- **`js_sys::Reflect` for two APIs.** `navigator.locks.request` and `BroadcastChannel` go through
+  `Reflect`, because the typed `LockManager` bindings sit behind `web_sys_unstable_apis`, a cfg this build
+  does not set.
+- **One `thread_local!` binding** holds `{ project, document }`, set once from `services()`. The app's own
+  state is untouched: no new `Services` field beyond `home_link`, no new trait method, no format change.
+- **One synthetic event.** eframe paints when something asks it to, so after the launch read the module
+  dispatches `popstate` on the window, which the web runner repaints on. Without it the document waits for
+  the next mouse move.
+- **It speaks the contract only:** `provider.json`, `projects/`, `tmp/`, the lock
+  `atelier-cloud:project:<id>`, the channel `atelier-cloud`. No provider internals, so a provider release
+  cannot force a patch release.
+
 ## Using it
 
 To run the patched editor, you rarely need this script: `../../run.sh` at the repository root does the
-worktree, the build and the server for you, and starts the front door pointed at it. This script is for
+worktree, the build and the server for you, and starts Atelier web pointed at it. This script is for
 doing it by hand, or against a different ref.
 
 ```sh
@@ -92,7 +124,7 @@ cd ../atelier_web
 CARGO_TARGET_DIR=../photocraft/target PHOTOCRAFT_DIR=/tmp/photocraft-hook ./hook/apply.sh build
 ```
 
-Then serve the patched build and point the front door at it, so the editor and Atelier Cloud still
+Then serve the patched build and point Atelier web at it, so the editor and Atelier Cloud still
 share one origin:
 
 ```sh
@@ -120,8 +152,18 @@ ref in the object database, so fetch it first when the checkout is a shallow clo
 git -C /tmp/photocraft-hook fetch --depth 1 origin e26442657f39d04716656baf749d3268ee3f8a0f
 ```
 
-Re-apply by hand when upstream moves inside a hunk, and regenerate:
+Re-apply by hand when upstream moves inside a hunk. `git diff` skips an untracked file, so `git add -N`
+the new module first, and regenerate:
 
 ```sh
+git -C /tmp/photocraft-hook add -N apps/photocraft-web/src/atelier_cloud.rs
 git -C /tmp/photocraft-hook diff > hook/atelier_web.patch
 ```
+
+A container is the wrong target for any of this: the patch is a source change, so an image built from
+upstream behaves as if it did not exist. Build one from a patched checkout if you need a container.
+
+## What is not in it
+
+Realtime co-editing, revisions, sync, the tool runtime, and any file browser. The editor is told about one
+document and returns bytes (design [Selection](../../docs/atelier_web_design.md#selection), [Out of Scope for v1](../../docs/atelier_web_design.md#out-of-scope-for-v1)).

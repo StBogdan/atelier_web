@@ -16,7 +16,7 @@ state from those files.
 
 | Party | Reads | Writes |
 |---|---|---|
-| Atelier Cloud (provider) | everything below it | everything except the document |
+| Atelier Cloud (provider) | everything below it | everything except the document, which it replaces whole in the two cases in [The document](#the-document) |
 | The editor (the patch) | `provider.json`, `projects/<id>/` | `<name>.pcraft` and its `.prev` |
 
 ## Layout
@@ -28,23 +28,26 @@ state from those files.
     ├── index/workspaces.json         the catalog the landing page renders
     ├── projects/<id>/
     │   ├── meta.json                 identity, revision and sync state
+    │   ├── bucket.json               the bucket this workspace is attached to — never a credential
     │   ├── <name>.pcraft             the document: the bytes the editor produces and consumes
     │   ├── <name>.pcraft.prev        the previous bytes, beside it during a swap
     │   └── thumb.png                 preview for the landing page
     ├── outbox/<id>/pending.json      the change the provider has not committed yet
-    ├── tmp/<uuid>                    write staging (transient; either side may leave a file behind)
-    ├── objects/                      the local object mirror — M2, with the server
-    └── ipc/open.json                 open request for an already-running editor — not written in M1
+    └── tmp/<uuid>                    write staging (transient; either side may leave a file behind)
 ```
 
+`objects/` and `ipc/` are reserved directory names, not part of protocol 1: `objects/` for the local object
+mirror that arrives with the server ([Delta Sync](../../docs/atelier_web_design.md#delta-sync)), `ipc/` for asking a
+running editor to open another document. Nothing writes either, and a consumer must not depend on them.
+
 `provider.json` and `index/` are created by the provider on first use. `projects/` and `tmp/` are
-created with them; `outbox/<id>/` is created when a project has an uncommitted change. `objects/` and
-`ipc/` exist as contract names only, and neither is written in M1.
+created with them; `outbox/<id>/` is created when a project has an uncommitted change, and
+`bucket.json` when a workspace is given a bucket.
 
 ### provider.json
 
 ```json
-{"protocol":1,"name":"Atelier Cloud","capabilities":["open","save","lock","tools"]}
+{"protocol":1,"name":"Atelier Cloud"}
 ```
 
 The provider creates it if it is missing, and rewrites it if `protocol` does not match. A consumer
@@ -108,6 +111,67 @@ diff exact without re-reading the previous bytes (design [Delta Sync](../../docs
 `revision.modified` is the document's `File.lastModified` as of the commit, so a card can tell
 "changed" from "unchanged" with one `stat` instead of a hash.
 
+`sync.remote` is where the bucket copy is recorded, and is absent until there is one: `key` (the logical
+key the document is stored under), `hash` (`sha256:<hex>` of the bytes that were uploaded), `size`, `at`,
+and `etag` from the bucket when its CORS policy exposes one. It is additive to protocol 1
+([Versioning](#versioning)): a consumer that does not know it ignores it, and it says nothing about
+revisions — the bucket holds documents, not history.
+
+```json
+"sync": {
+  "state": "local",
+  "at": "2026-10-12T08:30:58.001Z",
+  "remote": {
+    "key": "8f14e45f-ceea-4a4d-9b8e-1a24a1f0d3c7/doc.pcraft",
+    "hash": "sha256:41ab…",
+    "size": 179714,
+    "at": "2026-10-12T09:02:11.004Z",
+    "etag": "\"ee3e0e8451b950506adc15a32aa23fb2\""
+  }
+}
+```
+
+### projects/&lt;id&gt;/bucket.json
+
+The bucket this workspace was given, and nothing that could be used to sign for it. A user attaches a
+bucket to one workspace, and the whole request is signed in that browser
+(design [The Bucket Credential](../../docs/atelier_web_design.md#the-bucket-credential)).
+
+```json
+{
+  "protocol": 1,
+  "endpoint": "https://ACCOUNT_ID.r2.cloudflarestorage.com",
+  "bucket": "atelier-development",
+  "region": "auto",
+  "prefix": "atelier/",
+  "accessKeyId": "…",
+  "urlTtlSeconds": 900,
+  "attachedAt": "2026-10-12T09:41:00.112Z"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `endpoint` | The bucket's S3 API endpoint, as attached and normalised: `scheme://host`, plus any base path. |
+| `bucket` | The bucket to presign for. |
+| `region` | The region in the signature. R2's is `auto`. |
+| `prefix` | Empty, or a validated key ending in `/`, joined onto every key this workspace writes. A shared bucket needs one. |
+| `accessKeyId` | The key id, which is an identifier and not a secret: SigV4 puts it in the credential scope of every URL. |
+| `urlTtlSeconds` | The lifetime of a signed URL, 1 to 604800. |
+| `attachedAt` | When the attachment was made. |
+
+There is deliberately no secret field. The private half of the pair is held as a non-extractable
+`CryptoKey` in this origin's IndexedDB — a `CryptoKey` is not bytes, so it cannot live in OPFS — and the app
+never holds the raw secret once the attach form has been submitted. What that does and does not protect is
+the design's subject ([The Bucket Credential](../../docs/atelier_web_design.md#the-bucket-credential)); the
+point here is only that this file is not where the credential is. The key is written before this file, so a
+`bucket.json` that exists without a key means that store was cleared under it; re-attaching is what restores
+signing, and it costs the attachment, never the bucket.
+
+`bucket.json` is where the document goes; `sync.remote` in `meta.json` is what happened the last time
+it went there. Detaching removes this file and the key with it, and leaves both the document here and
+the copy in the bucket alone.
+
 ### The document
 
 `projects/<id>/<name>.pcraft`, the single-file ZIP the editor produces, and `tmp/<uuid>` staging
@@ -115,6 +179,17 @@ beside it during a swap. A project holds exactly one `*.pcraft`: that is what a 
 and why the editor never needs a file list. `<name>` is the editor's own document name, so it
 round-trips into the editor's title bar; the change is a new name in the same slot, not a second
 document.
+
+The provider writes this file in exactly two cases, always as a whole-document replace under
+`atelier-cloud:project:<id>` in `exclusive` mode, so no reader can catch it half-written:
+
+| Case | From |
+|---|---|
+| *Discard* on a workspace | the editor's `<name>.pcraft.prev`, one save back |
+| *Download from bucket* | the object store, at `sync.remote.key` |
+
+Both leave the project uncommitted: those bytes are not the last revision until a commit names them.
+The editor's save is not blocked by either — it takes the same lock and writes over it.
 
 ### outbox/&lt;id&gt;/pending.json
 
@@ -131,9 +206,12 @@ scans a project whose document differs from its revision.
   "size": 190412,
   "modified": 1760258420442,
   "at": "2026-10-12T08:40:20.447Z",
-  "newObjects": 41,
-  "newBytes": 19298016,
-  "unchangedObjects": 812
+  "added": 41,
+  "changed": 0,
+  "removed": 2,
+  "bytes": 19298016,
+  "unchanged": 812,
+  "unchangedBytes": 157286400
 }
 ```
 
@@ -158,10 +236,9 @@ provider may miss a message because the editor tab slept; the editor must not as
 |---|---|---|
 | `{"type":"document-saved","project":…,"document":…,"bytes":…,"at":…}` | the editor | a project's document changed; re-scan it now instead of on the next focus |
 
-`ipc/open.json` (`{"protocol":1,"project":"<id>"}`) is the contract's way to ask an editor that is
-already running to open another document: the provider writes it and pings the channel. It is defined
-here and not written in M1, where opening a workspace is a navigation to `/?project=<id>` and a page
-never serves two projects.
+`ipc/open.json` (`{"protocol":1,"project":"<id>"}`) is the reserved name for asking an editor that is
+already running to open another document: the provider writes it and pings the channel. Nothing writes it:
+opening a workspace is a navigation to `/?project=<id>`, and a page serves one project.
 
 ## Identifiers
 
@@ -176,6 +253,10 @@ project directory: no `/`, no leading `.`, and it ends in `.pcraft`.
 `provider.json`, in the catalog, and in `meta.json`. Additive fields do not raise it: a consumer
 ignores what it does not know, and the provider keeps its own state in its own files. The editor
 patch refuses to open anything whose `protocol` it does not speak (design [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable)).
+
+`bucket.json` is additive in exactly this sense: a consumer that has never heard of it reads
+`meta.json` and the document and is unaffected, and it says nothing about revisions — a bucket holds
+documents, not history.
 
 ## What is deliberately not here
 

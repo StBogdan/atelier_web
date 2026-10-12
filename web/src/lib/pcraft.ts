@@ -3,7 +3,8 @@
  * (design, Delta Sync). Two things follow, and both matter here:
  *
  * - The object set of a revision is the entry-name set, read from the central directory. No
- *   decompression, no hashing: the numbers in the Changes panel are exact and nearly free (6.5).
+ *   decompression, no hashing: the numbers in the Changes panel are exact and nearly free
+ *   (design, Where Cloud State Is Surfaced).
  * - The entry names *are* the hashes, so the provider never computes BLAKE3 itself.
  */
 
@@ -25,10 +26,10 @@ const CENTRAL_DIRECTORY_HEADER = 0x02014b50;
 const LOCAL_FILE_HEADER = 0x04034b50;
 const ZIP64_EXTRA = 0x0001;
 
-/** Entries that are content-addressed objects: what a revision's delta is computed from (5.1). */
+/** Entries that are content-addressed objects: what a revision's delta is computed from (design, Delta Sync). */
 const OBJECT_PREFIXES = ['tiles/', 'blobs/'];
 
-/** Where the editor puts a document's composited preview; the landing page's thumbnail (6.4). */
+/** Where the editor puts a document's composited preview; the landing page's thumbnail. */
 const PREVIEW_NAMES = ['composite/preview.png', 'thumb.png'];
 
 export function isPcraft(bytes: Uint8Array): boolean {

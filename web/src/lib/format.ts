@@ -5,7 +5,7 @@ export function bytes(count: number): string {
 	return `${(count / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-/** "2 min ago", "just now": the same shape on every card and in the Changes panel (6.2, 6.5). */
+/** "2 min ago", "just now": the same shape on every card and in the Changes panel (design, The Workspace Grid; Where Cloud State Is Surfaced). */
 export function since(iso: string, now = Date.now()): string {
 	const then = Date.parse(iso);
 	if (!Number.isFinite(then)) return 'unknown';

@@ -35,7 +35,7 @@ export async function refresh(): Promise<void> {
 	}
 }
 
-/** The editor's `BroadcastChannel` ping (3.5): a reason to re-read sooner, never the truth. */
+/** The editor's `BroadcastChannel` ping (design, How the Two Sides Communicate): a reason to re-read sooner, never the truth. */
 const CHANNEL = SPACE;
 
 let watching = false;
@@ -56,7 +56,7 @@ export function watch(): () => void {
 		};
 	}
 
-	// A slow sweep, so a long-lived tab in the foreground still notices a change (3.8 option 1).
+	// A slow sweep, so a long-lived tab in the foreground still notices a change (design, How the Two Sides Communicate).
 	const timer = window.setInterval(() => void refresh(), 15_000);
 
 	return () => {

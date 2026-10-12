@@ -31,7 +31,6 @@ import { difference, isPcraft, objectSet, previewEntry, readDirectory, readEntry
 
 export const PROTOCOL = 1;
 export const PROVIDER_NAME = 'Atelier Cloud';
-export const CAPABILITIES = ['open', 'save', 'lock', 'tools'] as const;
 
 export const PROVIDER_FILE = 'provider.json';
 export const CATALOG_FILE = 'workspaces.json';
@@ -43,6 +42,23 @@ export const THUMB_FILE = 'thumb.png';
 export const DEFAULT_DOCUMENT = 'doc.pcraft';
 
 export type SyncState = 'local';
+
+/**
+ * Where the bucket holds this project's document. Additive to protocol 1: a consumer that does not
+ * know it ignores it, and the provider keeps its own state in its own file
+ * (`contract/protocol.md`, Versioning).
+ */
+export interface Remote {
+	/** The logical key, without the deployment's prefix. */
+	key: string;
+	/** `sha256:<hex>` of the bytes that were uploaded, so "is the bucket copy this document?" costs
+	 * nothing more than the hash the Changes panel already computes. */
+	hash: string;
+	size: number;
+	at: string;
+	/** The bucket's ETag, when its CORS policy exposes one. */
+	etag: string | null;
+}
 
 export interface Revision {
 	/** `sha256:<hex>` of the committed document. */
@@ -65,7 +81,7 @@ export interface Meta {
 	rev: number;
 	dirty: boolean;
 	size: number;
-	sync: { state: SyncState; at: string };
+	sync: { state: SyncState; at: string; remote?: Remote | null };
 	revision: Revision | null;
 }
 
@@ -118,7 +134,7 @@ export async function ensureSpace(): Promise<Directory> {
 	const space = await directory(await opfs(), SPACE, true);
 	const provider = await readJson<{ protocol?: number }>(space, PROVIDER_FILE);
 	if (provider?.protocol !== PROTOCOL) {
-		await writeJson(space, PROVIDER_FILE, { protocol: PROTOCOL, name: PROVIDER_NAME, capabilities: [...CAPABILITIES] });
+		await writeJson(space, PROVIDER_FILE, { protocol: PROTOCOL, name: PROVIDER_NAME });
 	}
 	await directory(space, 'projects', true);
 	await directory(space, 'index', true);
@@ -139,7 +155,7 @@ async function outboxDir(space: Directory, project: string, create: boolean): Pr
 	return await directory(await directory(space, 'outbox', create), project, create);
 }
 
-/** Staging files are transient (3.1): anything left behind is from a tab that did not finish. */
+/** Staging files are transient: anything left behind is from a tab that did not finish. */
 async function sweepStaging(space: Directory): Promise<void> {
 	const staging = await directory(space, 'tmp', true);
 	const cutoff = Date.now() - 60 * 60 * 1000;
@@ -202,7 +218,7 @@ export async function inspect(space: Directory, project: string): Promise<Worksp
 	};
 }
 
-/** Scan the space and rewrite the catalog cache (3.1). */
+/** Scan the space and rewrite the catalog cache (`contract/protocol.md`, `index/workspaces.json`). */
 export async function scan(space: Directory): Promise<Workspace[]> {
 	const projects = await projectsDir(space);
 	const workspaces: Workspace[] = [];
@@ -227,13 +243,22 @@ export async function scan(space: Directory): Promise<Workspace[]> {
 	return workspaces;
 }
 
-async function hash(bytes: Uint8Array): Promise<string> {
+export async function hash(bytes: Uint8Array): Promise<string> {
 	const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
 	const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 	return `sha256:${hex}`;
 }
 
-/** `doc.pcraft` for a suggested display name, keeping the extension the contract requires (3.2). */
+/**
+ * Where a project's document lives in the bucket: `<project>/<document>`, the logical key. The
+ * workspace's own prefix is joined onto it by the signer (`./sigv4.ts`), so this is what
+ * `sync.remote.key` records, and it does not move when the prefix changes.
+ */
+export function objectKey(project: string, document: string = DEFAULT_DOCUMENT): string {
+	return `${project}/${document}`;
+}
+
+/** `doc.pcraft` for a suggested display name, keeping the extension the contract requires. */
 export function documentFileName(name: string): string {
 	const base = name.replace(/^[\s.]+|[\s]+$/g, '').replace(/[/\\]/g, '-') || 'document';
 	const stem = base.toLowerCase().endsWith('.pcraft') ? base.slice(0, -'.pcraft'.length) : base.replace(/\.[^.]*$/, '');
@@ -246,7 +271,7 @@ export interface NewProject {
 	document?: { name: string; bytes: Uint8Array } | null;
 }
 
-/** Create a project and commit its first revision. The provider owns project creation (3.6). */
+/** Create a project and commit its first revision. The provider owns project creation (design, File Ownership). */
 export async function createProject(space: Directory, { name, document = null }: NewProject): Promise<Workspace> {
 	const id = crypto.randomUUID();
 	const dir = await directory(await projectsDir(space), id, true);
@@ -292,7 +317,7 @@ export async function readDocument(space: Directory, project: string): Promise<R
 	return { name, bytes, entries, objects: objectSet(entries) };
 }
 
-/** The exact change against the committed revision, and what the Changes panel renders (6.5). */
+/** The exact change against the committed revision, and what the Changes panel renders (design, Where Cloud State Is Surfaced). */
 export interface Change {
 	document: string;
 	difference: Difference;
@@ -341,7 +366,7 @@ async function clearPending(space: Directory, project: string): Promise<void> {
 
 /**
  * Commit the document as a new revision: record its object set, refresh the thumbnail, and clear
- * the pending change. In M1 the revision is recorded locally; M2 uploads the same set (5.1).
+ * the pending change. In M1 the revision is recorded locally; M2 uploads the same set (design, Delta Sync).
  */
 export async function commit(space: Directory, project: string): Promise<Meta> {
 	const dir = await projectDir(space, project);
@@ -378,9 +403,9 @@ export async function commit(space: Directory, project: string): Promise<Meta> {
 }
 
 /**
- * Put back the previous bytes, the one destructive action in the provider (6.5).
+ * Put back the previous bytes, the one destructive action in the provider (design, Where Cloud State Is Surfaced).
  *
- * `.prev` is the editor's, one save back (3.4, 3.6), which is the committed revision when exactly
+ * `.prev` is the editor's, one save back (design, Saving; File Ownership), which is the committed revision when exactly
  * one save has happened since the commit. The answer says which of the two came back, so the UI can
  * be plain about it instead of pretending: M1 has no server holding the committed bytes.
  */
@@ -398,6 +423,40 @@ export async function discard(space: Directory, project: string): Promise<'revis
 	await clearPending(space, project);
 	await inspect(space, project);
 	return outcome;
+}
+
+/**
+ * Record that the document's bytes are in the bucket. Provider-owned state in `meta.json`, so the
+ * answer to "is the bucket copy this document?" survives a reload (protocol, Versioning).
+ */
+export async function recordUpload(space: Directory, project: string, remote: Remote): Promise<Meta> {
+	const dir = await projectDir(space, project);
+	const meta = await readJson<Meta>(dir, META_FILE);
+	if (!meta) throw new Error('this project has no meta.json');
+	const next: Meta = { ...meta, sync: { ...meta.sync, remote } };
+	await writeJson(dir, META_FILE, next);
+	return next;
+}
+
+/**
+ * Put bytes fetched from the bucket into the document slot, as a whole-document replace under the
+ * project's exclusive lock — the same shape as `discard`, and the same hazard: an editor that has
+ * the document open will write its own copy over this on its next save.
+ *
+ * This is one of the two places the provider writes the document itself (`contract/protocol.md`,
+ * File Ownership). M2's "restore a revision" is the third, and lands here too.
+ */
+export async function restoreDocument(space: Directory, project: string, bytes: Uint8Array): Promise<void> {
+	const dir = await projectDir(space, project);
+	await withLock(lockName(project), 'exclusive', async () => {
+		const name = (await documentName(dir)) ?? DEFAULT_DOCUMENT;
+		await writeBytes(dir, name, bytes);
+		const meta = await readJson<Meta>(dir, META_FILE);
+		// `document` and `size` are the provider's record of the slot; the editor only ever writes
+		// the file. `dirty` is left to `inspect`, which derives it.
+		if (meta) await writeJson(dir, META_FILE, { ...meta, document: name, size: bytes.length });
+	});
+	await inspect(space, project);
 }
 
 /** The committed document's bytes, and the previous ones when there are any: the export path. */
