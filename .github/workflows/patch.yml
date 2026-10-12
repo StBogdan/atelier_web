@@ -1,0 +1,92 @@
+name: patch
+
+# Design 12: the patch is a first-class artifact. This job proves it still applies, still builds, and
+# still fits the wasm budget, so drift from upstream is a red build rather than a surprise.
+#
+# It runs in this repository, never upstream. It needs no secrets and no container.
+
+on:
+  push:
+    branches: [main]
+    paths: ['hook/**', '.github/workflows/patch.yml']
+  pull_request:
+    paths: ['hook/**', '.github/workflows/patch.yml']
+  workflow_dispatch:
+
+env:
+  # The pin recorded in the outer repository's .gitmodules (v0.7.0-150-ge2644265), and the same
+  # default `apply.sh` uses.
+  PINNED_REF: e26442657f39d04716656baf749d3268ee3f8a0f
+  # Upstream's own CI pin, so this build is the one the release job makes.
+  TRUNK_VERSION: 0.21.14
+  # Cloudflare rejects a file over 25 MiB, which is the hard gate 12 names.
+  WASM_LIMIT: 26214400
+
+jobs:
+  build:
+    name: apply, build and weigh the patch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install trunk
+        run: |
+          curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.cargo/bin" trunk
+          trunk --version
+
+      - name: Check out the editor at the pinned ref
+        run: |
+          git clone --filter=blob:none https://github.com/storytold/photocraft /tmp/photocraft
+          git -C /tmp/photocraft checkout "$PINNED_REF"
+
+      - name: The patch applies cleanly (3-way), and reverts
+        env:
+          PHOTOCRAFT_DIR: /tmp/photocraft
+        run: ./hook/apply.sh check
+
+      - name: Build the patched editor
+        env:
+          PHOTOCRAFT_DIR: /tmp/photocraft
+          CARGO_TARGET_DIR: /tmp/photocraft/target
+        run: ./hook/apply.sh build
+
+      - name: Assert the patch touched only apps/photocraft-web
+        env:
+          PHOTOCRAFT_DIR: /tmp/photocraft
+        run: |
+          changed=$(git -C /tmp/photocraft status --porcelain | awk '{print $2}')
+          echo "$changed"
+          if echo "$changed" | grep -qv '^apps/photocraft-web/'; then
+            echo "::error::the patch reaches outside apps/photocraft-web"
+            exit 1
+          fi
+
+      - name: Assert the wasm still fits the budget
+        run: |
+          wasm=$(ls /tmp/photocraft/dist/web/*_bg.wasm)
+          size=$(stat -c%s "$wasm")
+          echo "wasm: $size bytes ($wasm)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$size" -gt "$WASM_LIMIT" ]; then
+            echo "::error::$wasm is $size bytes, over the $WASM_LIMIT byte limit"
+            exit 1
+          fi
+
+  drift:
+    name: does it still apply to upstream main?
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out upstream main and check the patch against it
+        run: |
+          git clone --filter=blob:none https://github.com/storytold/photocraft /tmp/photocraft
+          # The 3-way merge needs the pre-image the patch was written against, which a shallow clone
+          # of main does not have.
+          git -C /tmp/photocraft fetch --depth 1 origin "$PINNED_REF"
+          PHOTOCRAFT_DIR=/tmp/photocraft ./hook/apply.sh check origin/main

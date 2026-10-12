@@ -1,0 +1,547 @@
+diff --git a/apps/photocraft-web/Cargo.toml b/apps/photocraft-web/Cargo.toml
+index 6b4c6279..8b5fce47 100644
+--- a/apps/photocraft-web/Cargo.toml
++++ b/apps/photocraft-web/Cargo.toml
+@@ -34,7 +34,7 @@ rfd = { workspace = true }
+ wasm-bindgen = "0.2"
+ wasm-bindgen-futures = "0.4"
+ js-sys = "0.3"
+-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Event", "EventTarget", "MouseEvent", "PointerEvent", "BeforeUnloadEvent", "AbortController", "AbortSignal", "DomException", "Response", "IdbFactory", "IdbOpenDbRequest", "IdbDatabase", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbCursor", "IdbCursorWithValue", "RequestInit", "Navigator"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "File", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Event", "EventTarget", "MouseEvent", "PointerEvent", "BeforeUnloadEvent", "AbortController", "AbortSignal", "DomException", "Response", "IdbFactory", "IdbOpenDbRequest", "IdbDatabase", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbCursor", "IdbCursorWithValue", "RequestInit", "Navigator", "StorageManager", "FileSystemHandle", "FileSystemDirectoryHandle", "FileSystemFileHandle", "FileSystemWritableFileStream", "FileSystemGetFileOptions", "FileSystemGetDirectoryOptions"] }
+ 
+ [dev-dependencies]
+ serde_json = { workspace = true }
+diff --git a/apps/photocraft-web/src/atelier_cloud.rs b/apps/photocraft-web/src/atelier_cloud.rs
+new file mode 100644
+index 00000000..11c7abf4
+--- /dev/null
++++ b/apps/photocraft-web/src/atelier_cloud.rs
+@@ -0,0 +1,426 @@
++//! The Atelier Cloud cloudspace, as the editor sees it: the whole of the patch (design 11).
++//!
++//! Two things, and nothing else:
++//!
++//! - `?project=<id>`: read the single `*.pcraft` in `atelier-cloud/projects/<id>/` and hand its
++//!   bytes to the `Inbox`, so the editor opens that document (3.3).
++//! - a save whose path is `atelier-cloud://<id>/<name>`: write the bytes back into that project
++//!   under a Web Lock (3.4).
++//!
++//! It speaks only the OPFS contract — `atelier-cloud/`, `provider.json`, `projects/`, `tmp/`, the
++//! lock and channel names of 3.5, and `web-sys`, never provider internals, so a provider release
++//! cannot force a patch release (12). Selection stays the provider's job: the editor is told about
++//! exactly one document and never browses OPFS to choose one (3.7).
++//!
++//! Section numbers in parentheses are sections of `atelier_web_design.md`, in the provider's
++//! repository: `hook/README.md` there has the whole story.
++
++use std::cell::RefCell;
++use std::future::Future;
++use std::rc::Rc;
++use std::sync::{Arc, Mutex};
++
++use js_sys::{Function, Promise, Reflect};
++use photocraft_ui_egui::{FileDialogAnswer, FileDialogReply, FileDialogRequest};
++use wasm_bindgen::closure::Closure;
++use wasm_bindgen::{JsCast as _, JsValue};
++use wasm_bindgen_futures::{JsFuture, future_to_promise, spawn_local};
++use web_sys::{FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemWritableFileStream};
++
++/// The inbox `services()` drains every frame (`crate::web::Inbox`).
++pub type Inbox = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
++
++// Contract names (design 3.1, 3.4, 3.5). A versioned interface: do not rename.
++const SPACE: &str = "atelier-cloud";
++const PROVIDER: &str = "provider.json";
++const PROJECTS: &str = "projects";
++const TMP: &str = "tmp";
++const CHANNEL: &str = "atelier-cloud";
++const LOCK: &str = "atelier-cloud:project:";
++const SCHEME: &str = "atelier-cloud://";
++
++/// The `provider.json` protocol this patch speaks.
++const PROTOCOL: f64 = 1.0;
++/// The extension a project's document is stored under (3.2).
++const EXTENSION: &str = "pcraft";
++/// Formats a save may keep inside the bound project. A save to anything else is an export and
++/// downloads, exactly as before (3.4).
++const PROJECT_FORMATS: &[&str] = &["pcraft", "psd", "psb", "ora"];
++
++/// The project this page was launched into (`?project=`), and its document once it is known.
++struct Binding {
++    project: String,
++    document: Option<String>,
++}
++
++thread_local! {
++    /// The session-scoped binding (3.7): set once, from `services()`.
++    static BINDING: RefCell<Option<Binding>> = const { RefCell::new(None) };
++}
++
++fn with_binding<R>(action: impl FnOnce(&mut Binding) -> R) -> Option<R> {
++    BINDING.with(|binding| binding.borrow_mut().as_mut().map(action))
++}
++
++fn bound_project() -> Option<String> {
++    with_binding(|binding| binding.project.clone())
++}
++
++fn remember_document(document: Option<String>) {
++    with_binding(|binding| binding.document = document);
++}
++
++/// Bind this page to `?project=<id>` and open its document (design 3.3). Called once, from
++/// `services()`; a page without the query parameter behaves exactly as before.
++pub fn start(inbox: Inbox) {
++    let Some(project) = query_project() else { return };
++    BINDING.with(|binding| *binding.borrow_mut() = Some(Binding { project: project.clone(), document: None }));
++    spawn_local(async move {
++        if let Err(e) = check_provider().await {
++            log::warn!("atelier-cloud: {e}");
++            return;
++        }
++        match read_document(&project).await {
++            Ok((name, bytes)) => {
++                log::info!("atelier-cloud: opening {name} ({} bytes) from project {project}", bytes.len());
++                remember_document(Some(name.clone()));
++                inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
++                wake();
++            }
++            // A project without a document yet is not an error: Save creates one (3.7).
++            Err(e) => log::info!("atelier-cloud: no document to open in project {project}: {e}"),
++        }
++    });
++}
++
++/// Whether this dialog belongs to the cloudspace (11.1): `File › Open` in a bound page, and a
++/// save that keeps a document format. Anything else — the browser's picker, an export — is the
++/// app's own, unchanged.
++pub fn claims(request: &FileDialogRequest) -> bool {
++    BINDING.with(|binding| {
++        if binding.borrow().is_none() {
++            return false;
++        }
++        match request {
++            // `File › Open` asks for several files; a command reading one file does not.
++            FileDialogRequest::Open { multiple: true, extensions: None, .. } => true,
++            FileDialogRequest::Save { suggested } => PROJECT_FORMATS.contains(&extension_of(&file_name(suggested)).as_str()),
++            _ => false,
++        }
++    })
++}
++
++/// Answer a dialog [`claims`] took: the bound project's document instead of the browser's files,
++/// and the project's virtual path instead of a download name (3.4).
++pub fn answer(request: FileDialogRequest, reply: FileDialogReply) {
++    match request {
++        FileDialogRequest::Open { .. } => spawn_local(async move {
++            let answer = match bound_document().await {
++                Ok((name, bytes)) => Some(FileDialogAnswer::Contents(name, bytes)),
++                Err(e) => {
++                    log::warn!("atelier-cloud: could not open the project's document: {e}");
++                    None
++                }
++            };
++            reply.send(answer);
++        }),
++        FileDialogRequest::Save { suggested } => {
++            let name = file_name(&suggested);
++            let path = save_target(&name).unwrap_or_else(|| name.clone());
++            reply.send(Some(FileDialogAnswer::SaveTo(path)));
++        }
++    }
++}
++
++/// The project and document an `atelier-cloud://` path names (3.4), if it names one at all.
++pub fn target(path: &str) -> Option<(String, String)> {
++    let (project, document) = path.strip_prefix(SCHEME)?.split_once('/')?;
++    (!project.is_empty() && !document.is_empty()).then(|| (project.to_owned(), document.to_owned()))
++}
++
++/// Write a save into the project its path names (3.4).
++///
++/// The write is asynchronous: OPFS cannot be written synchronously from the main thread, and the
++/// editor's write service is synchronous. Failure is logged; what actually happened to the file is
++/// the provider's to derive from the filesystem (3.6).
++pub fn write(project: &str, document: &str, bytes: &[u8]) -> Result<(), String> {
++    remember_document(Some(document.to_owned()));
++    let (project, document, bytes) = (project.to_owned(), document.to_owned(), bytes.to_vec());
++    let len = bytes.len();
++    spawn_local(async move {
++        match save_document(&project, document.clone(), bytes).await {
++            Ok(()) => {
++                log::info!("atelier-cloud: saved {document} ({len} bytes) into project {project}");
++                ping(&project, &document, len);
++            }
++            Err(e) => log::error!("atelier-cloud: could not save {document} into project {project}: {e}"),
++        }
++    });
++    Ok(())
++}
++
++/// The write sequence of 3.4: one writer per project, the previous bytes kept beside the
++/// document, the new bytes staged in `tmp/`, then swapped in.
++async fn save_document(project: &str, document: String, bytes: Vec<u8>) -> Result<(), String> {
++    let project_dir = project_dir(project).await?;
++    let staging = tmp_dir(&space().await?).await?;
++    let staged = unique_name();
++    let previous_name = format!("{document}.prev");
++    with_lock(&format!("{LOCK}{project}"), "exclusive", async move {
++        // A project being saved for the first time has no previous bytes to keep.
++        if let Ok(previous) = read_file(&project_dir, &document).await {
++            write_file(&project_dir, &previous_name, &previous).await?;
++        }
++        write_file(&staging, &staged, &bytes).await?;
++        write_file(&project_dir, &document, &bytes).await?;
++        remove_file(&staging, &staged).await;
++        Ok(())
++    })
++    .await
++}
++
++/// The bound project's document, read under a shared lock so a concurrent swap (3.4) cannot be
++/// caught half-written.
++async fn bound_document() -> Result<(String, Vec<u8>), String> {
++    read_document(&bound_project().ok_or("no project is bound")?).await
++}
++
++async fn read_document(project: &str) -> Result<(String, Vec<u8>), String> {
++    let dir = project_dir(project).await?;
++    let name = document_name(&dir).await?.ok_or_else(|| format!("{PROJECTS}/{project} holds no .{EXTENSION} document"))?;
++    let bytes = with_lock(&format!("{LOCK}{project}"), "shared", {
++        let (dir, name) = (dir.clone(), name.clone());
++        async move { read_file(&dir, &name).await }
++    })
++    .await?;
++    Ok((name, bytes))
++}
++
++/// The virtual path a save goes to, given what the dialog suggested (3.4). A document already
++/// open keeps the project's own name, so a save cannot rename the project's document.
++fn save_target(suggested: &str) -> Option<String> {
++    with_binding(|binding| {
++        let document = binding.document.clone().unwrap_or_else(|| format!("{}.{EXTENSION}", stem(suggested)));
++        format!("{SCHEME}{}/{document}", binding.project)
++    })
++}
++
++/// `atelier-cloud/provider.json`, and whether it declares the protocol this patch speaks (3.1).
++async fn check_provider() -> Result<(), String> {
++    let bytes = read_file(&space().await?, PROVIDER).await.map_err(|e| format!("{SPACE}/{PROVIDER} is unreadable: {e}"))?;
++    let text = String::from_utf8(bytes).map_err(|_| format!("{SPACE}/{PROVIDER} is not UTF-8"))?;
++    let declared =
++        js_sys::JSON::parse(&text).ok().and_then(|provider| Reflect::get(&provider, &JsValue::from_str("protocol")).ok()).and_then(|version| version.as_f64());
++    match declared {
++        Some(PROTOCOL) => Ok(()),
++        Some(version) => Err(format!("{SPACE}/{PROVIDER} declares protocol {version}, this editor speaks {PROTOCOL}")),
++        None => Err(format!("{SPACE}/{PROVIDER} does not declare a protocol version")),
++    }
++}
++
++/// Tell the provider a document changed (3.4 step 6, 3.5). A latency optimization only: the
++/// provider re-scans OPFS, which is what keeps it correct when this message is lost.
++fn ping(project: &str, document: &str, bytes: usize) {
++    let message = js_sys::Object::new();
++    for (key, value) in [
++        ("type", JsValue::from_str("document-saved")),
++        ("project", JsValue::from_str(project)),
++        ("document", JsValue::from_str(document)),
++        ("bytes", JsValue::from_f64(bytes as f64)),
++        ("at", JsValue::from_f64(js_sys::Date::now())),
++    ] {
++        if Reflect::set(&message, &JsValue::from_str(key), &value).is_err() {
++            return;
++        }
++    }
++    let Some(channel) = broadcast_channel() else { return };
++    if let Ok(post) = Reflect::get(&channel, &JsValue::from_str("postMessage")).and_then(|function| function.dyn_into::<Function>()) {
++        post.call1(&channel, &message).ok();
++    }
++    if let Ok(close) = Reflect::get(&channel, &JsValue::from_str("close")).and_then(|function| function.dyn_into::<Function>()) {
++        close.call0(&channel).ok();
++    }
++}
++
++fn broadcast_channel() -> Option<JsValue> {
++    let window = web_sys::window()?;
++    let constructor = Reflect::get(&window, &JsValue::from_str("BroadcastChannel")).ok()?.dyn_into::<Function>().ok()?;
++    Reflect::construct(&constructor, &js_sys::Array::of1(&JsValue::from_str(CHANNEL))).ok()
++}
++
++/// eframe paints only when something asks it to, and a synthetic `popstate` is one of the events
++/// its web runner repaints on. Without this, bytes arriving from OPFS would wait for a mouse move.
++/// Nothing else observes the event.
++fn wake() {
++    if let Some(window) = web_sys::window()
++        && let Ok(event) = web_sys::Event::new("popstate")
++    {
++        window.dispatch_event(&event).ok();
++    }
++}
++
++/// The `?project=<id>` of 3.3. Project ids are the provider's, `[A-Za-z0-9_-]` only, so they
++/// reach the page unescaped.
++fn query_project() -> Option<String> {
++    let search = web_sys::window()?.location().search().ok()?;
++    search.trim_start_matches('?').split('&').find_map(|pair| {
++        let (key, value) = pair.split_once('=')?;
++        (key == "project" && is_project_id(value)).then(|| value.to_owned())
++    })
++}
++
++fn is_project_id(id: &str) -> bool {
++    id.len() <= 64 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
++}
++
++fn file_name(path: &str) -> String {
++    path.rsplit('/').next().filter(|name| !name.is_empty()).unwrap_or(path).to_owned()
++}
++
++fn stem(name: &str) -> String {
++    match name.rsplit_once('.') {
++        Some((base, extension)) if !base.is_empty() && !extension.is_empty() => base.to_owned(),
++        _ => name.to_owned(),
++    }
++}
++
++fn extension_of(name: &str) -> String {
++    name.rsplit_once('.').map(|(base, extension)| if base.is_empty() { String::new() } else { extension.to_ascii_lowercase() }).unwrap_or_default()
++}
++
++fn js_error(error: JsValue) -> String {
++    format!("{error:?}")
++}
++
++/// `navigator.locks.request(name, {mode}, callback)`, at the level of the API itself: the typed
++/// `LockManager` bindings are behind `web_sys_unstable_apis`, which this build does not set.
++///
++/// The caller's work is awaited inside the callback, so the lock is held until it finishes. `work`
++/// is lazy: nothing it does happens before the lock is granted.
++async fn with_lock<R: 'static>(name: &str, mode: &str, work: impl Future<Output = Result<R, String>> + 'static) -> Result<R, String> {
++    let slot: Rc<RefCell<Option<Result<R, String>>>> = Rc::new(RefCell::new(None));
++    let guarded = {
++        let slot = Rc::clone(&slot);
++        future_to_promise(async move {
++            *slot.borrow_mut() = Some(work.await);
++            Ok(JsValue::UNDEFINED)
++        })
++    };
++    let callback = Closure::once_into_js(move |_lock: JsValue| guarded);
++    let held = locks_request(name, mode, &callback)?;
++    JsFuture::from(held).await.map_err(js_error)?;
++    let done = slot.borrow_mut().take();
++    done.unwrap_or_else(|| Err(format!("the `{name}` lock was never granted")))
++}
++
++fn locks_request(name: &str, mode: &str, callback: &JsValue) -> Result<Promise, String> {
++    let window = web_sys::window().ok_or("no window")?;
++    let locks = Reflect::get(&window.navigator(), &JsValue::from_str("locks")).map_err(js_error)?;
++    let request = Reflect::get(&locks, &JsValue::from_str("request"))
++        .map_err(js_error)?
++        .dyn_into::<Function>()
++        .map_err(|_| "navigator.locks.request is missing".to_owned())?;
++    let options = js_sys::Object::new();
++    Reflect::set(&options, &JsValue::from_str("mode"), &JsValue::from_str(mode)).map_err(js_error)?;
++    request
++        .call3(&locks, &JsValue::from_str(name), &options, callback)
++        .map_err(js_error)?
++        .dyn_into::<Promise>()
++        .map_err(|_| "navigator.locks.request returned no promise".to_owned())
++}
++
++/// The OPFS root at `navigator.storage.getDirectory()`.
++async fn root() -> Result<FileSystemDirectoryHandle, String> {
++    let storage = web_sys::window().ok_or("no window")?.navigator().storage();
++    JsFuture::from(storage.get_directory())
++        .await
++        .map_err(js_error)?
++        .dyn_into::<FileSystemDirectoryHandle>()
++        .map_err(|_| "the OPFS root is not a directory".to_owned())
++}
++
++/// `atelier-cloud/` (3.1). Read-only: the provider owns it, and the patch never creates it.
++async fn space() -> Result<FileSystemDirectoryHandle, String> {
++    directory(&root().await?, SPACE, false).await.map_err(|_| format!("{SPACE}/ is missing: open the editor through Atelier Cloud"))
++}
++
++async fn project_dir(project: &str) -> Result<FileSystemDirectoryHandle, String> {
++    let projects =
++        directory(&space().await?, PROJECTS, false).await.map_err(|_| format!("{SPACE}/{PROJECTS}/ is missing: open the editor through Atelier Cloud"))?;
++    directory(&projects, project, false).await.map_err(|_| format!("there is no {SPACE}/{PROJECTS}/{project}/"))
++}
++
++/// `atelier-cloud/tmp/`: write staging (3.1). The provider creates it; the patch creates it too,
++/// so a save cannot fail because the space was made by an older provider.
++async fn tmp_dir(space: &FileSystemDirectoryHandle) -> Result<FileSystemDirectoryHandle, String> {
++    directory(space, TMP, true).await
++}
++
++async fn directory(parent: &FileSystemDirectoryHandle, name: &str, create: bool) -> Result<FileSystemDirectoryHandle, String> {
++    let options = web_sys::FileSystemGetDirectoryOptions::new();
++    options.set_create(create);
++    JsFuture::from(parent.get_directory_handle_with_options(name, &options))
++        .await
++        .map_err(js_error)?
++        .dyn_into::<FileSystemDirectoryHandle>()
++        .map_err(|_| format!("`{name}` is not a directory"))
++}
++
++/// The project's single `*.pcraft` (3.7): the provider's selection, not ours.
++async fn document_name(dir: &FileSystemDirectoryHandle) -> Result<Option<String>, String> {
++    let mut names: Vec<String> = names(dir).await?.into_iter().filter(|name| extension_of(name) == EXTENSION).collect();
++    names.sort();
++    Ok(names.into_iter().next())
++}
++
++async fn names(dir: &FileSystemDirectoryHandle) -> Result<Vec<String>, String> {
++    let keys = dir.keys();
++    let mut names = Vec::new();
++    loop {
++        let step = JsFuture::from(keys.next().map_err(js_error)?).await.map_err(js_error)?;
++        if Reflect::get(&step, &JsValue::from_str("done")).map_err(js_error)?.as_bool() == Some(true) {
++            return Ok(names);
++        }
++        if let Some(name) = Reflect::get(&step, &JsValue::from_str("value")).map_err(js_error)?.as_string() {
++            names.push(name);
++        }
++    }
++}
++
++async fn read_file(dir: &FileSystemDirectoryHandle, name: &str) -> Result<Vec<u8>, String> {
++    let handle =
++        JsFuture::from(dir.get_file_handle(name)).await.map_err(js_error)?.dyn_into::<FileSystemFileHandle>().map_err(|_| format!("`{name}` is not a file"))?;
++    let file = JsFuture::from(handle.get_file()).await.map_err(js_error)?;
++    let buffer =
++        JsFuture::from(file.dyn_into::<web_sys::File>().map_err(|_| format!("`{name}` did not read as a file"))?.array_buffer()).await.map_err(js_error)?;
++    Ok(js_sys::Uint8Array::new(&buffer).to_vec())
++}
++
++/// Write `bytes` to `name`, replacing it. `close()` swaps the finished file in, so a reader never
++/// sees a partial write and a killed tab leaves the previous bytes in place.
++async fn write_file(dir: &FileSystemDirectoryHandle, name: &str, bytes: &[u8]) -> Result<(), String> {
++    let options = web_sys::FileSystemGetFileOptions::new();
++    options.set_create(true);
++    let handle = JsFuture::from(dir.get_file_handle_with_options(name, &options))
++        .await
++        .map_err(js_error)?
++        .dyn_into::<FileSystemFileHandle>()
++        .map_err(|_| format!("`{name}` is not a file"))?;
++    let stream = JsFuture::from(handle.create_writable())
++        .await
++        .map_err(js_error)?
++        .dyn_into::<FileSystemWritableFileStream>()
++        .map_err(|_| format!("`{name}` is not writable"))?;
++    JsFuture::from(stream.write_with_u8_array(bytes).map_err(js_error)?).await.map_err(js_error)?;
++    JsFuture::from(stream.close()).await.map_err(js_error)?;
++    Ok(())
++}
++
++async fn remove_file(dir: &FileSystemDirectoryHandle, name: &str) {
++    JsFuture::from(dir.remove_entry(name)).await.ok();
++}
++
++/// A name for the staging file (`tmp/<uuid>`, 3.4).
++fn unique_name() -> String {
++    format!("{:x}{:08x}", js_sys::Date::now() as u64, (js_sys::Math::random() * f64::from(u32::MAX)) as u32)
++}
+diff --git a/apps/photocraft-web/src/main.rs b/apps/photocraft-web/src/main.rs
+index 5ba75f52..836bc81c 100644
+--- a/apps/photocraft-web/src/main.rs
++++ b/apps/photocraft-web/src/main.rs
+@@ -19,6 +19,9 @@
+ #[cfg(any(target_arch = "wasm32", test))]
+ mod preset_bridge;
+ 
++#[cfg(target_arch = "wasm32")]
++mod atelier_cloud;
++
+ #[cfg(target_arch = "wasm32")]
+ mod indexed_presets;
+ 
+diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
+index b6e3c82d..bbc2f645 100644
+--- a/apps/photocraft-web/src/web.rs
++++ b/apps/photocraft-web/src/web.rs
+@@ -353,41 +353,52 @@ fn services(inbox: Inbox) -> Services {
+             opts.tga_bits = settings.tga_bits;
+             photocraft_io::export(doc, path, &opts).map(|r| (r.bytes, r.warnings)).map_err(|e| e.to_string())
+         })),
+-        file_dialog: Some(Box::new(|request, _parent, reply| match request {
+-            // The browser's file picker hands over the files' contents, not paths. File › Open
+-            // asks for several files (`multiple`), each opened in its own tab.
+-            FileDialogRequest::Open { multiple, extensions, .. } => wasm_bindgen_futures::spawn_local(async move {
+-                let dialog = if let Some(exts) = extensions {
+-                    rfd::AsyncFileDialog::new().add_filter("Supported Files", &exts)
+-                } else {
+-                    rfd::AsyncFileDialog::new().add_filter("All Formats", OPEN_EXTS).add_filter("SVG", SVG_EXTS)
+-                };
+-                let answer = if multiple {
+-                    match dialog.pick_files().await {
+-                        Some(picked) if !picked.is_empty() => {
+-                            let mut files = Vec::with_capacity(picked.len());
+-                            for file in picked {
+-                                files.push((file.file_name(), file.read().await));
++        file_dialog: Some(Box::new({
++            // A page launched as `/?project=<id>` opens that project's document, and a bound
++            // session's saves go back into it (design 3.3, 3.4, 11.2).
++            crate::atelier_cloud::start(inbox.clone());
++            move |request, _parent, reply| match request {
++                request if crate::atelier_cloud::claims(&request) => crate::atelier_cloud::answer(request, reply),
++                // The browser's file picker hands over the files' contents, not paths. File › Open
++                // asks for several files (`multiple`), each opened in its own tab.
++                FileDialogRequest::Open { multiple, extensions, .. } => wasm_bindgen_futures::spawn_local(async move {
++                    let dialog = if let Some(exts) = extensions {
++                        rfd::AsyncFileDialog::new().add_filter("Supported Files", &exts)
++                    } else {
++                        rfd::AsyncFileDialog::new().add_filter("All Formats", OPEN_EXTS).add_filter("SVG", SVG_EXTS)
++                    };
++                    let answer = if multiple {
++                        match dialog.pick_files().await {
++                            Some(picked) if !picked.is_empty() => {
++                                let mut files = Vec::with_capacity(picked.len());
++                                for file in picked {
++                                    files.push((file.file_name(), file.read().await));
++                                }
++                                Some(FileDialogAnswer::ContentsMany(files))
+                             }
+-                            Some(FileDialogAnswer::ContentsMany(files))
++                            _ => None,
+                         }
+-                        _ => None,
+-                    }
+-                } else {
+-                    match dialog.pick_file().await {
+-                        Some(file) => Some(FileDialogAnswer::Contents(file.file_name(), file.read().await)),
+-                        None => None,
+-                    }
+-                };
+-                reply.send(answer);
+-            }),
+-            // No save dialog on the web: the suggested name becomes the download name.
+-            FileDialogRequest::Save { suggested } => {
+-                let name = std::path::Path::new(&suggested).file_name().map_or_else(|| suggested.clone(), |n| n.to_string_lossy().to_string());
+-                reply.send(Some(FileDialogAnswer::SaveTo(name)));
++                    } else {
++                        match dialog.pick_file().await {
++                            Some(file) => Some(FileDialogAnswer::Contents(file.file_name(), file.read().await)),
++                            None => None,
++                        }
++                    };
++                    reply.send(answer);
++                }),
++                // No save dialog on the web: the suggested name becomes the download name.
++                FileDialogRequest::Save { suggested } => {
++                    let name = std::path::Path::new(&suggested).file_name().map_or_else(|| suggested.clone(), |n| n.to_string_lossy().to_string());
++                    reply.send(Some(FileDialogAnswer::SaveTo(name)));
++                }
+             }
+         })),
+-        write: Some(Box::new(|path: &str, bytes: &[u8]| download(path, bytes))),
++        // A save to an `atelier-cloud://` path writes into the project it names; anything else is
++        // a download, exactly as before (design 3.4).
++        write: Some(Box::new(|path: &str, bytes: &[u8]| match crate::atelier_cloud::target(path) {
++            Some((project, document)) => crate::atelier_cloud::write(&project, &document, bytes),
++            None => download(path, bytes),
++        })),
+         encode_png: Some(Box::new(|w, h, rgba| {
+             let img = Image::from_u8(w, h, ChannelLayout::Rgba, rgba.to_vec()).map_err(|e| e.to_string())?;
+             photocraft_codecs::encode(&img, photocraft_codecs::Format::Png, &EncodeOptions::default()).map_err(|e| e.to_string())

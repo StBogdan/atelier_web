@@ -1,15 +1,15 @@
-//! Atelier Cloud front door — the `serve/` box of the design (`atelier_web_design.md` §2.2, §2.3).
+//! Atelier Cloud front door — the `serve/` box of the design (`atelier_web_design.md` 2.2, 2.3).
 //!
 //! OPFS is keyed by **origin**, so the editor and the cloud app only share one cloudspace if one
 //! process serves both. This is that process:
 //!
 //! ```text
 //! http://127.0.0.1:3000/         → the editor      (proxied to PHOTOCRAFT_UPSTREAM)
-//! http://127.0.0.1:3000/cloud/   → Atelier Cloud   (static files from atelier_web/web)
+//! http://127.0.0.1:3000/cloud/   → Atelier Cloud   (static files from atelier_web/web/build)
 //! ```
 //!
 //! Opening the editor's own port directly gives a *second* origin and a *second, empty* OPFS, which
-//! fails silently. Always use this one (§2.3, "Invariant: always open the front port").
+//! fails silently. Always use this one (2.3, "Invariant: always open the front port").
 
 use std::{env, net::SocketAddr, path::PathBuf};
 
@@ -22,7 +22,7 @@ use axum::{
     Router,
 };
 use serde_json::json;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 /// Requests are proxied whole; the editor's wasm is ~26 MB, so this is generous but bounded.
 const MAX_BODY: usize = 512 << 20;
@@ -41,10 +41,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let upstream = upstream.trim_end_matches('/').to_owned();
     let web_dir = env::var("ATELIER_WEB_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web"));
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/build"));
 
-    if !web_dir.join("index.html").is_file() {
-        eprintln!("warning: {} has no index.html", web_dir.display());
+    let shell = web_dir.join("index.html");
+    if !shell.is_file() {
+        eprintln!("warning: {} has no index.html — build the cloud app: cd ../web && npm install && npm run build", web_dir.display());
     }
 
     let app = App { upstream: upstream.clone(), http: reqwest::Client::new() };
@@ -53,7 +54,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/health", get(health))
         // `/cloud` without the trailing slash would otherwise 404: point it at the directory.
         .route("/cloud", get(|| async { axum::response::Redirect::permanent("/cloud/") }))
-        .nest_service("/cloud/", ServeDir::new(&web_dir).append_index_html_on_directories(true))
+        // Atelier Cloud is a static SPA (design 6, 14: SSR is off). One `index.html` serves every
+        // route, so a path that is not a file falls back to it, with its own `200` status — that
+        // is `fallback`, not `not_found_service`, which would keep the 404.
+        .nest_service("/cloud/", ServeDir::new(&web_dir).append_index_html_on_directories(true).fallback(ServeFile::new(&shell)))
         // Everything else is the editor.
         .fallback(any(editor))
         .with_state(app);
@@ -99,7 +103,7 @@ async fn editor(State(app): State<App>, req: Request) -> Response {
     }
 }
 
-/// Hop-by-hop headers must not be forwarded (RFC 9110 §7.6.1), and `Host` must be re-derived from
+/// Hop-by-hop headers must not be forwarded (RFC 9110 7.6.1), and `Host` must be re-derived from
 /// the upstream URL rather than passed through. Everything else — including `Accept-Encoding` and
 /// `Content-Encoding`, which the client and the upstream negotiate end to end — is forwarded, so the
 /// editor's gzip and `application/wasm` handling keeps working unchanged.

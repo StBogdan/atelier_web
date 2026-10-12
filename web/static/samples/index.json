@@ -1,0 +1,7 @@
+{
+  "samples": [
+    { "file": "01-rgb-layered.pcraft", "name": "01-rgb-layered", "bytes": 179714 },
+    { "file": "02-layer-groups.pcraft", "name": "02-layer-groups", "bytes": 219980 },
+    { "file": "03-psb.pcraft", "name": "03-psb", "bytes": 58926 }
+  ]
+}

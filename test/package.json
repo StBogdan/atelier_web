@@ -1,0 +1,12 @@
+{
+  "name": "atelier-cloud-walkthrough",
+  "private": true,
+  "description": "The end-to-end handoff walkthrough, driven through both apps' own UI",
+  "type": "module",
+  "scripts": {
+    "walkthrough": "node walkthrough.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.49.0"
+  }
+}

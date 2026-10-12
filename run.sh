@@ -8,8 +8,17 @@ cd "$(dirname "$0")"
 
 CONTAINER=photocraft-web
 PORT="${ATELIER_PORT:-3000}"
+WEB_DIR="${ATELIER_WEB_DIR:-web/build}"
+# Where the editor is, which is also what the front door proxies. The default is the container.
+UPSTREAM="${PHOTOCRAFT_UPSTREAM:-http://127.0.0.1:8080}"
 
 say() { printf '%s\n' "$*"; }
+
+if [ ! -f "$WEB_DIR/index.html" ]; then
+  say "The cloud app is not built: $WEB_DIR/index.html is missing."
+  say "    cd web && npm install && npm run build"
+  say ""
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   say "docker not found: start the editor some other way, then"
@@ -29,16 +38,24 @@ else
   exit 1
 fi
 
-# Wait for the editor to answer so the first page load does not hit the "not reachable" page.
+# Wait for the editor to answer, so the first page load does not hit the "not reachable" page.
+# This is the upstream the front door actually proxies, which is not the container when
+# PHOTOCRAFT_UPSTREAM points at a `trunk serve` or a patched build.
 i=0
+healthy=0
 while [ "$i" -lt 20 ]; do
-  if curl -fsS -o /dev/null "http://127.0.0.1:8080/healthz" 2>/dev/null; then
-    say "editor: healthy on :8080"
+  if curl -fsS -o /dev/null "$UPSTREAM/healthz" 2>/dev/null; then
+    healthy=1
+    say "editor: healthy at $UPSTREAM"
     break
   fi
   i=$((i + 1))
   sleep 1
 done
+if [ "$healthy" = 0 ]; then
+  say "editor: $UPSTREAM is not answering; starting the front door anyway"
+  say "        /cloud/ works regardless; / shows how to start the editor."
+fi
 
 say ""
 say "Atelier Cloud  →  http://127.0.0.1:$PORT/cloud/"
