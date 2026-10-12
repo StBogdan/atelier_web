@@ -136,7 +136,7 @@
 			<legend>Start from</legend>
 			<label class="option">
 				<input type="radio" value="empty" bind:group={source} />
-				An empty workspace: create the document in the editor, and its first save lands here
+				An empty workspace: create the document locally
 			</label>
 			<label class="option">
 				<input type="radio" value="sample" bind:group={source} disabled={samples.length === 0} />

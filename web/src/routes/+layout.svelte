@@ -47,7 +47,9 @@
 			<span class="muted">
 				{bytes($storage.usage)} used of {bytes($storage.quota)}{$storage.quota ? ` (${(share * 100).toFixed(1)}%)` : ''}
 			</span>
-			<span class="chip {$storage.persisted ? 'ok' : 'warn'}">{$storage.persisted ? 'persistent' : 'best-effort'}</span>
+			{#if $storage.persisted}
+				<span class="chip ok">persistent</span>
+			{/if}
 		</div>
 	{/if}
 
@@ -59,7 +61,8 @@
 	{:else if $storage.supported === true && !$storage.persisted}
 		<p class="banner warn">
 			Storage here is best-effort: this browser may clear everything for this origin at any time, and there is no
-			server copy of your work yet. A workspace you have not downloaded is a workspace you can lose.
+			server copy of your work yet.<br />
+			A workspace you have not downloaded is a workspace you can lose.
 		</p>
 	{/if}
 
