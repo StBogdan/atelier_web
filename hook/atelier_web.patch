@@ -13,10 +13,10 @@ index 6b4c6279..8b5fce47 100644
  serde_json = { workspace = true }
 diff --git a/apps/photocraft-web/src/atelier_cloud.rs b/apps/photocraft-web/src/atelier_cloud.rs
 new file mode 100644
-index 00000000..fcd2af82
+index 00000000..c31a4017
 --- /dev/null
 +++ b/apps/photocraft-web/src/atelier_cloud.rs
-@@ -0,0 +1,426 @@
+@@ -0,0 +1,427 @@
 +//! The Atelier Cloud cloudspace, as the editor sees it: the whole of the patch (design, The PhotoCraft Patch).
 +//!
 +//! Two things, and nothing else:
@@ -112,17 +112,18 @@ index 00000000..fcd2af82
 +    });
 +}
 +
-+/// Whether this dialog belongs to the cloudspace (The Hook Point): `File › Open` in a bound page, and a
-+/// save that keeps a document format. Anything else — the browser's picker, an export — is the
-+/// app's own, unchanged.
++/// Whether this dialog belongs to the cloudspace (The Hook Point): `File › Open` in a bound page that
++/// has a document, and a save that keeps a document format. Anything else — the browser's picker, an
++/// export — is the app's own, unchanged.
 +pub fn claims(request: &FileDialogRequest) -> bool {
-+    BINDING.with(|binding| {
-+        if binding.borrow().is_none() {
-+            return false;
-+        }
++    BINDING.with(|cell| {
++        let binding = cell.borrow();
++        let Some(binding) = binding.as_ref() else { return false };
 +        match request {
-+            // `File › Open` asks for several files; a command reading one file does not.
-+            FileDialogRequest::Open { multiple: true, extensions: None, .. } => true,
++            // `File › Open` asks for several files; a command reading one file does not. A project
++            // that holds no document yet must reach the editor's own picker, which is the way a local
++            // file gets in, and whose save then lands in the project (Selection).
++            FileDialogRequest::Open { multiple: true, extensions: None, .. } => binding.document.is_some(),
 +            FileDialogRequest::Save { suggested } => PROJECT_FORMATS.contains(&extension_of(&file_name(suggested)).as_str()),
 +            _ => false,
 +        }

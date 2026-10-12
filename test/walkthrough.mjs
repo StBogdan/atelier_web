@@ -214,8 +214,118 @@ async function main() {
 	const reopened = againLog.find((line) => line.includes('atelier-cloud: opening'));
 	check('the committed document reopens', Boolean(reopened), reopened ?? againLog.slice(-5).join(' | '));
 
+	step("Empty workspaces: both Open buttons reach the editor's own picker");
+
+	// Measured on the home screen at this test's viewport (1280x860): the card is centred in the
+	// canvas, the File label sits at the top left, and Open… is the second item of its menu.
+	const SPLASH_OPEN = { x: 601, y: 406 };
+	const FILE_MENU = { x: 52, y: 14 };
+	const FILE_MENU_OPEN = { x: 87, y: 97 };
+	const LOCAL_FILE = new URL('../web/static/samples/01-rgb-layered.pcraft', import.meta.url).pathname;
+
+	/** A fresh empty workspace, and the project id its Open link carries. */
+	async function newEmptyWorkspace(name) {
+		await provider.bringToFront();
+		await provider.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+		await provider.click('button:has-text("New workspace")');
+		await provider.fill('input[type=text]', name);
+		await provider.click('label:has-text("An empty workspace")');
+		await provider.click('button:has-text("Create")');
+		await provider.waitForSelector(`article h2:has-text("${name}")`);
+		const href = await provider.getAttribute(`article:has-text("${name}") a:has-text("Open")`, 'href');
+		return new URL(href, ORIGIN).searchParams.get('project');
+	}
+
+	const freshLogs = [];
+
+	/** The editor on that project, plus everything it logged. */
+	async function editorOn(project) {
+		const page = await context.newPage();
+		const lines = [];
+		freshLogs.push(lines);
+		page.on('console', (message) => lines.push(message.text()));
+		page.on('pageerror', (error) => lines.push(`error: ${error.message}`));
+		await page.goto(`${ORIGIN}/?project=${project}&cpu`, { waitUntil: 'domcontentloaded' });
+		await page.waitForFunction(() => document.getElementById('photocraft_loading') === null, null, { timeout: 120_000 });
+		await page.waitForTimeout(1500);
+		return { page, lines };
+	}
+
+	/**
+	 * Click something that should open a dialog, then hand the file to whichever picker appears: rfd
+	 * opens the native one while the page still has transient activation, and falls back to its own
+	 * overlay when it does not.
+	 */
+	async function importFile(page, click) {
+		const native = page.waitForEvent('filechooser', { timeout: 6000 }).catch(() => null);
+		await click();
+		let picked = await native;
+		let overlay = false;
+		if (!picked) {
+			const input = page.locator('#rfd-input');
+			await input.waitFor({ state: 'attached', timeout: 4000 }).catch(() => {});
+			if (await input.count()) {
+				overlay = true;
+				const second = page.waitForEvent('filechooser', { timeout: 4000 });
+				await input.click();
+				picked = await second;
+			}
+		}
+		if (picked) {
+			await picked.setFiles(LOCAL_FILE);
+			if (overlay) await page.click('button.rfd-button:has-text("Ok")');
+			await page.waitForTimeout(2500);
+		}
+		return Boolean(picked);
+	}
+
+	const homeProject = await newEmptyWorkspace('Empty workspace');
+	const homeTree = await opfs(provider);
+	check('the empty workspace holds a catalog entry and no document', find(homeTree, `projects/${homeProject}/meta.json`)?.size > 0 && find(homeTree, `projects/${homeProject}/01-rgb-layered.pcraft`) === undefined);
+
+	const home = await editorOn(homeProject);
+	check('the patch reports a project with nothing to open', home.lines.some((line) => line.includes('no document to open')), home.lines.slice(-2).join(' | '));
+	await home.page.bringToFront();
+	const fromHome = await importFile(home.page, () => home.page.mouse.click(SPLASH_OPEN.x, SPLASH_OPEN.y));
+	check('the Home screen Open… reaches a picker', fromHome);
+
+	await home.page.keyboard.press(`${mod}+s`);
+	await home.page.waitForTimeout(3000);
+	const homeSave = home.lines.find((line) => line.includes('atelier-cloud: saved'));
+	check('a document imported into an empty workspace saves into it', Boolean(homeSave), homeSave ?? home.lines.slice(-4).join(' | '));
+	const filled = await opfs(home.page);
+	check('the imported document is the project document now', find(filled, `projects/${homeProject}/01-rgb-layered.pcraft`)?.size === 179714, `${find(filled, `projects/${homeProject}/01-rgb-layered.pcraft`)?.size} B`);
+
+	// With a document in the project the request is claimed again, so nothing opens a picker.
+	let chopped = false;
+	home.page.on('filechooser', () => {
+		chopped = true;
+	});
+	await home.page.mouse.click(FILE_MENU.x, FILE_MENU.y);
+	await home.page.waitForTimeout(400);
+	await home.page.mouse.click(FILE_MENU_OPEN.x, FILE_MENU_OPEN.y);
+	await home.page.waitForTimeout(2500);
+	const overlayAgain = await home.page.locator('#rfd-input').count();
+	check('File ‣ Open reopens the project document instead of the picker', !chopped && overlayAgain === 0);
+
+	const menuProject = await newEmptyWorkspace('Empty workspace (menu)');
+	const menu = await editorOn(menuProject);
+	await menu.page.bringToFront();
+	const fromMenu = await importFile(menu.page, async () => {
+		await menu.page.mouse.click(FILE_MENU.x, FILE_MENU.y);
+		await menu.page.waitForTimeout(400);
+		await menu.page.mouse.click(FILE_MENU_OPEN.x, FILE_MENU_OPEN.y);
+	});
+	check('the File menu Open… reaches a picker', fromMenu);
+	await menu.page.keyboard.press(`${mod}+s`);
+	await menu.page.waitForTimeout(3000);
+	const menuSave = menu.lines.find((line) => line.includes('atelier-cloud: saved'));
+	check('its save lands in its workspace too', Boolean(menuSave), menuSave ?? menu.lines.slice(-4).join(' | '));
+	const menuTree = await opfs(menu.page);
+	check('that workspace holds the imported document', find(menuTree, `projects/${menuProject}/01-rgb-layered.pcraft`)?.size === 179714);
+
 	step('Errors');
-	const errors = [...console_, ...editorLog, ...againLog].filter((line) => /error|panic/i.test(line) && !/Unhandled egui viewport/.test(line));
+	const errors = [...console_, ...editorLog, ...againLog, ...freshLogs.flat()].filter((line) => /error|panic/i.test(line) && !/Unhandled egui viewport/.test(line));
 	check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 
 	log(`\n${failures === 0 ? 'all checks passed' : `${failures} check(s) failed`}`);

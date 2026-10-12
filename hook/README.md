@@ -53,8 +53,9 @@ whose path is `atelier-cloud://<id>/<name>` writes back into that project.
 
 Three details worth knowing before changing it:
 
-- **Selection stays the provider's job.** `File ▸ Open` in a bound page re-opens the project's
-  document; unbound, it is the browser's picker, unchanged. Drag-and-drop is unchanged in both.
+- **Selection stays the provider's job.** `File ▸ Open` re-opens the bound project's document when the
+  page is bound and that document exists. Everywhere else it is the browser's picker, which is how a
+  local file gets in and how its save then lands in the project. Drag-and-drop is unchanged.
 - **Only document formats stay in the project.** A save to `.pcraft`, `.psd`, `.psb` or `.ora` goes
   to OPFS; Export As (PNG, JPEG, TIFF, TGA, WebP) still downloads, as it did.
 - **The write is asynchronous.** OPFS cannot be written synchronously from the main thread and the
