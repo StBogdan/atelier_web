@@ -310,6 +310,31 @@ async function main() {
 
 	const menuProject = await newEmptyWorkspace('Empty workspace (menu)');
 	const menu = await editorOn(menuProject);
+
+	// The button is on the Home screen, and the Home screen is gone once a document is open, so this
+	// is the moment to click it. Two buttons sit centred as a pair, the way New document… and Open… do
+	// above them: 190 wide, 12 apart, so the left one's centre is the card's minus 101 here.
+	step("Back to Atelier Cloud, in the editor's own UI");
+	const BACK = { x: 396, y: 515 };
+	await menu.page.bringToFront();
+	await menu.page.mouse.click(BACK.x, BACK.y);
+	await menu.page.waitForSelector('h2:has-text("Changes")', { timeout: 20_000 });
+	check('clicking it lands on the workspace page', menu.page.url().includes(`/cloud/workspace/${menuProject}`), menu.page.url());
+
+	// Nothing is injected on the way through: the button is the editor's own, and the page the front
+	// door serves is the byte-for-byte one the editor server has.
+	const upstream = process.env.PHOTOCRAFT_UPSTREAM || 'http://127.0.0.1:8765';
+	const [proxied, direct] = await Promise.all([
+		fetch(`${ORIGIN}/`).then((response) => response.text()),
+		fetch(upstream).then((response) => response.text()).catch(() => null)
+	]);
+	if (direct === null) log(`    (the editor's own port is not up: ${upstream})`);
+	else check('the editor page comes through the front door unchanged', proxied === direct);
+
+	step('Empty workspaces: the File menu Open… reaches the picker too');
+	await menu.page.goto(`${ORIGIN}/?project=${menuProject}&cpu`, { waitUntil: 'domcontentloaded' });
+	await menu.page.waitForFunction(() => document.getElementById('photocraft_loading') === null, null, { timeout: 120_000 });
+	await menu.page.waitForTimeout(1500);
 	await menu.page.bringToFront();
 	const fromMenu = await importFile(menu.page, async () => {
 		await menu.page.mouse.click(FILE_MENU.x, FILE_MENU.y);

@@ -1,6 +1,6 @@
 # Atelier Cloud
 
-The second application of the surround design ([`../atelier_web_design.md`](../docs/atelier_web_design.md)):
+The second application of the surround design ([`../docs/atelier_web_design.md`](../docs/atelier_web_design.md)):
 the **cloudspace provider** that owns the Origin Private File System (OPFS), and later the sync, accounts
 and sharing around the PhotoCraft editor. The editor itself is unmodified, bar a small patch we re-apply
 (design [The PhotoCraft Patch](../docs/atelier_web_design.md#the-photocraft-patch)).
@@ -15,17 +15,17 @@ cloud app talks to OPFS and to this origin's own files.
 atelier_web/
 ├── README.md          this file
 ├── run.sh             start both apps together (see below)
-├── server/            the front door: Rust + axum (design 2.2, 2.3)
+├── server/            the front door: Rust + axum (design, The One-Origin Development Setup)
 │   ├── Cargo.toml
 │   └── src/main.rs
-├── web/               Atelier Cloud: SvelteKit, static, SSR off (design 6, 16)
+├── web/               Atelier Cloud: SvelteKit, static, SSR off (design, The Landing Page and Launcher)
 │   ├── src/lib/       the OPFS contract, the .pcraft reader, the pages' shared state
 │   ├── src/routes/    /, /workspace/<id>, /settings
 │   ├── static/samples three converted documents to seed a workspace with
 │   └── build/         what the front door serves (gitignored)
-├── contract/          the versioned OPFS contract (design 3)
+├── contract/          the versioned OPFS contract (design, OPFS Layout & Handoff)
 │   └── protocol.md
-├── hook/              the only thing applied to photocraft (design 11, 12)
+├── hook/              the only thing applied to photocraft (design, The PhotoCraft Patch)
 │   ├── atelier_web.patch
 │   ├── apply.sh
 │   └── README.md
@@ -56,7 +56,7 @@ Then open **<http://127.0.0.1:3000/cloud/>**.
 | <http://127.0.0.1:3000/cloud/> | Atelier Cloud: the workspace grid and storage health |
 | <http://127.0.0.1:3000/cloud/workspace/&lt;id&gt; | one workspace: the Changes panel, commit, download, discard |
 | <http://127.0.0.1:3000/cloud/settings> | storage, persistence, and what the cloudspace holds |
-| <http://127.0.0.1:3000/> | PhotoCraft, the editor |
+| <http://127.0.0.1:3000/> | PhotoCraft, the editor; launched into a workspace it shows *Back to Atelier Cloud* |
 | <http://127.0.0.1:3000/api/health> | `{"service":"atelier-web","status":"ok","hello":"world"}` |
 
 `run.sh` starts the editor container if it is stopped, waits for the editor to answer, then runs the front

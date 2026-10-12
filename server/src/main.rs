@@ -1,4 +1,5 @@
-//! Atelier Cloud front door — the `serve/` box of the design (`atelier_web_design.md` 2.2, 2.3).
+//! Atelier Cloud front door — the one-origin server of the design
+//! ([The One-Origin Development Setup](../../../docs/atelier_web_design.md)).
 //!
 //! OPFS is keyed by **origin**, so the editor and the cloud app only share one cloudspace if one
 //! process serves both. This is that process:
@@ -9,7 +10,8 @@
 //! ```
 //!
 //! Opening the editor's own port directly gives a *second* origin and a *second, empty* OPFS, which
-//! fails silently. Always use this one (2.3, "Invariant: always open the front port").
+//! fails silently. Always use this one (design, [The One-Origin Development Setup](../../../docs/atelier_web_design.md),
+//! "Invariant: always open the front port").
 
 use std::{env, net::SocketAddr, path::PathBuf};
 

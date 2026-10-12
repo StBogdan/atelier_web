@@ -13,10 +13,10 @@ index 6b4c6279..8b5fce47 100644
  serde_json = { workspace = true }
 diff --git a/apps/photocraft-web/src/atelier_cloud.rs b/apps/photocraft-web/src/atelier_cloud.rs
 new file mode 100644
-index 00000000..c31a4017
+index 00000000..f42cd346
 --- /dev/null
 +++ b/apps/photocraft-web/src/atelier_cloud.rs
-@@ -0,0 +1,427 @@
+@@ -0,0 +1,434 @@
 +//! The Atelier Cloud cloudspace, as the editor sees it: the whole of the patch (design, The PhotoCraft Patch).
 +//!
 +//! Two things, and nothing else:
@@ -150,6 +150,13 @@ index 00000000..c31a4017
 +            reply.send(Some(FileDialogAnswer::SaveTo(path)));
 +        }
 +    }
++}
++
++/// The button label and the page it goes to, for the Home screen the shell wrapped the editor with
++/// (The Hook Point). `None` unless this page was launched into a project, which leaves the screen
++/// exactly as upstream draws it.
++pub fn home_link() -> Option<(String, String)> {
++    with_binding(|binding| ("Back to Atelier Cloud".to_owned(), format!("/cloud/workspace/{}", binding.project)))
 +}
 +
 +/// The project and document an `atelier-cloud://` path names (Saving), if it names one at all.
@@ -459,10 +466,10 @@ index 5ba75f52..836bc81c 100644
  mod indexed_presets;
  
 diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
-index b6e3c82d..b3478130 100644
+index b6e3c82d..240dcc52 100644
 --- a/apps/photocraft-web/src/web.rs
 +++ b/apps/photocraft-web/src/web.rs
-@@ -353,41 +353,52 @@ fn services(inbox: Inbox) -> Services {
+@@ -353,46 +353,59 @@ fn services(inbox: Inbox) -> Services {
              opts.tga_bits = settings.tga_bits;
              photocraft_io::export(doc, path, &opts).map(|r| (r.bytes, r.warnings)).map_err(|e| e.to_string())
          })),
@@ -546,3 +553,51 @@ index b6e3c82d..b3478130 100644
          encode_png: Some(Box::new(|w, h, rgba| {
              let img = Image::from_u8(w, h, ChannelLayout::Rgba, rgba.to_vec()).map_err(|e| e.to_string())?;
              photocraft_codecs::encode(&img, photocraft_codecs::Format::Png, &EncodeOptions::default()).map_err(|e| e.to_string())
+         })),
+         inbox: Some(inbox),
++        // The Home screen's way back to the workspace, in the editor's own UI (design, The Hook Point).
++        home_link: crate::atelier_cloud::home_link(),
+         // Preferences live in the browser's localStorage.
+         load_prefs: Some(Box::new(|| local_storage()?.get_item(PREFS_KEY).ok().flatten())),
+         save_prefs: Some(Box::new(|text: &str| local_storage().ok_or("no localStorage")?.set_item(PREFS_KEY, text).map_err(|e| format!("{e:?}")))),
+diff --git a/crates/ui-egui/src/canvas.rs b/crates/ui-egui/src/canvas.rs
+index ac5eacbe..8d46841e 100644
+--- a/crates/ui-egui/src/canvas.rs
++++ b/crates/ui-egui/src/canvas.rs
+@@ -2300,7 +2300,20 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+                 home_recent(app, ui, &recent);
+             }
+             ui.add_space(26.0);
+-            crate::links::discord_button(app, ui, 190.0);
++            // A shell that launched the editor gets a button of its own beside "Join us on Discord":
++            // two centred as a pair, and the lone one centred exactly as it was.
++            let buttons = if app.services.home_link.is_some() { 2.0 } else { 1.0 };
++            ui.horizontal(|ui| {
++                ui.add_space(((card.width() - buttons * 190.0 - (buttons - 1.0) * 12.0) / 2.0).max(0.0));
++                ui.spacing_mut().item_spacing.x = 12.0;
++                if let Some((label, url)) = app.services.home_link.clone() {
++                    if crate::widgets::secondary_button(ui, &label, 190.0).clicked() {
++                        // In place, not a new tab: the launcher is where this page came from.
++                        ui.ctx().open_url(egui::OpenUrl::same_tab(url));
++                    }
++                }
++                crate::links::discord_button(app, ui, 190.0);
++            });
+             ui.add_space(10.0);
+             crate::links::link_row(app, ui);
+         });
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index 49a0332b..37a62861 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -377,6 +377,10 @@ pub struct Services {
+     pub encode_png: Option<EncodePngFn>,
+     /// Open a URL in the system browser (native). Falls back to `ctx.open_url` (web) when unset.
+     pub open_url: Option<OpenUrlFn>,
++    /// (label, url) for a button on the Home screen, next to the community links: the shell that
++    /// launched this editor supplies its own way back. `None` when nothing wrapped the editor, which
++    /// leaves the screen exactly as it was.
++    pub home_link: Option<(String, String)>,
+     /// Preferences ▸ General ▸ Beep When Done: the platform's default beep, played when a
+     /// background job finishes successfully. `None` in the web build (and in tests).
+     pub beep: Option<fn()>,
