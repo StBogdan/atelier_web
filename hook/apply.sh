@@ -1,5 +1,5 @@
 #!/bin/sh
-# Apply, check or revert the Atelier Cloud patch against a PhotoCraft checkout (design 11, 12).
+# Apply, check or revert the Atelier Cloud patch against a PhotoCraft checkout (design, The PhotoCraft Patch, Keeping the Patch Re-appliable).
 #
 #   ./apply.sh check [ref]    does the patch still apply to `ref`? (3-way, nothing committed)
 #   ./apply.sh apply [ref]    check `ref` out and apply the patch, for a build

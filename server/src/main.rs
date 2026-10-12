@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/health", get(health))
         // `/cloud` without the trailing slash would otherwise 404: point it at the directory.
         .route("/cloud", get(|| async { axum::response::Redirect::permanent("/cloud/") }))
-        // Atelier Cloud is a static SPA (design 6, 14: SSR is off). One `index.html` serves every
+        // Atelier Cloud is a static SPA (design, The Landing Page and Launcher, Milestones: SSR is off). One `index.html` serves every
         // route, so a path that is not a file falls back to it, with its own `200` status — that
         // is `fallback`, not `not_found_service`, which would keep the 404.
         .nest_service("/cloud/", ServeDir::new(&web_dir).append_index_html_on_directories(true).fallback(ServeFile::new(&shell)))

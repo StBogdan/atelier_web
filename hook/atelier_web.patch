@@ -13,26 +13,26 @@ index 6b4c6279..8b5fce47 100644
  serde_json = { workspace = true }
 diff --git a/apps/photocraft-web/src/atelier_cloud.rs b/apps/photocraft-web/src/atelier_cloud.rs
 new file mode 100644
-index 00000000..11c7abf4
+index 00000000..fcd2af82
 --- /dev/null
 +++ b/apps/photocraft-web/src/atelier_cloud.rs
 @@ -0,0 +1,426 @@
-+//! The Atelier Cloud cloudspace, as the editor sees it: the whole of the patch (design 11).
++//! The Atelier Cloud cloudspace, as the editor sees it: the whole of the patch (design, The PhotoCraft Patch).
 +//!
 +//! Two things, and nothing else:
 +//!
 +//! - `?project=<id>`: read the single `*.pcraft` in `atelier-cloud/projects/<id>/` and hand its
-+//!   bytes to the `Inbox`, so the editor opens that document (3.3).
++//!   bytes to the `Inbox`, so the editor opens that document (Opening a Project).
 +//! - a save whose path is `atelier-cloud://<id>/<name>`: write the bytes back into that project
-+//!   under a Web Lock (3.4).
++//!   under a Web Lock (Saving).
 +//!
 +//! It speaks only the OPFS contract — `atelier-cloud/`, `provider.json`, `projects/`, `tmp/`, the
-+//! lock and channel names of 3.5, and `web-sys`, never provider internals, so a provider release
-+//! cannot force a patch release (12). Selection stays the provider's job: the editor is told about
-+//! exactly one document and never browses OPFS to choose one (3.7).
++//! lock and channel names of Coordination Primitives, and `web-sys`, never provider internals, so a provider release
++//! cannot force a patch release (Keeping the Patch Re-appliable). Selection stays the provider's job: the editor is told about
++//! exactly one document and never browses OPFS to choose one (Selection).
 +//!
-+//! Section numbers in parentheses are sections of `atelier_web_design.md`, in the provider's
-+//! repository: `hook/README.md` there has the whole story.
++//! The sections named in parentheses are in `atelier_web_design.md`, in the provider's repository:
++//! `hook/README.md` there has the whole story.
 +
 +use std::cell::RefCell;
 +use std::future::Future;
@@ -49,7 +49,7 @@ index 00000000..11c7abf4
 +/// The inbox `services()` drains every frame (`crate::web::Inbox`).
 +pub type Inbox = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
 +
-+// Contract names (design 3.1, 3.4, 3.5). A versioned interface: do not rename.
++// Contract names (design: Layout, Saving, Coordination Primitives). A versioned interface: do not rename.
 +const SPACE: &str = "atelier-cloud";
 +const PROVIDER: &str = "provider.json";
 +const PROJECTS: &str = "projects";
@@ -60,10 +60,10 @@ index 00000000..11c7abf4
 +
 +/// The `provider.json` protocol this patch speaks.
 +const PROTOCOL: f64 = 1.0;
-+/// The extension a project's document is stored under (3.2).
++/// The extension a project's document is stored under (The Single-File Document).
 +const EXTENSION: &str = "pcraft";
 +/// Formats a save may keep inside the bound project. A save to anything else is an export and
-+/// downloads, exactly as before (3.4).
++/// downloads, exactly as before (Saving).
 +const PROJECT_FORMATS: &[&str] = &["pcraft", "psd", "psb", "ora"];
 +
 +/// The project this page was launched into (`?project=`), and its document once it is known.
@@ -73,7 +73,7 @@ index 00000000..11c7abf4
 +}
 +
 +thread_local! {
-+    /// The session-scoped binding (3.7): set once, from `services()`.
++    /// The session-scoped binding (Selection): set once, from `services()`.
 +    static BINDING: RefCell<Option<Binding>> = const { RefCell::new(None) };
 +}
 +
@@ -89,7 +89,7 @@ index 00000000..11c7abf4
 +    with_binding(|binding| binding.document = document);
 +}
 +
-+/// Bind this page to `?project=<id>` and open its document (design 3.3). Called once, from
++/// Bind this page to `?project=<id>` and open its document (design, Opening a Project). Called once, from
 +/// `services()`; a page without the query parameter behaves exactly as before.
 +pub fn start(inbox: Inbox) {
 +    let Some(project) = query_project() else { return };
@@ -106,13 +106,13 @@ index 00000000..11c7abf4
 +                inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
 +                wake();
 +            }
-+            // A project without a document yet is not an error: Save creates one (3.7).
++            // A project without a document yet is not an error: Save creates one (Selection).
 +            Err(e) => log::info!("atelier-cloud: no document to open in project {project}: {e}"),
 +        }
 +    });
 +}
 +
-+/// Whether this dialog belongs to the cloudspace (11.1): `File › Open` in a bound page, and a
++/// Whether this dialog belongs to the cloudspace (The Hook Point): `File › Open` in a bound page, and a
 +/// save that keeps a document format. Anything else — the browser's picker, an export — is the
 +/// app's own, unchanged.
 +pub fn claims(request: &FileDialogRequest) -> bool {
@@ -130,7 +130,7 @@ index 00000000..11c7abf4
 +}
 +
 +/// Answer a dialog [`claims`] took: the bound project's document instead of the browser's files,
-+/// and the project's virtual path instead of a download name (3.4).
++/// and the project's virtual path instead of a download name (Saving).
 +pub fn answer(request: FileDialogRequest, reply: FileDialogReply) {
 +    match request {
 +        FileDialogRequest::Open { .. } => spawn_local(async move {
@@ -151,17 +151,17 @@ index 00000000..11c7abf4
 +    }
 +}
 +
-+/// The project and document an `atelier-cloud://` path names (3.4), if it names one at all.
++/// The project and document an `atelier-cloud://` path names (Saving), if it names one at all.
 +pub fn target(path: &str) -> Option<(String, String)> {
 +    let (project, document) = path.strip_prefix(SCHEME)?.split_once('/')?;
 +    (!project.is_empty() && !document.is_empty()).then(|| (project.to_owned(), document.to_owned()))
 +}
 +
-+/// Write a save into the project its path names (3.4).
++/// Write a save into the project its path names (Saving).
 +///
 +/// The write is asynchronous: OPFS cannot be written synchronously from the main thread, and the
 +/// editor's write service is synchronous. Failure is logged; what actually happened to the file is
-+/// the provider's to derive from the filesystem (3.6).
++/// the provider's to derive from the filesystem (File Ownership).
 +pub fn write(project: &str, document: &str, bytes: &[u8]) -> Result<(), String> {
 +    remember_document(Some(document.to_owned()));
 +    let (project, document, bytes) = (project.to_owned(), document.to_owned(), bytes.to_vec());
@@ -178,7 +178,7 @@ index 00000000..11c7abf4
 +    Ok(())
 +}
 +
-+/// The write sequence of 3.4: one writer per project, the previous bytes kept beside the
++/// The write sequence of Saving: one writer per project, the previous bytes kept beside the
 +/// document, the new bytes staged in `tmp/`, then swapped in.
 +async fn save_document(project: &str, document: String, bytes: Vec<u8>) -> Result<(), String> {
 +    let project_dir = project_dir(project).await?;
@@ -198,7 +198,7 @@ index 00000000..11c7abf4
 +    .await
 +}
 +
-+/// The bound project's document, read under a shared lock so a concurrent swap (3.4) cannot be
++/// The bound project's document, read under a shared lock so a concurrent swap (Saving) cannot be
 +/// caught half-written.
 +async fn bound_document() -> Result<(String, Vec<u8>), String> {
 +    read_document(&bound_project().ok_or("no project is bound")?).await
@@ -215,7 +215,7 @@ index 00000000..11c7abf4
 +    Ok((name, bytes))
 +}
 +
-+/// The virtual path a save goes to, given what the dialog suggested (3.4). A document already
++/// The virtual path a save goes to, given what the dialog suggested (Saving). A document already
 +/// open keeps the project's own name, so a save cannot rename the project's document.
 +fn save_target(suggested: &str) -> Option<String> {
 +    with_binding(|binding| {
@@ -224,7 +224,7 @@ index 00000000..11c7abf4
 +    })
 +}
 +
-+/// `atelier-cloud/provider.json`, and whether it declares the protocol this patch speaks (3.1).
++/// `atelier-cloud/provider.json`, and whether it declares the protocol this patch speaks (Layout).
 +async fn check_provider() -> Result<(), String> {
 +    let bytes = read_file(&space().await?, PROVIDER).await.map_err(|e| format!("{SPACE}/{PROVIDER} is unreadable: {e}"))?;
 +    let text = String::from_utf8(bytes).map_err(|_| format!("{SPACE}/{PROVIDER} is not UTF-8"))?;
@@ -237,7 +237,7 @@ index 00000000..11c7abf4
 +    }
 +}
 +
-+/// Tell the provider a document changed (3.4 step 6, 3.5). A latency optimization only: the
++/// Tell the provider a document changed (Saving, step 6, and Coordination Primitives). A latency optimization only: the
 +/// provider re-scans OPFS, which is what keeps it correct when this message is lost.
 +fn ping(project: &str, document: &str, bytes: usize) {
 +    let message = js_sys::Object::new();
@@ -278,7 +278,7 @@ index 00000000..11c7abf4
 +    }
 +}
 +
-+/// The `?project=<id>` of 3.3. Project ids are the provider's, `[A-Za-z0-9_-]` only, so they
++/// The `?project=<id>` of Opening a Project. Project ids are the provider's, `[A-Za-z0-9_-]` only, so they
 +/// reach the page unescaped.
 +fn query_project() -> Option<String> {
 +    let search = web_sys::window()?.location().search().ok()?;
@@ -358,7 +358,7 @@ index 00000000..11c7abf4
 +        .map_err(|_| "the OPFS root is not a directory".to_owned())
 +}
 +
-+/// `atelier-cloud/` (3.1). Read-only: the provider owns it, and the patch never creates it.
++/// `atelier-cloud/` (Layout). Read-only: the provider owns it, and the patch never creates it.
 +async fn space() -> Result<FileSystemDirectoryHandle, String> {
 +    directory(&root().await?, SPACE, false).await.map_err(|_| format!("{SPACE}/ is missing: open the editor through Atelier Cloud"))
 +}
@@ -369,7 +369,7 @@ index 00000000..11c7abf4
 +    directory(&projects, project, false).await.map_err(|_| format!("there is no {SPACE}/{PROJECTS}/{project}/"))
 +}
 +
-+/// `atelier-cloud/tmp/`: write staging (3.1). The provider creates it; the patch creates it too,
++/// `atelier-cloud/tmp/`: write staging (Layout). The provider creates it; the patch creates it too,
 +/// so a save cannot fail because the space was made by an older provider.
 +async fn tmp_dir(space: &FileSystemDirectoryHandle) -> Result<FileSystemDirectoryHandle, String> {
 +    directory(space, TMP, true).await
@@ -385,7 +385,7 @@ index 00000000..11c7abf4
 +        .map_err(|_| format!("`{name}` is not a directory"))
 +}
 +
-+/// The project's single `*.pcraft` (3.7): the provider's selection, not ours.
++/// The project's single `*.pcraft` (Selection): the provider's selection, not ours.
 +async fn document_name(dir: &FileSystemDirectoryHandle) -> Result<Option<String>, String> {
 +    let mut names: Vec<String> = names(dir).await?.into_iter().filter(|name| extension_of(name) == EXTENSION).collect();
 +    names.sort();
@@ -439,7 +439,7 @@ index 00000000..11c7abf4
 +    JsFuture::from(dir.remove_entry(name)).await.ok();
 +}
 +
-+/// A name for the staging file (`tmp/<uuid>`, 3.4).
++/// A name for the staging file (`tmp/<uuid>`, Saving).
 +fn unique_name() -> String {
 +    format!("{:x}{:08x}", js_sys::Date::now() as u64, (js_sys::Math::random() * f64::from(u32::MAX)) as u32)
 +}
@@ -458,7 +458,7 @@ index 5ba75f52..836bc81c 100644
  mod indexed_presets;
  
 diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
-index b6e3c82d..bbc2f645 100644
+index b6e3c82d..b3478130 100644
 --- a/apps/photocraft-web/src/web.rs
 +++ b/apps/photocraft-web/src/web.rs
 @@ -353,41 +353,52 @@ fn services(inbox: Inbox) -> Services {
@@ -482,7 +482,7 @@ index b6e3c82d..bbc2f645 100644
 -                                files.push((file.file_name(), file.read().await));
 +        file_dialog: Some(Box::new({
 +            // A page launched as `/?project=<id>` opens that project's document, and a bound
-+            // session's saves go back into it (design 3.3, 3.4, 11.2).
++            // session's saves go back into it (design: Opening a Project, Saving, Patch Shape).
 +            crate::atelier_cloud::start(inbox.clone());
 +            move |request, _parent, reply| match request {
 +                request if crate::atelier_cloud::claims(&request) => crate::atelier_cloud::answer(request, reply),
@@ -537,7 +537,7 @@ index b6e3c82d..bbc2f645 100644
          })),
 -        write: Some(Box::new(|path: &str, bytes: &[u8]| download(path, bytes))),
 +        // A save to an `atelier-cloud://` path writes into the project it names; anything else is
-+        // a download, exactly as before (design 3.4).
++        // a download, exactly as before (design, Saving).
 +        write: Some(Box::new(|path: &str, bytes: &[u8]| match crate::atelier_cloud::target(path) {
 +            Some((project, document)) => crate::atelier_cloud::write(&project, &document, bytes),
 +            None => download(path, bytes),

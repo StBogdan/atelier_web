@@ -3,7 +3,7 @@
 The second application of the surround design ([`../atelier_web_design.md`](../docs/atelier_web_design.md)):
 the **cloudspace provider** that owns the Origin Private File System (OPFS), and later the sync, accounts
 and sharing around the PhotoCraft editor. The editor itself is unmodified, bar a small patch we re-apply
-(design [11](../docs/atelier_web_design.md#11-the-photocraft-patch)).
+(design [The PhotoCraft Patch](../docs/atelier_web_design.md#the-photocraft-patch)).
 
 **Status: M1 complete.** A workspace can be created, opened in the editor, edited, saved back into OPFS,
 and seen in the Changes panel as an exact object diff. There is no server and no account behind it: the
@@ -34,11 +34,19 @@ atelier_web/
 
 ## Running the thing
 
-Build the cloud app once, then start both apps:
+From the repository above this one, `./run.sh` builds everything and serves both apps:
+
+```sh
+cd .. && ./run.sh                 # then open http://127.0.0.1:3000/cloud/
+```
+
+Inside this directory, the two steps are separate. Build the cloud app once, then start it with whatever
+editor you have:
 
 ```sh
 cd web && npm install && npm run build && cd ..
-./run.sh
+./run.sh                                  # with the container's editor
+PHOTOCRAFT_UPSTREAM=http://127.0.0.1:8765 ./run.sh    # with a patched build you serve yourself
 ```
 
 Then open **<http://127.0.0.1:3000/cloud/>**.
@@ -67,7 +75,7 @@ pointed at it, and that is how the flow in "Opening a workspace" is reached.
 
 Everything must be reached through **:3000**. OPFS is keyed by *origin* (`scheme://host:port`), so
 <http://127.0.0.1:8080/> is a different origin with a different, empty OPFS, so the two apps cannot see
-each other's data, and nothing reports an error (design [1](../docs/atelier_web_design.md#1-origin-private-file-system-opfs), [2.3](../docs/atelier_web_design.md#23-development-setup-one-origin-or-it-silently-doesnt-work)). The front door exists precisely to
+each other's data, and nothing reports an error (design [OPFS](../docs/atelier_web_design.md#opfs), [The One-Origin Development Setup](../docs/atelier_web_design.md#the-one-origin-development-setup)). The front door exists precisely to
 prevent this.
 
 ### If you have no container yet
@@ -86,7 +94,7 @@ it about one. `File ▸ Open` there is the local file picker, as it always was.
 ### Running the editor from the patched source
 
 To exercise the cloud flow end to end, build the patched editor and point the front door at it (design
-[11](../docs/atelier_web_design.md#11-the-photocraft-patch), [12](../docs/atelier_web_design.md#12-keeping-the-patch-re-appliable)):
+[The PhotoCraft Patch](../docs/atelier_web_design.md#the-photocraft-patch), [Keeping the Patch Re-appliable](../docs/atelier_web_design.md#keeping-the-patch-re-appliable)):
 
 ```sh
 cd ../photocraft
@@ -143,7 +151,7 @@ without decompressing anything or uploading a byte.
 "Open" navigates to `/?project=<id>`. The patched editor reads `provider.json`, finds the project's single
 `*.pcraft`, takes the shared Web Lock, and hands the bytes to its own import path. File ▸ Save in that
 session writes back to `atelier-cloud://<id>/<name>.pcraft`, which the patch turns into the write sequence
-of design [3.4](../docs/atelier_web_design.md#34-saving).
+of design [Saving](../docs/atelier_web_design.md#saving).
 
 A first workspace needs a document, and a browser cannot convert a PSD, so three `.pcraft` documents are
 committed under `web/static/samples/`. They are generated from `file_samples/` with the editor's own
@@ -186,9 +194,9 @@ broad format matrix; these three exist so there is something to open.
 ## What is not here yet
 
 - A server. Nothing is uploaded, there are no accounts and no sync: "Commit revision" records the
-  revision locally and empties `outbox/`. Design [14](../docs/atelier_web_design.md#14-milestones) says what M2 adds.
-- Zip export and import (design [8](../docs/atelier_web_design.md#8-getting-files-in-and-out-zip-export-and-import)). "Download document" gives you the raw `.pcraft` instead.
-- The tool runtime (design [7](../docs/atelier_web_design.md#7-tools-served-by-the-server-executed-in-the-browser)), sharing, revision history, and topology A's embedded editor.
+  revision locally and empties `outbox/`. Design [Milestones](../docs/atelier_web_design.md#milestones) says what M2 adds.
+- Zip export and import (design [Zip Export and Import](../docs/atelier_web_design.md#zip-export-and-import)). "Download document" gives you the raw `.pcraft` instead.
+- The tool runtime (design [Tools](../docs/atelier_web_design.md#tools)), sharing, revision history, and topology A's embedded editor.
 
 ## Repositories
 

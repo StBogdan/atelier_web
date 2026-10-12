@@ -1,6 +1,6 @@
 /**
  * A `.pcraft` is a ZIP in STORE mode whose entry names are the BLAKE3 hashes of their contents
- * (design 5.1). Two things follow, and both matter here:
+ * (design, Delta Sync). Two things follow, and both matter here:
  *
  * - The object set of a revision is the entry-name set, read from the central directory. No
  *   decompression, no hashing: the numbers in the Changes panel are exact and nearly free (6.5).
@@ -161,7 +161,7 @@ export interface Difference {
 
 /**
  * The difference between the committed revision's object set and the current one, in the terms
- * the Changes panel shows (design 5.1, 6.5).
+ * the Changes panel shows (design, Delta Sync, Where Cloud State Is Surfaced).
  */
 export function difference(previous: Record<string, number>, next: Map<string, number>, entries: ZipEntry[]): Difference {
 	const byName = new Map(entries.map((entry) => [entry.name, entry]));

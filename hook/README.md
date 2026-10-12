@@ -1,7 +1,7 @@
 # The PhotoCraft patch
 
-One new file and three small hunks, applied to a PhotoCraft checkout. Design [11](../../docs/atelier_web_design.md#11-the-photocraft-patch) (what it does) and
-[12](../../docs/atelier_web_design.md#12-keeping-the-patch-re-appliable) (why it stays this small).
+One new file and three small hunks, applied to a PhotoCraft checkout. Design [The PhotoCraft Patch](../../docs/atelier_web_design.md#the-photocraft-patch) (what it does) and
+[Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable) (why it stays this small).
 
 ```
 atelier_web.patch          the patch, a `git diff` against the recorded upstream ref
@@ -17,10 +17,10 @@ apply.sh                   apply / check / revert / build it against any ref
 | `apps/photocraft-web/src/web.rs` | `services()`: `file_dialog` and `write` route through the module |
 | `apps/photocraft-web/Cargo.toml` | the `web-sys` features the OPFS bindings need |
 
-The design's [11.2](../../docs/atelier_web_design.md#112-patch-shape-one-new-file--three-small-hunks) counts "one new file + three small hunks" and this is one new file + three hunks;
+The design's [Patch Shape](../../docs/atelier_web_design.md#patch-shape) counts "one new file + three small hunks" and this is one new file + three hunks;
 because the two `web.rs` edits are 34 lines apart, `git diff` folds them into a single hunk, so the
 `Cargo.toml` feature list is the third. It has to be there: `FileSystemDirectoryHandle`,
-`FileSystemFileHandle` and `FileSystemWritableFileStream` are the bindings design [12](../../docs/atelier_web_design.md#12-keeping-the-patch-re-appliable) names, and none
+`FileSystemFileHandle` and `FileSystemWritableFileStream` are the bindings design [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable) names, and none
 of them is switched on for the web runner today. Features are not dependencies, so nothing is added to
 the wasm dependency graph.
 
@@ -59,13 +59,17 @@ Three details worth knowing before changing it:
   to OPFS; Export As (PNG, JPEG, TIFF, TGA, WebP) still downloads, as it did.
 - **The write is asynchronous.** OPFS cannot be written synchronously from the main thread and the
   editor's `Services::write` is synchronous, so the module schedules the write and reports success.
-  What actually happened to the file is the provider's to derive from the filesystem (design [3.6](../../docs/atelier_web_design.md#36-ownership-who-writes-which-file)).
+  What actually happened to the file is the provider's to derive from the filesystem (design [File Ownership](../../docs/atelier_web_design.md#file-ownership)).
 
-The save follows the [3.4](../../docs/atelier_web_design.md#34-saving) sequence: exclusive Web Lock, `.prev` beside the document, `tmp/<uuid>`
+The save follows the [Saving](../../docs/atelier_web_design.md#saving) sequence: exclusive Web Lock, `.prev` beside the document, `tmp/<uuid>`
 staging, then the document. `FileSystemWritableFileStream::close()` swaps the finished file in, so
 the document is never seen half-written.
 
 ## Using it
+
+To run the patched editor, you rarely need this script: `../../run.sh` at the repository root does the
+worktree, the build and the server for you, and starts the front door pointed at it. This script is for
+doing it by hand, or against a different ref.
 
 ```sh
 ./apply.sh check            # the patch still applies to the recorded ref? (3-way, reverts after)

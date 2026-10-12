@@ -5,7 +5,7 @@
  * renders the catalog, derives each project's state from the document the editor wrote, and
  * commits a revision. The editor's side is `../../hook/atelier_web.patch`.
  *
- * Everything the UI shows is derived here from OPFS (design 3.6): nothing is remembered in
+ * Everything the UI shows is derived here from OPFS (design, File Ownership): nothing is remembered in
  * memory between visits, so a reload, a second tab or an evicted-then-restored store all converge
  * on the same answer.
  */
@@ -149,7 +149,7 @@ async function sweepStaging(space: Directory): Promise<void> {
 	}
 }
 
-/** The document of a project: the one `*.pcraft` in it (design 3.2, 3.7). */
+/** The document of a project: the one `*.pcraft` in it (design, The Single-File Document, Selection). */
 export async function documentName(dir: Directory): Promise<string | null> {
 	const names = (await files(dir)).filter((name) => name.endsWith('.pcraft') && !name.endsWith('.prev'));
 	return names[0] ?? null;
@@ -159,7 +159,7 @@ export async function readMeta(space: Directory, project: string): Promise<Meta 
 	return await readJson<Meta>(await projectDir(space, project), META_FILE);
 }
 
-/** A project's state as the catalog shows it: no document bytes are read (design 6.2). */
+/** A project's state as the catalog shows it: no document bytes are read (design, The Workspace Grid). */
 export async function inspect(space: Directory, project: string): Promise<Workspace> {
 	const dir = await projectDir(space, project);
 	const meta = await readJson<Meta>(dir, META_FILE);
@@ -435,7 +435,7 @@ export async function storage(): Promise<Storage> {
 }
 
 /**
- * Ask the browser to keep this origin's storage (design 4.5). Worth doing on a first meaningful
+ * Ask the browser to keep this origin's storage (design, Design Rules). Worth doing on a first meaningful
  * visit, and only once: without it the whole cloudspace is evictable under pressure.
  */
 export async function requestPersistence(): Promise<boolean> {

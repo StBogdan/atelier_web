@@ -3,7 +3,7 @@
  * lives where, who writes it, how the two apps coordinate — is `contract.ts`.
  *
  * Everything here is async: the synchronous OPFS API (`createSyncAccessHandle`) is Worker-only
- * (design 1.3), and this app runs on the main thread next to the editor's page.
+ * (design, Architectural Consequences), and this app runs on the main thread next to the editor's page.
  */
 
 export const SPACE = 'atelier-cloud';
@@ -106,14 +106,14 @@ export async function remove(parent: Directory, name: string, recursive = false)
 	await parent.removeEntry(name, { recursive });
 }
 
-/** `atelier-cloud:project:<id>` (design 3.5): the same name the editor's patch requests. */
+/** `atelier-cloud:project:<id>` (design, Coordination Primitives): the same name the editor's patch requests. */
 export function lockName(project: string): string {
 	return `${SPACE}:project:${project}`;
 }
 
 /**
  * Hold a lock across `action`. Readers take `shared`, writers `exclusive`, so a read can never
- * catch the editor's swap half-finished (design 3.4).
+ * catch the editor's swap half-finished (design, Saving).
  */
 export function withLock<T>(name: string, mode: LockMode, action: () => Promise<T>): Promise<T> {
 	return navigator.locks.request(name, { mode }, action) as Promise<T>;

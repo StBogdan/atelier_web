@@ -80,7 +80,7 @@ without scanning; the provider rewrites it after every scan and every change.
 
 The project's identity and the revision it was last committed at. `revision.objects` maps every
 content-addressed ZIP entry of the committed document to its size, which is what makes the changes
-diff exact without re-reading the previous bytes (design [5.1](../../docs/atelier_web_design.md#51-delta-sync-without-touching-the-editor), [6.5](../../docs/atelier_web_design.md#65-where-cloud-state-is-surfaced-the-provider-and-only-the-provider)).
+diff exact without re-reading the previous bytes (design [Delta Sync](../../docs/atelier_web_design.md#delta-sync), [Where Cloud State Is Surfaced](../../docs/atelier_web_design.md#where-cloud-state-is-surfaced)).
 
 ```json
 {
@@ -104,7 +104,7 @@ diff exact without re-reading the previous bytes (design [5.1](../../docs/atelie
 }
 ```
 
-`dirty` and the revision are the provider's derivation, never written by the editor (design [3.6](../../docs/atelier_web_design.md#36-ownership-who-writes-which-file)).
+`dirty` and the revision are the provider's derivation, never written by the editor (design [File Ownership](../../docs/atelier_web_design.md#file-ownership)).
 `revision.modified` is the document's `File.lastModified` as of the commit, so a card can tell
 "changed" from "unchanged" with one `stat` instead of a hash.
 
@@ -118,7 +118,7 @@ document.
 
 ### outbox/&lt;id&gt;/pending.json
 
-The one thing in OPFS that is not yet safe anywhere else (design [4.5](../../docs/atelier_web_design.md#45-the-design-rules-that-follow)). Written when the provider
+The one thing in OPFS that is not yet safe anywhere else (design [Design Rules](../../docs/atelier_web_design.md#design-rules)). Written when the provider
 scans a project whose document differs from its revision.
 
 ```json
@@ -139,7 +139,7 @@ scans a project whose document differs from its revision.
 
 ## Coordination
 
-One writer per project, per the design's [3.5](../../docs/atelier_web_design.md#35-coordination-primitives) table. Locks are per origin, like OPFS, and survive
+One writer per project, per the design's [Coordination Primitives](../../docs/atelier_web_design.md#coordination-primitives) table. Locks are per origin, like OPFS, and survive
 tabs and reloads.
 
 | Lock | Mode | Holder |
@@ -148,7 +148,7 @@ tabs and reloads.
 | `atelier-cloud:project:<id>` | `shared` | the provider's read of the document (a diff), the editor's read at open |
 
 A shared request is granted alongside other shared requests and never while an exclusive one is
-pending or held, so a read can never catch a swap half-finished (design [3.4](../../docs/atelier_web_design.md#34-saving)).
+pending or held, so a read can never catch a swap half-finished (design [Saving](../../docs/atelier_web_design.md#saving)).
 
 Signalling is `BroadcastChannel("atelier-cloud")`. Every message is advisory: OPFS state is the
 truth, and a consumer reconciles from it on focus or on a timer whatever the channel said. The
@@ -175,12 +175,12 @@ project directory: no `/`, no leading `.`, and it ends in `.pcraft`.
 `protocol` is an integer, raised when a change would break an existing consumer, and it appears in
 `provider.json`, in the catalog, and in `meta.json`. Additive fields do not raise it: a consumer
 ignores what it does not know, and the provider keeps its own state in its own files. The editor
-patch refuses to open anything whose `protocol` it does not speak (design [12](../../docs/atelier_web_design.md#12-keeping-the-patch-re-appliable)).
+patch refuses to open anything whose `protocol` it does not speak (design [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable)).
 
 ## What is deliberately not here
 
 - No listing, no browsing, no "open recent". Selection is the provider's, and it hands over exactly
-  one document (design [3.7](../../docs/atelier_web_design.md#37-selection-what-the-editor-can-and-cannot-see)).
+  one document (design [Selection](../../docs/atelier_web_design.md#selection)).
 - No provider API in the filesystem: no request queue, no job file, no state the provider must poll.
   The provider derives what it needs from `meta.json` and the document.
 - No lock file. Web Locks has no leak to clean up after a crashed tab.

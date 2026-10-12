@@ -2,7 +2,7 @@
  * What the pages share: the scanned catalog, storage health, and the watchers that keep the view
  * honest while the editor has a document open in another tab.
  *
- * The provider re-reads OPFS rather than trusting anything it saw before (design 3.8). The
+ * The provider re-reads OPFS rather than trusting anything it saw before (design, How the Two Sides Communicate). The
  * editor's `BroadcastChannel` ping and this tab's focus events only decide *when* to re-read.
  */
 
@@ -70,7 +70,7 @@ export function watch(): () => void {
 
 /**
  * Ask the browser to keep this origin's storage, the first time a visitor does something that
- * matters (design 4.5). Creating or opening a workspace counts; a bare look at the landing page
+ * matters (design, Design Rules). Creating or opening a workspace counts; a bare look at the landing page
  * does not, so the prompt arrives when there is something to lose.
  */
 export async function ensurePersistence(): Promise<void> {
@@ -81,7 +81,7 @@ export async function ensurePersistence(): Promise<void> {
 }
 
 /**
- * The provider's own guard, next to the editor's (design 4.5, 6.5): work that is saved to OPFS
+ * The provider's own guard, next to the editor's (design, Design Rules, Where Cloud State Is Surfaced): work that is saved to OPFS
  * and not yet committed is the only thing at risk, and the editor does not warn about it.
  */
 export function guardUnload(): () => void {
