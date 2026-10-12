@@ -52,7 +52,13 @@ Then open **<http://127.0.0.1:3000/cloud/>**.
 | <http://127.0.0.1:3000/api/health> | `{"service":"atelier-web","status":"ok","hello":"world"}` |
 
 `run.sh` starts the editor container if it is stopped, waits for the editor to answer, then runs the front
-door in the foreground. Ctrl-C stops the front door; the container keeps running.
+door in the foreground. Ctrl-C stops the front door; the container keeps running. It also says what to
+build when something is missing, so running it cold is safe.
+
+That editor is the container's, which is unpatched. It opens and edits files from your own disk, and it
+has no idea a cloudspace exists. To open a workspace, edit and save back, use the patched build:
+"Running the editor from the patched source" below is the same `./run.sh` with `PHOTOCRAFT_UPSTREAM`
+pointed at it, and that is how the flow in "Opening a workspace" is reached.
 
 `/cloud/` is a static SPA, so the front door serves one `index.html` for every route under it. That is why
 `/cloud/settings` and `/cloud/workspace/<id>` work with no server behind them.
