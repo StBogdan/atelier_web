@@ -5,7 +5,7 @@
 	import { browser } from '$app/environment';
 	import '../app.css';
 	import { bytes } from '$lib/format';
-	import { failure, guardUnload, refresh, storage, unsynced, watch } from '$lib/session';
+	import { failure, guardUnload, refresh, storage, unsynced, watch, workspaces } from '$lib/session';
 
 	let { children } = $props();
 
@@ -22,6 +22,9 @@
 	const here = $derived(page.url.pathname);
 	const origin = browser ? location.origin : '';
 	const share = $derived($storage.quota ? Math.min(1, $storage.usage / $storage.quota) : 0);
+	// The editor needs a workspace to be useful: launched bare it can see no document and offers no way
+	// back, so the link goes into the one that changed last (the store is newest first).
+	const latest = $derived($workspaces[0]);
 </script>
 
 <div class="shell">
@@ -36,7 +39,9 @@
 		<nav class="chrome">
 			<a href="{base}/" aria-current={here === base || here === `${base}/` ? 'page' : undefined}>Workspaces</a>
 			<a href="{base}/settings" aria-current={here.startsWith(`${base}/settings`) ? 'page' : undefined}>Settings</a>
-			<a href="/">Editor</a>
+			{#if latest}
+				<a href="/?project={latest.id}" title="Open {latest.name} in the editor">Editor</a>
+			{/if}
 		</nav>
 	</header>
 

@@ -153,6 +153,10 @@ without decompressing anything or uploading a byte.
 session writes back to `atelier-cloud://<id>/<name>.pcraft`, which the patch turns into the write sequence
 of design [Saving](../docs/atelier_web_design.md#saving).
 
+The nav's *Editor* link carries the same `?project=<id>`, for the workspace that changed most recently, so
+it lands in the editor with something to show and a *Back to Atelier Cloud* button. Opening `:3000/`
+without a project is the bare editor: no document, no button.
+
 A first workspace needs a document, and a browser cannot convert a PSD, so three `.pcraft` documents are
 committed under `web/static/samples/`. They are generated from `file_samples/` with the editor's own
 headless CLI, and the landing page offers them, an empty workspace, or a `.pcraft` from your computer:

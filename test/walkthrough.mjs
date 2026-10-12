@@ -320,6 +320,8 @@ async function main() {
 	await menu.page.mouse.click(BACK.x, BACK.y);
 	await menu.page.waitForSelector('h2:has-text("Changes")', { timeout: 20_000 });
 	check('clicking it lands on the workspace page', menu.page.url().includes(`/cloud/workspace/${menuProject}`), menu.page.url());
+	const navEditor = await menu.page.getAttribute('nav a:has-text("Editor")', 'href');
+	check('the nav Editor link opens the workspace that changed last', navEditor === `/?project=${menuProject}`, navEditor ?? 'none');
 
 	// Nothing is injected on the way through: the button is the editor's own, and the page the front
 	// door serves is the byte-for-byte one the editor server has.
