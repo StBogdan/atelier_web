@@ -1,4 +1,4 @@
-//! Atelier Cloud front door — the one-origin server of the design
+//! Atelier web — the one-origin server of the design
 //! ([The One-Origin Development Setup](../../../docs/atelier_web_design.md)).
 //!
 //! OPFS is keyed by **origin**, so the editor and the cloud app only share one cloudspace if one
@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         format!("cannot bind {addr}: {e}\n(another process on this port? set ATELIER_PORT to change it)")
     })?;
 
-    println!("Atelier Cloud front door  →  http://127.0.0.1:{port}/");
+    println!("Atelier web  →  http://127.0.0.1:{port}/");
     println!("    /cloud/   Atelier Cloud (static from {})", web_dir.display());
     println!("    /         the editor (proxy → {upstream})");
     println!("\nOpen http://127.0.0.1:{port}/cloud/ first, so both apps share one OPFS.");

@@ -1,4 +1,4 @@
-# Rust build output for the front door (185 MB on a release build).
+# Rust build output for Atelier web (185 MB on a release build).
 /server/target
 
 # Node: the cloud app and the walkthrough harness.

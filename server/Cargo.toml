@@ -1,6 +1,6 @@
 [package]
 name = "atelier-web-server"
-description = "Atelier Cloud front door: serves the cloud app and the editor on one origin"
+description = "Atelier web: serves the cloud app and the editor on one origin"
 version = "0.0.0"
 edition = "2021"
 publish = false
