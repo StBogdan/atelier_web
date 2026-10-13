@@ -14,9 +14,9 @@ on:
   workflow_dispatch:
 
 env:
-  # The pin recorded in the outer repository's .gitmodules (v0.7.0-150-ge2644265), and the same
-  # default `apply.sh` uses.
-  PINNED_REF: e26442657f39d04716656baf749d3268ee3f8a0f
+  # The pin recorded in the outer repository's .gitmodules (v0.8.2), and the same default
+  # `apply.sh` uses.
+  PINNED_REF: d43db3e153c76aefce9b32cef9099e458eaf17a8
   # Upstream's own CI pin, so this build is the one the release job makes.
   TRUNK_VERSION: 0.21.14
   # Cloudflare rejects a file over 25 MiB, which is the hard gate 12 names.
@@ -55,14 +55,17 @@ jobs:
           CARGO_TARGET_DIR: /tmp/photocraft/target
         run: ./hook/apply.sh build
 
-      - name: Assert the patch touched only apps/photocraft-web
+      - name: Assert the patch stays inside its documented footprint
         env:
           PHOTOCRAFT_DIR: /tmp/photocraft
         run: |
           changed=$(git -C /tmp/photocraft status --porcelain | awk '{print $2}')
           echo "$changed"
-          if echo "$changed" | grep -qv '^apps/photocraft-web/'; then
-            echo "::error::the patch reaches outside apps/photocraft-web"
+          # Patch Shape: the web runner, plus the two `crates/ui-egui` hunks (the `Services` field and
+          # the title bar's link). Anything else is the patch sprawling.
+          allowed='^(apps/photocraft-web/.*|crates/ui-egui/src/(lib|panels)\.rs)$'
+          if echo "$changed" | grep -Evq "$allowed"; then
+            echo "::error::the patch reaches outside its documented footprint"
             exit 1
           fi
 

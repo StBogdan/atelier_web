@@ -17,8 +17,8 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 PATCH="$HERE/atelier_web.patch"
 CHECKOUT=${PHOTOCRAFT_DIR:-$HERE/../../photocraft}
-# Recorded upstream ref: v0.7.0-150-ge2644265, the pin in the outer repository's .gitmodules.
-PINNED_REF=e26442657f39d04716656baf749d3268ee3f8a0f
+# Recorded upstream ref: v0.8.2, the pin in the outer repository's .gitmodules.
+PINNED_REF=d43db3e153c76aefce9b32cef9099e458eaf17a8
 # The one file the patch adds, so `revert` knows what to remove.
 ADDED_FILE=apps/photocraft-web/src/atelier_cloud.rs
 
@@ -48,8 +48,19 @@ checkout_ref() {
 
 apply() {
 	if git_in apply --3way --check "$PATCH" 2>/dev/null; then
-		# `--3way` stages what it applies; unstage, so `revert` is a plain checkout.
-		git_in apply --3way "$PATCH" && git_in reset -q
+		# `--3way --check` reports success even for a merge that would conflict, so the real apply
+		# decides. `--3way` stages what it applies; unstage, so `revert` is a plain checkout.
+		if git_in apply --3way "$PATCH" 2>/dev/null; then
+			git_in reset -q
+		else
+			# A conflicted merge leaves markers and unmerged entries; clear them before saying so.
+			git_in reset -q
+			git_in checkout -- . 2>/dev/null || true
+			rm -f "$CHECKOUT/$ADDED_FILE"
+			die "the patch conflicts with $(git_in rev-parse --short HEAD): upstream moved inside a hunk.
+   A 3-way merge fitted most of it and left conflicts in the rest, so this is drift to reconcile by
+   hand (README.md, When upstream moves), not a clean application."
+		fi
 	elif git_in apply --check "$PATCH" 2>/dev/null; then
 		git_in apply "$PATCH"
 	else

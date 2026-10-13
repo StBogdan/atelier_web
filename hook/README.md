@@ -89,7 +89,7 @@ request is not claimed, the editor's own picker opens, and the save that follows
 
 - **No new crates.** OPFS is `web-sys`: `FileSystemDirectoryHandle`, `FileSystemFileHandle`,
   `FileSystemWritableFileStream`. Those features are the whole `Cargo.toml` hunk, so the wasm dependency
-  graph is unchanged. The release build is 25,435,729 bytes, inside Cloudflare's 25 MiB per-file cap.
+  graph is unchanged. The release build is 23,943,791 bytes, inside Cloudflare's 25 MiB per-file cap.
 - **`js_sys::Reflect` for two APIs.** `navigator.locks.request` and `BroadcastChannel` go through
   `Reflect`, because the typed `LockManager` bindings sit behind `web_sys_unstable_apis`, a cfg this build
   does not set.
@@ -141,15 +141,18 @@ edit is therefore not a way to prove the build did not change; comparing the pat
 
 ## When upstream moves
 
-The patch is written against `e26442657f39d04716656baf749d3268ee3f8a0f` (`v0.7.0-150-ge2644265`), the
+The patch is written against `d43db3e153c76aefce9b32cef9099e458eaf17a8` (`v0.8.2`), the
 commit the outer repository pins. Drift shows up as `apply.sh check` failing against a newer ref,
 almost always in the `file_dialog` closure in `services()`, which is where every hunk but `main.rs`
-lands. Checked on 2026-10-12, it also applies cleanly to upstream `main` (`dac995e`, 26 commits on:
-one added line in the neighbouring `export` closure) with a 3-way merge. A 3-way merge needs the pinned
-ref in the object database, so fetch it first when the checkout is a shallow clone of another branch:
+lands. Checked on 2026-10-13, it applies cleanly to upstream `main` (`6f850542`, 286 commits on) with a
+3-way merge. Coming off the previous pin (`v0.7.0-150-ge2644265`) needed more than a 3-way merge:
+upstream had added the `FileDialogRequest::Folder` arm inside that closure and made the enum
+exhaustive, so the module's `answer()` grew a wildcard arm to go with `claims()`'s. A 3-way merge needs
+the pinned ref in the object database, so fetch it first when the checkout is a shallow clone of
+another branch:
 
 ```sh
-git -C /tmp/photocraft-hook fetch --depth 1 origin e26442657f39d04716656baf749d3268ee3f8a0f
+git -C /tmp/photocraft-hook fetch --depth 1 origin d43db3e153c76aefce9b32cef9099e458eaf17a8
 ```
 
 Re-apply by hand when upstream moves inside a hunk. `git diff` skips an untracked file, so `git add -N`

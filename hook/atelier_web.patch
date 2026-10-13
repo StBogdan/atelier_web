@@ -1,5 +1,5 @@
 diff --git a/apps/photocraft-web/Cargo.toml b/apps/photocraft-web/Cargo.toml
-index 6b4c6279..8b5fce47 100644
+index a4ded641..7022726b 100644
 --- a/apps/photocraft-web/Cargo.toml
 +++ b/apps/photocraft-web/Cargo.toml
 @@ -34,7 +34,7 @@ rfd = { workspace = true }
@@ -13,10 +13,10 @@ index 6b4c6279..8b5fce47 100644
  serde_json = { workspace = true }
 diff --git a/apps/photocraft-web/src/atelier_cloud.rs b/apps/photocraft-web/src/atelier_cloud.rs
 new file mode 100644
-index 00000000..f42cd346
+index 00000000..3f3d3532
 --- /dev/null
 +++ b/apps/photocraft-web/src/atelier_cloud.rs
-@@ -0,0 +1,434 @@
+@@ -0,0 +1,451 @@
 +//! The Atelier Cloud cloudspace, as the editor sees it: the whole of the patch (design, The PhotoCraft Patch).
 +//!
 +//! Two things, and nothing else:
@@ -149,6 +149,9 @@ index 00000000..f42cd346
 +            let path = save_target(&name).unwrap_or_else(|| name.clone());
 +            reply.send(Some(FileDialogAnswer::SaveTo(path)));
 +        }
++        // `claims` takes only Open and Save, so nothing else reaches `answer`: the arm keeps a
++        // request variant upstream adds from breaking the build, as Folder did in v0.8.2.
++        _ => {}
 +    }
 +}
 +
@@ -438,9 +441,23 @@ index 00000000..f42cd346
 +        .map_err(js_error)?
 +        .dyn_into::<FileSystemWritableFileStream>()
 +        .map_err(|_| format!("`{name}` is not writable"))?;
-+    JsFuture::from(stream.write_with_u8_array(bytes).map_err(js_error)?).await.map_err(js_error)?;
++    JsFuture::from(stream.write_with_js_u8_array(&js_bytes(bytes)?).map_err(js_error)?).await.map_err(js_error)?;
 +    JsFuture::from(stream.close()).await.map_err(js_error)?;
 +    Ok(())
++}
++
++/// The bytes `write()` is handed: a `Uint8Array` backed by an `ArrayBuffer` of its own.
++///
++/// WebKit's `write()` writes the whole backing buffer of a typed-array view and ignores its
++/// `byteOffset` and `byteLength`, and `write_with_u8_array` reaches it as a view into the wasm
++/// linear memory (a `ptr`/`len` pair) — so the file would become that memory, not the document, and
++/// the bytes the editor saved would not be the bytes the editor reads back. A copy is what makes
++/// the write mean what it says.
++fn js_bytes(bytes: &[u8]) -> Result<js_sys::Uint8Array, String> {
++    let len = u32::try_from(bytes.len()).map_err(|_| format!("{} bytes is too large to write", bytes.len()))?;
++    let out = js_sys::Uint8Array::new_with_length(len);
++    out.copy_from(bytes);
++    Ok(out)
 +}
 +
 +async fn remove_file(dir: &FileSystemDirectoryHandle, name: &str) {
@@ -466,11 +483,11 @@ index 5ba75f52..836bc81c 100644
  mod indexed_presets;
  
 diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
-index b6e3c82d..240dcc52 100644
+index 6c993960..75ac0c9e 100644
 --- a/apps/photocraft-web/src/web.rs
 +++ b/apps/photocraft-web/src/web.rs
-@@ -353,46 +353,59 @@ fn services(inbox: Inbox) -> Services {
-             opts.tga_bits = settings.tga_bits;
+@@ -349,48 +349,61 @@ fn services(inbox: Inbox) -> Services {
+             opts.image_previews = settings.image_previews;
              photocraft_io::export(doc, path, &opts).map(|r| (r.bytes, r.warnings)).map_err(|e| e.to_string())
          })),
 -        file_dialog: Some(Box::new(|request, _parent, reply| match request {
@@ -524,6 +541,8 @@ index b6e3c82d..240dcc52 100644
 -                };
 -                reply.send(answer);
 -            }),
+-            // Browser folder handles cannot be represented as filesystem paths for engine commands.
+-            FileDialogRequest::Folder { .. } => reply.send(None),
 -            // No save dialog on the web: the suggested name becomes the download name.
 -            FileDialogRequest::Save { suggested } => {
 -                let name = std::path::Path::new(&suggested).file_name().map_or_else(|| suggested.clone(), |n| n.to_string_lossy().to_string());
@@ -536,6 +555,8 @@ index b6e3c82d..240dcc52 100644
 +                    };
 +                    reply.send(answer);
 +                }),
++                // Browser folder handles cannot be represented as filesystem paths for engine commands.
++                FileDialogRequest::Folder { .. } => reply.send(None),
 +                // No save dialog on the web: the suggested name becomes the download name.
 +                FileDialogRequest::Save { suggested } => {
 +                    let name = std::path::Path::new(&suggested).file_name().map_or_else(|| suggested.clone(), |n| n.to_string_lossy().to_string());
@@ -561,10 +582,10 @@ index b6e3c82d..240dcc52 100644
          load_prefs: Some(Box::new(|| local_storage()?.get_item(PREFS_KEY).ok().flatten())),
          save_prefs: Some(Box::new(|text: &str| local_storage().ok_or("no localStorage")?.set_item(PREFS_KEY, text).map_err(|e| format!("{e:?}")))),
 diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
-index 49a0332b..37a62861 100644
+index 2042e1e5..6d28c831 100644
 --- a/crates/ui-egui/src/lib.rs
 +++ b/crates/ui-egui/src/lib.rs
-@@ -377,6 +377,10 @@ pub struct Services {
+@@ -396,6 +396,10 @@ pub struct Services {
      pub encode_png: Option<EncodePngFn>,
      /// Open a URL in the system browser (native). Falls back to `ctx.open_url` (web) when unset.
      pub open_url: Option<OpenUrlFn>,
@@ -576,10 +597,10 @@ index 49a0332b..37a62861 100644
      /// background job finishes successfully. `None` in the web build (and in tests).
      pub beep: Option<fn()>,
 diff --git a/crates/ui-egui/src/panels.rs b/crates/ui-egui/src/panels.rs
-index 41ba45a3..a02b1026 100644
+index 0f6a1b83..2d197d0d 100644
 --- a/crates/ui-egui/src/panels.rs
 +++ b/crates/ui-egui/src/panels.rs
-@@ -645,6 +645,22 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+@@ -642,6 +642,22 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                              crate::links::open(app, ui.ctx(), crate::links::DISCORD);
                          }
                      }
@@ -602,7 +623,7 @@ index 41ba45a3..a02b1026 100644
                      if rtl { ui.min_rect().right() } else { ui.min_rect().left() }
                  };
                  free = if rtl { (controls_end, menus_end) } else { (menus_end, controls_end) };
-@@ -703,6 +719,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
+@@ -700,6 +716,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
  const TITLE_GAP: f32 = 16.0;
  /// Free room the title bar needs after its other controls to show the Discord button.
  const DISCORD_ROOM: f32 = 120.0;

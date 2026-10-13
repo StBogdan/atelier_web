@@ -111,7 +111,7 @@ appliable](../docs/atelier_web_design.md#keeping-the-patch-re-appliable)):
 
 ```sh
 cd ../photocraft
-git worktree add --detach /tmp/photocraft-hook e26442657f39d04716656baf749d3268ee3f8a0f
+git worktree add --detach /tmp/photocraft-hook d43db3e153c76aefce9b32cef9099e458eaf17a8
 cd ../atelier_web
 CARGO_TARGET_DIR=../photocraft/target PHOTOCRAFT_DIR=/tmp/photocraft-hook ./hook/apply.sh build
 cd /tmp/photocraft-hook/dist/web && python3 -m http.server 8765
