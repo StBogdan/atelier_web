@@ -84,11 +84,23 @@ export async function readJson<T>(parent: Directory, name: string): Promise<T | 
 	}
 }
 
+/**
+ * The bytes to hand `write()`.
+ *
+ * WebKit's `FileSystemWritableFileStream.write()` writes the whole backing `ArrayBuffer` of a
+ * `Uint8Array` and ignores the view, so a 250-byte slice of a 1000-byte buffer lands all 1000 bytes
+ * in the file. A slice of a document (`readEntry`, for the thumbnail) would put the whole document
+ * in `thumb.png`. A buffer that already *is* the bytes is immune, so only a view is copied.
+ */
+function wholeBuffer(bytes: Uint8Array): Uint8Array {
+	return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice();
+}
+
 export async function writeBytes(parent: Directory, name: string, bytes: Uint8Array): Promise<void> {
 	const handle = await parent.getFileHandle(name, { create: true });
 	const stream = await handle.createWritable();
 	try {
-		await stream.write(bytes as BufferSource);
+		await stream.write(wholeBuffer(bytes) as BufferSource);
 	} finally {
 		await stream.close();
 	}

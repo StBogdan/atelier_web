@@ -69,7 +69,9 @@ Three details worth knowing before changing it:
 
 The save follows the [Saving](../../docs/atelier_web_design.md#saving) sequence: exclusive Web Lock, `.prev` beside the document, `tmp/<uuid>`
 staging, then the document. `FileSystemWritableFileStream::close()` swaps the finished file in, so
-the document is never seen half-written.
+the document is never seen half-written. The bytes handed to `write()` are a `Uint8Array` with a buffer
+of its own, never a Rust slice: WebKit's `write()` writes the whole backing buffer of a view, so a slice
+of the wasm heap would put the heap, not the document, in the file.
 
 Which dialogs it claims:
 
