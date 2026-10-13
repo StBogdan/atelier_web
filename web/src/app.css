@@ -1,34 +1,69 @@
-/* Atelier Cloud. Plain CSS, light and dark, no framework: the landing page around an editor that
-   already owns the canvas. */
+/* Atelier Cloud. Plain CSS, no framework: the landing page around an editor that already owns the
+   canvas. The palette is the editor's own, token for token
+   (photocraft/crates/ui-egui/src/theme.rs), so the shell reads as the same application: dark is
+   PhotoCraft's *Pro* theme and light is *Studio Light*, the pair named by the editor's
+   `interface.darkTheme` / `interface.lightTheme` settings. */
 
 :root {
 	color-scheme: light dark;
-	--bg: #fbfbfc;
-	--panel: #ffffff;
-	--ink: #14161a;
-	--dim: #5d6470;
-	--line: #e3e5ea;
-	--accent: #2f6feb;
-	--ok: #1a7f52;
-	--warn: #a2660a;
-	--bad: #b4231f;
-	--shadow: 0 1px 2px rgba(16, 18, 22, 0.06), 0 8px 24px rgba(16, 18, 22, 0.06);
-	--radius: 10px;
+
+	--font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 	--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+	/* Studio Light: canvas, card, field, text and radii. */
+	--bg: #e2e2e6;
+	--panel: #fcfcfd;
+	--line: #dedee4;
+	--rule: #e2e2e8;
+	--ink: #18181c;
+	--dim: #60606a;
+	--faint: #9696a0;
+	--accent: #6c5ce7;
+	--primary: #141418;
+	--primary-ink: #fafafc;
+	--hover: #e8e8ed;
+	--pressed: #dcdce2;
+	--field: #f2f2f5;
+	--field-line: #d6d6dc;
+	--ok: #4e712e;
+	--warn: #be8214;
+	--bad: #d23c3c;
+	--chrome: #f6f6f8;
+	--strip: #f0f0f3;
+	--shadow: 0 1px 2px rgba(16, 18, 22, 0.06), 0 8px 24px rgba(16, 18, 22, 0.08);
+	--chip-radius: 999px;
+	--radius-sm: 6px;
+	--radius: 8px;
+	--radius-lg: 12px;
 }
 
 @media (prefers-color-scheme: dark) {
 	:root {
-		--bg: #101216;
-		--panel: #171a20;
-		--ink: #ecedf1;
-		--dim: #9aa1ad;
-		--line: #272b33;
-		--accent: #6ea1ff;
-		--ok: #4cc38a;
-		--warn: #d8a237;
-		--bad: #f2705c;
-		--shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+		/* Pro: the flat, near-black chrome the editor ships with, and its square chips. */
+		--bg: #282828;
+		--panel: #323232;
+		--line: #1e1e1e;
+		--rule: #1e1e1e;
+		--ink: #dedede;
+		--dim: #b2b2b2;
+		--faint: #808080;
+		--accent: #378ef0;
+		--primary: #378ef0;
+		--primary-ink: #ffffff;
+		--hover: #424242;
+		--pressed: #4e4e4e;
+		--field: #242424;
+		--field-line: #4a4a4a;
+		--ok: #85dc6a;
+		--warn: #e8b046;
+		--bad: #ec5b62;
+		--chrome: #323232;
+		--strip: #262626;
+		--shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 28px rgba(0, 0, 0, 0.35);
+		--chip-radius: var(--radius-sm);
+		--radius-sm: 3px;
+		--radius: 4px;
+		--radius-lg: 6px;
 	}
 }
 
@@ -40,15 +75,189 @@ body {
 	margin: 0;
 	background: var(--bg);
 	color: var(--ink);
-	font:
-		15px / 1.55 -apple-system,
-		system-ui,
-		"Segoe UI",
-		sans-serif;
+	font: 15px / 1.55 var(--font);
 }
 
 a {
 	color: inherit;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* The chrome: a title bar over a status strip, the two rows the editor's own window has. Full
+   width, so the bar reads as the application and the page below it as its content. */
+.appbar {
+	display: flex;
+	align-items: center;
+	gap: 1.25rem;
+	min-height: 3.25rem;
+	padding: 0.35rem 1.25rem;
+	background: var(--chrome);
+	border-bottom: 1px solid var(--rule);
+}
+
+.brand {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	text-decoration: none;
+	flex: 0 0 auto;
+}
+
+.mark {
+	display: block;
+	width: 1.75rem;
+	height: 1.75rem;
+	color: var(--accent);
+}
+
+.names {
+	display: block;
+	line-height: 1.25;
+}
+
+.names strong {
+	font-weight: 600;
+	font-size: 0.94rem;
+	letter-spacing: -0.01em;
+}
+
+.names small {
+	display: block;
+	font-weight: 400;
+	color: var(--faint);
+	font-size: 0.72rem;
+	letter-spacing: 0;
+}
+
+nav.chrome {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/* The links scroll when the bar is cramped; the action beside them never does, so it stays
+   visible at any width. */
+nav.chrome .links {
+	display: flex;
+	align-items: center;
+	gap: 0.15rem;
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+nav.chrome a {
+	color: var(--dim);
+	text-decoration: none;
+	font-size: 0.84rem;
+	padding: 0.3rem 0.6rem;
+	border-radius: var(--radius);
+	white-space: nowrap;
+}
+
+nav.chrome a:hover {
+	background: var(--hover);
+	color: var(--ink);
+}
+
+nav.chrome a[aria-current="page"] {
+	background: var(--pressed);
+	color: var(--ink);
+}
+
+/* The editor is the one thing to do here, so it is the bar's primary action, not another link. */
+nav.chrome a.action {
+	flex: 0 0 auto;
+	margin-left: auto;
+	background: var(--primary);
+	border: 1px solid var(--primary);
+	color: var(--primary-ink);
+	font-weight: 560;
+	padding: 0.34rem 0.8rem;
+}
+
+nav.chrome a.action:hover {
+	background: var(--primary);
+	color: var(--primary-ink);
+	filter: brightness(1.08);
+}
+
+/* The action names the workspace it will open, so the bar always answers "where does this go?". */
+nav.chrome a.action .where {
+	display: inline-block;
+	margin-left: 0.5rem;
+	padding-left: 0.5rem;
+	border-left: 1px solid color-mix(in srgb, var(--primary-ink) 38%, transparent);
+	font-weight: 400;
+	opacity: 0.85;
+	max-width: 9rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	vertical-align: bottom;
+}
+
+@media (max-width: 46rem) {
+	nav.chrome a.action .where {
+		max-width: 5rem;
+	}
+}
+
+@media (max-width: 34rem) {
+	/* Too narrow for one row: the brand keeps the top line, the nav wraps to its own. */
+	.appbar {
+		flex-wrap: wrap;
+		row-gap: 0.35rem;
+	}
+
+	nav.chrome {
+		flex-basis: 100%;
+	}
+
+	/* The label alone still says where it goes, and the tooltip has the name. */
+	nav.chrome a.action .where {
+		display: none;
+	}
+}
+
+.strip {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.6rem 0.75rem;
+	padding: 0.3rem 1.25rem;
+	background: var(--strip);
+	border-bottom: 1px solid var(--rule);
+	font-size: 0.78rem;
+	color: var(--dim);
+}
+
+.strip .meter {
+	flex: 0 1 14rem;
+	min-width: 6rem;
+}
+
+.strip .amount {
+	color: var(--dim);
+}
+
+/* One origin is what makes both apps share this OPFS; the chip is where that is visible. */
+.strip .origin {
+	margin-left: auto;
+	color: var(--faint);
+}
+
+.shell {
+	max-width: 68rem;
+	margin: 0 auto;
+	padding: 1.5rem 1.25rem 4rem;
 }
 
 h1 {
@@ -70,53 +279,7 @@ code,
 code {
 	background: color-mix(in srgb, var(--line) 55%, transparent);
 	padding: 0.1em 0.35em;
-	border-radius: 4px;
-}
-
-.shell {
-	max-width: 68rem;
-	margin: 0 auto;
-	padding: 1.5rem 1.25rem 4rem;
-}
-
-header.chrome {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 1rem;
-	padding-bottom: 1rem;
-	border-bottom: 1px solid var(--line);
-	margin-bottom: 1.5rem;
-}
-
-.brand {
-	font-weight: 620;
-	text-decoration: none;
-	letter-spacing: -0.01em;
-}
-
-.brand small {
-	display: block;
-	font-weight: 400;
-	color: var(--dim);
-	font-size: 0.78rem;
-	letter-spacing: 0;
-}
-
-nav.chrome {
-	margin-left: auto;
-	display: flex;
-	gap: 1rem;
-}
-
-nav.chrome a {
-	color: var(--dim);
-	text-decoration: none;
-}
-
-nav.chrome a:hover,
-nav.chrome a[aria-current="page"] {
-	color: var(--ink);
+	border-radius: var(--radius-sm);
 }
 
 .muted {
@@ -126,7 +289,7 @@ nav.chrome a[aria-current="page"] {
 .panel {
 	background: var(--panel);
 	border: 1px solid var(--line);
-	border-radius: var(--radius);
+	border-radius: var(--radius-lg);
 	padding: 1rem 1.15rem;
 	box-shadow: var(--shadow);
 }
@@ -142,8 +305,8 @@ button,
 	font: inherit;
 	color: inherit;
 	background: transparent;
-	border: 1px solid var(--line);
-	border-radius: 8px;
+	border: 1px solid var(--field-line);
+	border-radius: var(--radius);
 	padding: 0.32em 0.85em;
 	cursor: pointer;
 	text-decoration: none;
@@ -152,20 +315,21 @@ button,
 
 button:hover,
 .button:hover {
-	border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+	background: var(--hover);
+	border-color: color-mix(in srgb, var(--accent) 45%, var(--field-line));
 }
 
 button.primary,
 .button.primary {
-	background: var(--accent);
-	border-color: var(--accent);
-	color: #fff;
-	color: color-mix(in srgb, var(--accent) 8%, white);
+	background: var(--primary);
+	border-color: var(--primary);
+	color: var(--primary-ink);
 }
 
 button.primary:hover,
 .button.primary:hover {
-	filter: brightness(1.06);
+	background: var(--primary);
+	filter: brightness(1.08);
 }
 
 button:disabled {
@@ -175,7 +339,7 @@ button:disabled {
 
 button.danger {
 	color: var(--bad);
-	border-color: color-mix(in srgb, var(--bad) 40%, var(--line));
+	border-color: color-mix(in srgb, var(--bad) 40%, var(--field-line));
 }
 
 .row {
@@ -223,9 +387,9 @@ th {
 input[type="text"] {
 	font: inherit;
 	color: inherit;
-	background: var(--bg);
-	border: 1px solid var(--line);
-	border-radius: 8px;
+	background: var(--field);
+	border: 1px solid var(--field-line);
+	border-radius: var(--radius);
 	padding: 0.3em 0.5em;
 }
 
@@ -233,7 +397,7 @@ dialog {
 	background: var(--panel);
 	color: var(--ink);
 	border: 1px solid var(--line);
-	border-radius: var(--radius);
+	border-radius: var(--radius-lg);
 	box-shadow: var(--shadow);
 	padding: 1.1rem 1.2rem;
 	max-width: 34rem;
@@ -246,7 +410,7 @@ dialog::backdrop {
 .meter {
 	height: 6px;
 	border-radius: 3px;
-	background: var(--line);
+	background: var(--pressed);
 	overflow: hidden;
 	min-width: 8rem;
 	flex: 1;
@@ -260,16 +424,29 @@ dialog::backdrop {
 
 .chip {
 	border: 1px solid var(--line);
-	border-radius: 999px;
+	border-radius: var(--chip-radius);
 	padding: 0.05em 0.6em;
 	font-size: 0.82rem;
 	color: var(--dim);
 }
 
+/* A chip that carries its explanation on hover says so with the cursor. */
+.chip[title] {
+	cursor: help;
+}
+
+/* A warning that carries its explanation on hover rather than in the page. */
+.warn-icon {
+	color: var(--warn);
+	cursor: help;
+	font-size: 0.95rem;
+	line-height: 1;
+}
+
 .banner {
 	border: 1px solid var(--line);
 	border-left: 3px solid var(--warn);
-	border-radius: 8px;
+	border-radius: var(--radius);
 	padding: 0.6rem 0.85rem;
 	margin-bottom: 1rem;
 }

@@ -22,6 +22,7 @@ atelier_web/
 │   └── src/
 │       └── main.rs    the routes: health, the cloud app, the editor proxy
 ├── web/               Atelier Cloud: SvelteKit, static, SSR off (design, The Landing Page and Launcher)
+│   ├── src/app.css    the palette: the editor's own theme tokens (dark Pro, light Studio Light)
 │   ├── src/lib/       the OPFS contract, the .pcraft reader, the pages' shared state, the bucket
 │   ├── src/routes/    /, /workspace/<id>, /settings, /help
 │   ├── static/samples three converted documents to seed a workspace with
@@ -66,7 +67,7 @@ Then open **<http://127.0.0.1:3000/cloud/>**.
 | <http://127.0.0.1:3000/cloud/> | Atelier Cloud: the workspace grid and storage health |
 | <http://127.0.0.1:3000/cloud/workspace/&lt;id&gt; | one workspace: the Changes panel, commit, download, discard, and the bucket |
 | <http://127.0.0.1:3000/cloud/settings> | storage, persistence, and what the cloudspace holds |
-| <http://127.0.0.1:3000/cloud/help> | FAQ and troubleshooting: bucket setup, CORS, and the errors that read like credentials |
+| <http://127.0.0.1:3000/cloud/help> | where the work lives (OPFS, commit, the outbox, upload), then FAQ and troubleshooting: bucket setup, CORS, and the errors that read like credentials |
 | <http://127.0.0.1:3000/> | PhotoCraft, the editor; launched into a workspace its title bar links back to it |
 | <http://127.0.0.1:3000/api/health> | `{"service":"atelier-web","status":"ok","hello":"world"}` |
 
@@ -200,9 +201,13 @@ without decompressing anything or uploading a byte.
 session writes back to `atelier-cloud://<id>/<name>.pcraft`, which the patch turns into the write sequence
 of design [Saving](../docs/atelier_web_design.md#saving).
 
-The nav's *Editor* link carries the same `?project=<id>`, for the workspace that changed most recently, so
-it lands in the editor with something to show and a *Back to Atelier Cloud* link in the title bar, to
-the left of Discord. Opening `:3000/` without a project is the bare editor: no document, no link.
+The bar's *Open editor* action carries the same `?project=<id>`, for the workspace that changed most
+recently, so it lands in the editor with something to show and a *Back to Atelier Cloud* link in the title
+bar, to the left of Discord. It opens a new tab, like the card's *Editor* and the workspace page's *Open in
+editor*: the launcher survives the trip, and the provider's own unload guard (design, Design Rules 2) is
+never asked to warn about a navigation that puts nothing at risk. With no workspace yet the action reads *In
+new workspace* and opens the new-workspace dialog instead, because the editor has nothing to be bound to.
+Opening `:3000/` without a project is the bare editor: no document, no link.
 
 A first workspace needs a document, and a browser cannot convert a PSD, so three `.pcraft` documents are
 committed under `web/static/samples/`. They are generated from `file_samples/` with the editor's own

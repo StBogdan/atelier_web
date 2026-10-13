@@ -7,7 +7,7 @@
 //
 // It drives the whole flow through the apps' own UI, so both apps must be running on one origin:
 // `atelier_web/README.md` has the commands, including how to serve the patched editor at :8765 and
-// point the front door at it. It needs Chrome installed and no other browser download.
+// point Atelier web at it. It needs Chrome installed and no other browser download.
 //
 // `ATELIER_ORIGIN` overrides http://127.0.0.1:3000. It opens its own browser profile, so it creates
 // its own OPFS and never touches yours.
@@ -73,7 +73,7 @@ async function main() {
 	await provider.click('button:has-text("Create")');
 	await provider.waitForSelector('article h2:has-text("Walkthrough workspace")');
 
-	const openHref = await provider.getAttribute('article a:has-text("Open")', 'href');
+	const openHref = await provider.getAttribute('article a:has-text("Editor")', 'href');
 	const project = new URL(openHref, ORIGIN).searchParams.get('project');
 	check('a workspace exists with a uuid project id', Boolean(project), project ?? 'none');
 
@@ -139,12 +139,23 @@ async function main() {
 	const withPending = await opfs(provider);
 	check('outbox/<id>/pending.json was written', find(withPending, `outbox/${project}/pending.json`)?.size > 0);
 
-	step('Atelier Cloud: commit the revision');
-	await provider.click('button:has-text("Commit revision")');
+	step('Atelier Cloud: record the version');
+	await provider.click('button:has-text("Record version")');
 	await provider.waitForTimeout(1500);
 	const committed = await provider.innerText('section.panel');
 	log('   panel:\n' + committed.split('\n').map((line) => `     ${line}`).join('\n'));
-	check('the panel is clean after committing', /Nothing uncommitted/.test(committed));
+	check('the panel is clean after committing', /Version up to date/.test(committed));
+	const cleanHeading = (await provider.innerText('section.panel.changes h2')).trim();
+	check(
+		'and it keeps the same heading prefix, so the layout does not jump',
+		cleanHeading === 'Changes — Version up to date',
+		cleanHeading
+	);
+	check('and the explanation stays under the actions', /Recording a version marks the current state/.test(committed), committed);
+	check(
+		'and the record button is still there, greyed as "Up to date"',
+		await provider.isDisabled('button:has-text("Up to date")')
+	);
 	const committedTree = await opfs(provider);
 	check('outbox/<id>/pending.json is gone', find(committedTree, `outbox/${project}/pending.json`) === undefined);
 	const revision = find(committedTree, `projects/${project}/meta.json`);
@@ -153,13 +164,20 @@ async function main() {
 	await provider.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
 	await provider.waitForSelector('article');
 	const card = await provider.innerText('article');
-	check('the card shows rev 2', /rev 2/.test(card), card.replace(/\n/g, ' · '));
-	check('the card shows committed state', /committed/.test(card));
+	// The owner and the revision are not on the card: on a page listing one person's workspaces, "owner:
+	// you · rev 2" answers nothing. They live on the workspace page — the panel checked below reports
+	// against rev 2 — and in meta.json, which was just rewritten.
+	check('the card shows the committed state', /committed/.test(card));
+	check(
+		'and the card leaves the owner and the revision to the workspace page',
+		!/owner:|rev \d/.test(card),
+		card.replace(/\n/g, ' · ')
+	);
 
 	step('Atelier Cloud: download the committed document (the exit ramp)');
 	await provider.goto(`${ORIGIN}/cloud/workspace/${project}`, { waitUntil: 'networkidle' });
 	await provider.waitForSelector('h2:has-text("Changes")');
-	await provider.click('button:has-text("Download document")');
+	await provider.click('button:has-text("Download files")');
 	await provider.waitForTimeout(2500);
 	check('the download is the document', downloads.includes('01-rgb-layered.pcraft'), downloads.join(', ') || 'none');
 
@@ -201,7 +219,7 @@ async function main() {
 	);
 	check(
 		'the panel agrees with what was restored',
-		/discarded: the document is revision 2 again/i.test(told) ? /Nothing uncommitted/.test(told) : /uncommitted since rev 2/.test(told)
+		/discarded: the document is revision 2 again/i.test(told) ? /Version up to date/.test(told) : /uncommitted since rev 2/.test(told)
 	);
 
 	step('The patch speaks the contract: reopen and check the saved bytes load');
@@ -223,7 +241,7 @@ async function main() {
 	const FILE_MENU_OPEN = { x: 87, y: 97 };
 	const LOCAL_FILE = new URL('../web/static/samples/01-rgb-layered.pcraft', import.meta.url).pathname;
 
-	/** A fresh empty workspace, and the project id its Open link carries. */
+	/** A fresh empty workspace, and the project id its Editor link carries. */
 	async function newEmptyWorkspace(name) {
 		await provider.bringToFront();
 		await provider.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
@@ -232,7 +250,7 @@ async function main() {
 		await provider.click('label:has-text("An empty workspace")');
 		await provider.click('button:has-text("Create")');
 		await provider.waitForSelector(`article h2:has-text("${name}")`);
-		const href = await provider.getAttribute(`article:has-text("${name}") a:has-text("Open")`, 'href');
+		const href = await provider.getAttribute(`article:has-text("${name}") a:has-text("Editor")`, 'href');
 		return new URL(href, ORIGIN).searchParams.get('project');
 	}
 
@@ -348,7 +366,7 @@ async function main() {
 		fetch(upstream).then((response) => response.text()).catch(() => null)
 	]);
 	if (direct === null) log(`    (the editor's own port is not up: ${upstream})`);
-	else check('the editor page comes through the front door unchanged', proxied === direct);
+	else check('the editor page comes through Atelier web unchanged', proxied === direct);
 
 	step('Errors');
 	const errors = [...console_, ...editorLog, ...againLog, ...freshLogs.flat()].filter((line) => /error|panic/i.test(line) && !/Unhandled egui viewport/.test(line));

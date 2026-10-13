@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
 	import { bytes, plural } from '$lib/format';
 	import { ensureSpace, requestPersistence } from '$lib/contract';
 	import { directory, files, remove, stat, subdirectories, SPACE, type Directory } from '$lib/opfs';
-	import { PROTOCOL } from '$lib/contract';
 	import { refresh, storage, workspaces } from '$lib/session';
 
 	interface Entry {
@@ -71,7 +71,7 @@
 
 <div class="stack">
 	<section class="panel">
-		<h2>Storage</h2>
+		<h2>Local storage</h2>
 		<dl>
 			<dt>Origin</dt>
 			<dd class="mono">{typeof location === 'undefined' ? '' : location.origin}</dd>
@@ -85,15 +85,16 @@
 					? 'granted: this origin is not evicted under storage pressure'
 					: 'best-effort: the browser may clear everything for this origin'}
 			</dd>
-			<dt>Contract</dt>
+			<dt>Bucket</dt>
 			<dd>
-				<code>atelier-cloud/</code>, protocol {PROTOCOL} — <a href="https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system">OPFS</a>
+				A bucket is attached per workspace, and signed for in this browser — open a workspace to attach one, or
+				read <a href="{base}/help#setup">Help</a>.
 			</dd>
 		</dl>
 		{#if $storage.supported === true && !$storage.persisted}
 			<p class="muted small">
-				Granted or not, the browser decides. There is no server copy of your work yet, so an eviction is the whole
-				cloudspace: download anything you care about.
+				Granted or not, the browser decides. Nothing here is copied off this machine unless you upload it to
+				the bucket, so an eviction is the whole cloudspace: download anything you care about.
 			</p>
 		{/if}
 		<div class="row">
@@ -109,7 +110,8 @@
 		{:else}
 			<p class="muted small">
 				Everything Atelier Cloud owns is under <code>{SPACE}/</code>. The only thing here that is not
-				regenerable is <code>outbox/</code>: work saved to OPFS and not committed yet.
+				regenerable is <code>outbox/</code>: work saved to <a href="{base}/help#storage">OPFS</a> and not
+				committed yet.
 			</p>
 			<table>
 				<tbody>
