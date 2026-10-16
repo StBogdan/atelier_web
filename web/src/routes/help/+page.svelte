@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { browser } from "$app/environment";
   import { base } from "$app/paths";
+  import { capabilities } from "$lib/capabilities";
 
   /** Rendered into the policy below, so the snippet can be pasted as it stands. */
   const origin = browser ? location.origin : "http://127.0.0.1:3000";
@@ -13,6 +15,34 @@
     "MaxAgeSeconds": 3600
   }
 ]`;
+
+  /**
+   * What the copy button last did, for its own label: the policy is pasted into someone else's dashboard,
+   * so copying it by hand — dragging over a block of text — is the step worth removing.
+   */
+  let copied = $state<"idle" | "copied" | "blocked">("idle");
+  let copiedFor: number | undefined;
+  let policy = $state<HTMLPreElement | null>(null);
+
+  async function copyPolicy() {
+    try {
+      await navigator.clipboard.writeText(cors);
+      copied = "copied";
+    } catch {
+      // A refused clipboard needs no explanation: the text is selected instead, so the keystroke the
+      // reader already knows still works.
+      const range = document.createRange();
+      if (policy) range.selectNodeContents(policy);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      if (policy) selection?.addRange(range);
+      copied = "blocked";
+    }
+    window.clearTimeout(copiedFor);
+    copiedFor = window.setTimeout(() => (copied = "idle"), 4000);
+  }
+
+  onDestroy(() => window.clearTimeout(copiedFor));
 </script>
 
 <svelte:head><title>Help — Atelier Cloud</title></svelte:head>
@@ -21,9 +51,11 @@
 <p class="muted">
   This page is about getting your work out of the browser and back.
   <a href="{base}/help#storage">Where your work lives</a> explains what OPFS is
-  and what committing does and does not do.
-  <a href="{base}/help#setup">Setting up a bucket</a>
-  is the step-by-step walkthrough;
+  and what committing does and does not do. {#if $capabilities.storage === "provisioned"}<a
+      href="{base}/help#setup">Storage</a
+    > says where your bytes go;{:else}<a href="{base}/help#setup"
+      >Setting up a bucket</a
+    > is the step-by-step walkthrough;{/if}
   <a href="{base}/help#troubleshooting">Troubleshooting</a> is the list of errors
   to check when something goes wrong.
 </p>
@@ -105,152 +137,202 @@
     </p>
   </section>
 
-  <section class="panel" id="setup">
-    <h2>Setting up a bucket</h2>
-    <p>
-      A bucket belongs to a <em>workspace</em>, and you attach it on that
-      workspace's page. The server needs no configuration: Atelier Cloud has no
-      bucket code, and the credential you enter stays in this browser. There is
-      nothing to set up outside the app.
-    </p>
+  {#if $capabilities.storage === "provisioned"}
+    <section class="panel" id="setup">
+      <h2>Storage</h2>
+      <p>
+        This deployment runs the hosted profile. Storage is provisioned per
+        account, and a short-lived credential is minted for the session when one
+        is needed, so normally there is nothing to attach and no key to paste.
+      </p>
+      <p>
+        A document still travels straight from this browser to that bucket, so
+        no document bytes pass through the server, and the credential expires on
+        its own about an hour after it is minted.
+      </p>
+      <p class="muted small">
+        A workspace's Bucket panel also accepts a bucket of your own, which is
+        the self-hosted arrangement.
+      </p>
+    </section>
+  {:else}
+    <section class="panel" id="setup">
+      <h2>Setting up a bucket</h2>
+      <p>
+        A bucket belongs to a <em>workspace</em>, and you attach it on that
+        workspace's page. The server needs no configuration: Atelier Cloud has
+        no bucket code, and the credential you enter stays in this browser.
+        There is nothing to set up outside the app.
+      </p>
 
-    <h3>1. Make an API token for the bucket</h3>
-    <p>
-      On Cloudflare R2, open <em>R2</em> ▸ <em>Manage R2 API Tokens</em> ▸
-      <em>Create API token</em>, with permission
-      <strong>Object Read &amp; Write</strong>, scoped to the one bucket. An
-      account-wide <em>Admin</em> token grants far more access than this needs,
-      and you should not paste one into a browser. Copy the access key id and
-      the secret access key; the secret is shown once.
-      <a
-        href="https://developers.cloudflare.com/r2/api/tokens/"
-        target="_blank"
-        rel="noopener">Cloudflare's token page ↗</a
-      > shows the screens.
-    </p>
+      <h3>1. Make an API token for the bucket</h3>
+      <p>
+        On Cloudflare R2, open <em>R2</em> ▸ <em>Manage R2 API Tokens</em> ▸
+        <em>Create API token</em>, with permission
+        <strong>Object Read &amp; Write</strong>, scoped to the one bucket. Copy
+        the access key id and the secret access key; the secret is shown once.
+        <a
+          href="https://developers.cloudflare.com/r2/api/tokens/"
+          target="_blank"
+          rel="noopener">Cloudflare's token page ↗</a
+        > shows the screens.
+      </p>
 
-    <h3>2. Let this origin through CORS</h3>
-    <p>
-      Your browser sends the bytes straight to the bucket, so the bucket has to
-      allow this page's origin.
-      <a href="{base}/help#cors">The policy to paste is below.</a> Skipping this step
-      is the most common reason an upload fails.
-    </p>
+      <h3>2. Let this origin through CORS</h3>
+      <p>
+        Your browser sends the bytes straight to the bucket, so the bucket has
+        to allow this page's origin.
+        <a href="{base}/help#cors">The policy to paste is below.</a> Skipping this
+        step is the most common reason an upload fails.
+      </p>
 
-    <h3>3. Attach it on a workspace</h3>
-    <p>
-      Open a workspace, expand <em>Bucket</em>, and fill in the form. The panel
-      shows the URL it will sign for as you type, so you can see a mistake
-      before anything is saved.
-    </p>
+      <h3>3. Attach it on a workspace</h3>
+      <p>
+        Open a workspace, expand <em>Bucket</em>, and fill in the form. The
+        panel shows the URL it will sign for as you type, so you can see a
+        mistake before anything is saved.
+      </p>
+      <p>
+        <em>New workspace</em> takes the same fields, under
+        <em>Attach a bucket (optional)</em>, so a workspace can be given its
+        bucket as it is made rather than opened and given one afterwards.
+      </p>
 
-    <h3>Which value goes where</h3>
-    <table>
-      <tbody>
-        <tr>
-          <td><strong>Endpoint</strong></td>
-          <td>
-            The bucket's <em>S3 API</em> endpoint, which is the account host
-            rather than the bucket's public URL.
-            <br /><code
-              >https://&lt;ACCOUNT_ID&gt;.r2.cloudflarestorage.com</code
+      <h3>Which value goes where</h3>
+      <table>
+        <tbody>
+          <tr>
+            <td><strong>Endpoint</strong></td>
+            <td>
+              The bucket's <em>S3 API</em> endpoint, which is the account host
+              rather than the bucket's public URL.
+              <br /><code
+                >https://&lt;ACCOUNT_ID&gt;.r2.cloudflarestorage.com</code
+              >
+              <br />You can also paste the bucket's whole URL here. Atelier
+              Cloud takes the bucket name off the end and fills in the next
+              field for you.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Bucket</strong></td>
+            <td>
+              The bucket's name, for example <code>your-bucket-name</code>. If
+              you pasted a URL ending in the bucket name, it is already filled
+              in here.
+            </td>
+          </tr>
+          <tr>
+            <td
+              ><strong>Region</strong> <span class="muted">(optional)</span></td
             >
-            <br />You can also paste the bucket's whole URL here. Atelier Cloud
-            takes the bucket name off the end and fills in the next field for
-            you.
-          </td>
-        </tr>
-        <tr>
-          <td><strong>Bucket</strong></td>
-          <td>
-            The bucket's name, for example <code>atelier-development-test</code
-            >. If you pasted a URL ending in the bucket name, it is already
-            filled in here.
-          </td>
-        </tr>
-        <tr>
-          <td><strong>Region</strong> <span class="muted">(optional)</span></td>
-          <td
-            ><code>auto</code> on R2, which is the default.
-            <code>us-east-1</code> and an empty value also work.</td
-          >
-        </tr>
-        <tr>
-          <td
-            ><strong>Key prefix</strong>
-            <span class="muted">(optional)</span></td
-          >
-          <td>
-            Leave it empty if the bucket is yours alone. Set it if the bucket is
-            shared with anything else: everything this workspace writes goes
-            under it, which keeps two users of one bucket apart.
-          </td>
-        </tr>
-        <tr>
-          <td
-            ><strong>Access key id</strong><br /><strong
-              >Secret access key</strong
-            ></td
-          >
-          <td>
-            The pair from step 1. The id is not a secret and is stored with the
-            attachment; the secret is not stored anywhere.
-          </td>
-        </tr>
-      </tbody>
-    </table>
+            <td
+              ><code>auto</code> on R2, which is the default.
+              <code>us-east-1</code> and an empty value also work.</td
+            >
+          </tr>
+          <tr>
+            <td
+              ><strong>Key prefix</strong>
+              <span class="muted">(optional)</span></td
+            >
+            <td>
+              Leave it empty if the bucket is yours alone. Set it if the bucket
+              is shared with anything else: everything this workspace writes
+              goes under it, which keeps two users of one bucket apart.
+            </td>
+          </tr>
+          <tr>
+            <td
+              ><strong>Access key id</strong><br /><strong
+                >Secret access key</strong
+              ></td
+            >
+            <td>
+              The pair from step 1. The id is not a secret and is stored with
+              the attachment; the secret is not stored anywhere.
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-    <h3>What lands in the bucket</h3>
-    <p>
-      Uploads write one object per workspace, at
-      <code>&lt;prefix&gt;&lt;workspace-id&gt;/&lt;document-name&gt;</code>, for
-      example
-      <code>atelier/8f14e45f-ceea-4a4d-9b8e-1a24a1f0d3c7/doc.pcraft</code>. Each
-      upload replaces the one before it.
-    </p>
+      <h3>What lands in the bucket</h3>
+      <p>
+        Uploads write one object per workspace, at
+        <code>&lt;prefix&gt;&lt;workspace-id&gt;/&lt;document-name&gt;</code>,
+        for example
+        <code>atelier/8f14e45f-ceea-4a4d-9b8e-1a24a1f0d3c7/doc.pcraft</code>.
+        Each upload replaces the one before it.
+      </p>
 
-    <h3>Starting a workspace from a bucket</h3>
-    <p>
-      To bring a document that is already in the bucket into a workspace, use <em
-        >Choose from bucket…</em
-      >
-      in the Bucket panel. It lists what the bucket holds, one row per document,
-      and <em>Load</em> copies the one you pick into this workspace.
-      <em>Download from bucket</em> does the same for the document stored under this
-      workspace's own id, which is the button to use once a workspace and a bucket
-      are a pair.
-    </p>
-    <p class="muted">
-      Neither button records a version, so the document arrives as an unrecorded
-      change: the Changes panel shows it, and <em>Record version</em> is what
-      turns it into one. Listing the bucket requires a token that allows it, and
-      <em>Object Read &amp; Write</em> does.
-    </p>
-  </section>
+      <h3>Starting a workspace from a bucket</h3>
+      <p>
+        A new workspace can start from a document the bucket already holds: in <em
+          >New workspace</em
+        >, choose
+        <em>A cloud bucket</em>, fill in the fields, and <em>List documents</em>
+        offers what is in the bucket. The workspace is made from the one you pick
+        — it is that workspace's first version — with the bucket attached.
+      </p>
+      <p>
+        In a workspace that is already going, use <em>Choose from bucket…</em>
+        in the Bucket panel. It lists what the bucket holds, one row per document,
+        and <em>Load</em> copies the one you pick into this workspace.
+        <em>Download from bucket</em> does the same for the document stored under
+        this workspace's own id, which is the button to use once a workspace and a
+        bucket are a pair.
+      </p>
+      <p class="muted">
+        In the workspace, neither button records a version, so the document
+        arrives as an unrecorded change: the Changes panel shows it, and <em
+          >Record version</em
+        >
+        is what turns it into one. Listing the bucket requires a token that allows
+        it, and <em>Object Read &amp; Write</em> does.
+      </p>
+    </section>
 
-  <section class="panel" id="cors">
-    <h2>CORS on the bucket</h2>
-    <p>
-      Your browser talks to the bucket directly: it signs each request and sends
-      the bytes itself, from a different origin than the bucket. The bucket
-      therefore has to allow this page's origin. If it does not, the browser
-      withholds the response and the app can only report that the request did
-      not happen.
-    </p>
-    <p>
-      On Cloudflare R2, open the bucket ▸ <em>Settings</em> ▸
-      <em>CORS Policy</em>, and paste this unchanged for this address:
-    </p>
-    <pre><code>{cors}</code></pre>
-    <p class="muted">
-      <code>ETag</code> has to be exposed for the upload record to include it.
-      Without it the upload still works and the record has no ETag. The origin
-      has to match the address bar exactly:
-      <code>localhost:3000</code> and <code>127.0.0.1:3000</code> are
-      <em>different origins</em>, with different cloudspaces and different CORS
-      rules, so pick one and keep using it.
-    </p>
-  </section>
+    <section class="panel" id="cors">
+      <h2>CORS on the bucket</h2>
+      <p>
+        Your browser talks to the bucket directly: it signs each request and
+        sends the bytes itself, from a different origin than the bucket. The
+        bucket therefore has to allow this page's origin. If it does not, the
+        browser withholds the response and the app can only report that the
+        request did not happen.
+      </p>
+      <p>
+        On Cloudflare R2, open the bucket ▸ <em>Settings</em> ▸
+        <em>CORS Policy</em>, and paste this unchanged for this address:
+      </p>
+      <div class="snippet">
+        <div class="snippet-head">
+          <span class="muted"
+            >CORS policy for <code>{origin}</code> — your address, as it is here</span
+          >
+          <button
+            type="button"
+            class:ok={copied === "copied"}
+            onclick={copyPolicy}
+            >{copied === "copied"
+              ? "Copied"
+              : copied === "blocked"
+                ? "Selected — press ⌘C"
+                : "Copy"}</button
+          >
+        </div>
+        <pre bind:this={policy}><code>{cors}</code></pre>
+      </div>
+      <p class="muted">
+        <code>ETag</code> has to be exposed for the upload record to include it.
+        Without it the upload still works and the record has no ETag. The origin
+        has to match the address bar exactly:
+        <code>localhost:3000</code> and <code>127.0.0.1:3000</code> are
+        <em>different origins</em>, with different cloudspaces and different
+        CORS rules, so pick one and keep using it.
+      </p>
+    </section>
+  {/if}
 
   <section class="panel" id="faq">
     <h2>FAQ</h2>
@@ -480,13 +562,48 @@
   }
 
   pre {
-    background: color-mix(in srgb, var(--line) 35%, transparent);
-    border: 1px solid var(--line);
-    border-radius: 8px;
+    margin: 0;
     padding: 0.7rem 0.85rem;
     overflow-x: auto;
     font-size: 0.82rem;
     line-height: 1.45;
+  }
+
+  /* One block, not a chip per line: `code`'s own chip is for code inside a sentence. */
+  .snippet pre code {
+    background: none;
+    border-radius: 0;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  /* The one thing on this page that is pasted somewhere else, so it is a box with a title and a button
+     rather than text to drag over by hand. */
+  .snippet {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--line) 35%, transparent);
+    overflow: hidden;
+  }
+
+  .snippet-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.45rem 0.35rem 0.85rem;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.82rem;
+  }
+
+  .snippet-head button {
+    margin-left: auto;
+    padding: 0.15em 0.6em;
+    font-size: 0.8rem;
+  }
+
+  .snippet-head button.ok {
+    color: var(--ok);
+    border-color: color-mix(in srgb, var(--ok) 45%, var(--field-line));
   }
 
   table td:first-child {

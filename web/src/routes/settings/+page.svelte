@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { base } from "$app/paths";
+  import { capabilities } from "$lib/capabilities";
   import { bytes, plural } from "$lib/format";
-  import { ensureSpace, requestPersistence } from "$lib/contract";
+  import { ensureSpace } from "$lib/contract";
   import {
     directory,
     files,
@@ -56,16 +57,6 @@
 
   onMount(() => void inspect());
 
-  async function persist() {
-    busy = true;
-    try {
-      await requestPersistence();
-      await refresh();
-    } finally {
-      busy = false;
-    }
-  }
-
   /** `tmp/` is the only thing here that is safe to drop: transient staging from a killed tab. */
   async function clearStaging() {
     busy = true;
@@ -95,7 +86,7 @@
       </dd>
       <dt>Used</dt>
       <dd>{bytes($storage.usage)}</dd>
-      <dt>Quota</dt>
+      <dt>Local storage</dt>
       <dd>
         {bytes($storage.quota)}{$storage.quota
           ? ` (${(($storage.usage / $storage.quota) * 100).toFixed(1)}% used)`
@@ -109,27 +100,18 @@
       </dd>
       <dt>Bucket</dt>
       <dd>
-        A bucket is attached per workspace, and signed for in this browser —
-        open a workspace to attach one, or read <a href="{base}/help#setup"
-          >Help</a
-        >.
+        {#if $capabilities.storage === "provisioned"}
+          Provisioned by this deployment: each account gets its own storage,
+          with a credential minted for the session. A workspace shows the bucket
+          its copy goes to.
+        {:else}
+          A bucket is attached per workspace, and signed for in this browser —
+          open a workspace to attach one, or read <a href="{base}/help#setup"
+            >Help</a
+          >.
+        {/if}
       </dd>
     </dl>
-    {#if $storage.supported === true && !$storage.persisted}
-      <p class="muted small">
-        Granted or not, the browser decides. Nothing here is copied off this
-        machine unless you upload it to the bucket, so an eviction is the whole
-        cloudspace: download anything you care about.
-      </p>
-    {/if}
-    <div class="row">
-      <button
-        onclick={persist}
-        disabled={busy || $storage.persisted || $storage.supported !== true}
-        >Ask for persistent storage</button
-      >
-      <button onclick={inspect} disabled={busy}>Refresh</button>
-    </div>
   </section>
 
   <section class="panel">
