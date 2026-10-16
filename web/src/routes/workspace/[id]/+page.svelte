@@ -40,7 +40,7 @@
     type BucketConfig,
     type BucketDocument,
   } from "$lib/bucket";
-  import { normalisePrefix, resolveBucket, targetUrl } from "$lib/sigv4";
+  import { resolveTarget } from "$lib/sigv4";
   import { ensurePersistence, refresh } from "$lib/session";
 
   const id = $derived(page.params.id ?? "");
@@ -130,26 +130,11 @@
   /**
    * What the attach form would attach and write to, resolved exactly the way `attachBucket` resolves
    * it — so a bucket's full URL pasted into the endpoint field needs no taking apart, and the URL
-   * shown here is the URL that will be signed. Same function, so the two cannot disagree.
+   * shown here is the URL that will be signed.
    */
-  const preview = $derived.by(() => {
-    if (!form.endpoint.trim()) return null;
-    try {
-      const { endpoint, bucket } = resolveBucket(form.endpoint, form.bucket);
-      if (!bucket) return null;
-      return {
-        bucket,
-        target: targetUrl({
-          endpoint,
-          bucket,
-          prefix: normalisePrefix(form.prefix),
-          key: objectKey(id, meta?.document ?? undefined),
-        }),
-      };
-    } catch {
-      return null;
-    }
-  });
+  const preview = $derived(
+    resolveTarget(form, objectKey(id, meta?.document ?? undefined)),
+  );
 
   async function loadBucket() {
     bucketProblem = null;
@@ -771,7 +756,7 @@
       />
       {#if preview}
         <p class="muted small">
-          Writes to <span class="mono">{preview.target}</span>
+          Writes to <span class="mono">{preview}</span>
         </p>
       {/if}
       <div class="row">

@@ -1,13 +1,9 @@
 /**
- * The OPFS contract of `atelier_web/contract/protocol.md`, protocol 1.
+ * The OPFS contract of `atelier_web/contract/protocol.md`, protocol 1: Atelier Cloud's side of it.
+ * The editor's side is `../../hook/atelier_web.patch`.
  *
- * This module is Atelier Cloud's side of it: it creates the space, publishes `provider.json`,
- * renders the catalog, derives each project's state from the document the editor wrote, and
- * commits a revision. The editor's side is `../../hook/atelier_web.patch`.
- *
- * Everything the UI shows is derived here from OPFS (design, File Ownership): nothing is remembered in
- * memory between visits, so a reload, a second tab or an evicted-then-restored store all converge
- * on the same answer.
+ * Everything the UI shows is derived here from OPFS: nothing is remembered in memory between visits,
+ * so a reload, a second tab or an evicted-then-restored store all converge on the same answer.
  */
 
 import {
@@ -48,9 +44,8 @@ export const PENDING_FILE = "pending.json";
 export const THUMB_FILE = "thumb.png";
 
 /**
- * The names the provider keeps inside a project directory. Everything else in there is a document.
- * A project's documents are therefore whatever the editor saved into it and whatever a workspace was
- * started from, which is how a workspace can be seeded from a PSD or a PNG.
+ * The names the provider keeps inside a project directory; everything else in there is a document,
+ * so a workspace can be seeded from a PSD or a PNG as readily as from a `.pcraft`.
  */
 export const PROJECT_FILES = new Set([
   META_FILE,
@@ -59,7 +54,7 @@ export const PROJECT_FILES = new Set([
   "bucket.json",
 ]);
 
-/** The document name an empty project's first save lands under, when nothing suggests a better one. */
+/** What an empty project's first save lands under, when nothing suggests a better name. */
 export const DEFAULT_DOCUMENT = "doc.pcraft";
 
 /** The extension the editor saves as, and the only kind of document a revision can describe. */
@@ -68,9 +63,8 @@ export const DOCUMENT_EXTENSION = "pcraft";
 export type SyncState = "local";
 
 /**
- * Where the bucket holds this project's document. Additive to protocol 1: a consumer that does not
- * know it ignores it, and the provider keeps its own state in its own file
- * (`contract/protocol.md`, Versioning).
+ * Where the bucket holds this project's document. Additive to protocol 1, so a consumer that does not
+ * know it ignores it.
  */
 export interface Remote {
   /** The logical key, without the deployment's prefix. */
@@ -123,8 +117,7 @@ export interface Workspace {
   /** Set when the project directory is there but its metadata is not. */
   broken?: string;
   /**
-   * Every document in the project, in name order (design, Documents). `document` above is the one the
-   * revision describes; the rest are documents the editor saved that no revision covers yet.
+   * Every document in the project, in name order. `document` above is the one the revision describes.
    */
   documents: WorkspaceDocument[];
 }
@@ -220,17 +213,17 @@ async function sweepStaging(space: Directory): Promise<void> {
 }
 
 /**
- * Every document a project holds, in name order (design, Documents). A document is any file in the
- * project directory that is not the provider's own (`meta.json`, `bucket.json`, `thumb.png`) and not
- * a one-save-back shadow: what a workspace was started from, and what the editor has saved into it.
+ * Every document a project holds: any file that is not the provider's own and not a one-save-back
+ * shadow.
  */
 export async function documentNames(dir: Directory): Promise<string[]> {
-  return (await files(dir))
-    .filter((name) => !PROJECT_FILES.has(name) && !name.endsWith(".prev"))
-    .sort();
+  // `files` already sorts.
+  return (await files(dir)).filter(
+    (name) => !PROJECT_FILES.has(name) && !name.endsWith(".prev"),
+  );
 }
 
-/** The document of a project: the first in name order, which is all a bare listing needs. */
+/** The first document in name order, which is all a bare listing needs. */
 export async function documentName(dir: Directory): Promise<string | null> {
   return (await documentNames(dir))[0] ?? null;
 }
@@ -243,11 +236,9 @@ export async function readMeta(
 }
 
 /**
- * A project's state as the catalog shows it: no document bytes are read (design, The Workspace Grid).
- *
- * A project holds as many documents as the editor has saved into it. `meta.json` names the one its
- * revision describes — the document the panels act on — and every other one is listed beside it,
- * uncommitted by definition, because the revision does not describe it.
+ * A project's state as the catalog shows it. No document bytes are read: `meta.json` names the
+ * document its revision describes, and every other document in the project is uncommitted by
+ * definition, because the revision does not describe it.
  */
 export async function inspect(
   space: Directory,
@@ -279,8 +270,8 @@ export async function inspect(
   }
   const size = documents.reduce((total, entry) => total + entry.size, 0);
   // A workspace is uncommitted when the document a commit would record is not what the revision
-  // recorded. Anything else in the project, a PNG or a second .pcraft the revision cannot describe,
-  // is held as it is and does not set this: the badge appears exactly where Commit can clear it.
+  // recorded. Anything else in the project does not set this, so the badge appears exactly where
+  // Commit can clear it.
   const target =
     recorded && names.includes(recorded)
       ? recorded
@@ -329,7 +320,7 @@ export async function inspect(
   };
 }
 
-/** Scan the space and rewrite the catalog cache (`contract/protocol.md`, `index/workspaces.json`). */
+/** Scan the space and rewrite the catalog cache. */
 export async function scan(space: Directory): Promise<Workspace[]> {
   const projects = await projectsDir(space);
   const workspaces: Workspace[] = [];
@@ -367,9 +358,9 @@ export async function hash(bytes: Uint8Array): Promise<string> {
 }
 
 /**
- * Where a project's document lives in the bucket: `<project>/<document>`, the logical key. The
- * workspace's own prefix is joined onto it by the signer (`./sigv4.ts`), so this is what
- * `sync.remote.key` records, and it does not move when the prefix changes.
+ * The logical key of a project's document, `<project>/<document>`, before the workspace's prefix is
+ * joined on by the signer. This is what `sync.remote.key` records, and it does not move when the
+ * prefix changes.
  */
 export function objectKey(
   project: string,
@@ -407,14 +398,13 @@ export function isPcraftName(name: string): boolean {
 export interface NewProject {
   name: string;
   /**
-   * The documents to start from, in the order they were chosen. Empty for a project with no document
-   * yet. Several are written as they come; the one the revision describes is the first `.pcraft` among
-   * them, because only a `.pcraft` can be recorded (Documents).
+   * The documents to start from, in the order chosen. The one a revision describes is the first
+   * `.pcraft` among them, because only that format can be recorded.
    */
   documents?: { name: string; bytes: Uint8Array }[];
 }
 
-/** Create a project and commit its first revision. The provider owns project creation (design, File Ownership). */
+/** Create a project and commit its first revision. */
 export async function createProject(
   space: Directory,
   { name, documents = [] }: NewProject,
@@ -440,8 +430,8 @@ export async function createProject(
   if (documents.length) {
     for (const document of documents)
       await writeBytes(dir, document.name, document.bytes);
-    // The recorded document is the first `.pcraft` chosen: a revision is that format's object set, so
-    // a workspace started from a PSD alone is committed only once the editor saves one.
+    // A revision is a `.pcraft` object set, so a workspace started from a PSD alone is committed
+    // only once the editor saves one.
     const recordable = documents.find((document) => isPcraft(document.bytes));
     const recorded = recordable ?? documents[0];
     await writeJson(dir, META_FILE, {
@@ -459,9 +449,8 @@ export interface ReadDocument {
   name: string;
   bytes: Uint8Array;
   /**
-   * Whether these bytes are a `.pcraft` document — the only kind a revision can describe, because
-   * the object set, the diff and the thumbnail all come out of its ZIP. A workspace started from a
-   * PSD or a PNG holds a document the editor can open and save, and no revision until it saves one.
+   * Whether these bytes are a `.pcraft`: the only kind a revision can describe, because the object
+   * set and the thumbnail both come out of its ZIP.
    */
   pcraft: boolean;
   entries: ZipEntry[];
@@ -494,7 +483,7 @@ export async function readDocument(
   };
 }
 
-/** The exact change against the committed revision, and what the Changes panel renders (design, Where Cloud State Is Surfaced). */
+/** The exact change against the committed revision: what the Changes panel renders. */
 export interface Change {
   document: string;
   difference: Difference;
@@ -555,8 +544,8 @@ async function clearPending(space: Directory, project: string): Promise<void> {
 }
 
 /**
- * Commit the document as a new revision: record its object set, refresh the thumbnail, and clear
- * the pending change. In M1 the revision is recorded locally; M2 uploads the same set (design, Delta Sync).
+ * Commit the document as a new revision: record its object set, refresh the thumbnail, and clear the
+ * pending change. The revision is recorded locally; uploading the same set is the bucket's job.
  */
 export async function commit(
   space: Directory,
@@ -587,8 +576,8 @@ export async function commit(
     const bytes = await readBytes(dir, name);
     const info = await stat(dir, name);
     // The same bytes as the current revision would be a revision that says nothing, and `rev` is
-    // what a reader counts. The file's own modified time still moves (a save that changed nothing),
-    // and that is what `inspect` compares, so the record of the revision follows it instead.
+    // what a reader counts. The file's own modified time still moves, and `inspect` compares that,
+    // so the recorded revision follows it instead.
     if (meta.document === name && meta.revision?.hash === (await hash(bytes))) {
       const next: Meta = {
         ...meta,
@@ -630,11 +619,10 @@ export async function commit(
 }
 
 /**
- * Put back the previous bytes, the one destructive action in the provider (design, Where Cloud State Is Surfaced).
+ * Put back the previous bytes: the one destructive action in the provider.
  *
- * `.prev` is the editor's, one save back (design, Saving; File Ownership), which is the committed revision when exactly
- * one save has happened since the commit. The answer says which of the two came back, so the UI can
- * be plain about it instead of pretending: M1 has no server holding the committed bytes.
+ * `.prev` is the editor's, one save back, which is the committed revision only when exactly one save
+ * has happened since the commit. The answer says which of the two came back.
  */
 export async function discard(
   space: Directory,
@@ -659,8 +647,8 @@ export async function discard(
 }
 
 /**
- * Record that the document's bytes are in the bucket. Provider-owned state in `meta.json`, so the
- * answer to "is the bucket copy this document?" survives a reload (protocol, Versioning).
+ * Record that the document's bytes are in the bucket, so "is the bucket copy this document?" survives
+ * a reload.
  */
 export async function recordUpload(
   space: Directory,
@@ -677,11 +665,9 @@ export async function recordUpload(
 
 /**
  * Put bytes fetched from the bucket into the document slot, as a whole-document replace under the
- * project's exclusive lock — the same shape as `discard`, and the same hazard: an editor that has
- * the document open will write its own copy over this on its next save.
- *
- * This is one of the two places the provider writes the document itself (`contract/protocol.md`,
- * File Ownership). M2's "restore a revision" is the third, and lands here too.
+ * project's exclusive lock. One of the few places the provider writes the document itself, and it
+ * carries the same hazard as `discard`: an editor that has the document open writes its own copy
+ * back over this on its next save.
  */
 export async function restoreDocument(
   space: Directory,
@@ -740,13 +726,10 @@ export async function rename(
 }
 
 /**
- * Delete one document from a project: the document, its one-save-back `.prev`, and — when it was the
- * document the revision described — that record too, so the project is uncommitted again rather than
- * describing bytes that are gone. The exclusive lock is the one a save takes, so a delete cannot land
- * in the middle of one.
- *
- * The bucket copy is deliberately left where it is, the same as deleting a whole workspace: this is
- * not a delete-everywhere, and the object may be the only copy off this machine.
+ * Delete one document: the document, its one-save-back `.prev`, and — when it was the document the
+ * revision described — that record too, so the project is uncommitted again rather than describing
+ * bytes that are gone. The bucket copy is deliberately left where it is, since the object may be the
+ * only copy off this machine.
  */
 export async function removeDocument(
   space: Directory,
@@ -772,15 +755,12 @@ export async function removeDocument(
 }
 
 /**
- * Rename a document inside its project: the file, its one-save-back copy beside it, and — when it was
- * the document the revision described — that record, so the revision follows the name rather than
- * pointing at a file that is gone.
+ * Rename a document: the file, its one-save-back copy, and — when the revision described it — that
+ * record, so the revision follows the name rather than pointing at a file that is gone.
  *
- * OPFS has no `move()` every browser has (design, Saving), so this is read, write, remove under the
- * project's exclusive lock. A name already taken in the project is refused rather than written over,
- * and the recorded bucket copy is forgotten: `sync.remote.key` names the *old* document, and the next
- * upload records the new one. Object storage has no rename, and the copy under the old name is left
- * where it is.
+ * OPFS has no `move()` every browser has, so this is read, write, remove under the project's exclusive
+ * lock. A name already taken in the project is refused rather than written over. The recorded bucket
+ * copy is forgotten, since `sync.remote.key` names the old document, and object storage has no rename.
  */
 export async function renameDocument(
   space: Directory,
@@ -857,8 +837,8 @@ export async function storage(): Promise<Storage> {
 }
 
 /**
- * Ask the browser to keep this origin's storage (design, Design Rules). Worth doing on a first meaningful
- * visit, and only once: without it the whole cloudspace is evictable under pressure.
+ * Ask the browser to keep this origin's storage. Without it the whole cloudspace is evictable under
+ * pressure.
  */
 export async function requestPersistence(): Promise<boolean> {
   localStorage.setItem(PERSIST_KEY, "1");

@@ -1,19 +1,15 @@
 /**
  * SigV4 presigning, in the browser.
  *
- * A workspace can be given a bucket of its own, with the operator's — the user's — own credential
- * (design, The Bucket Credential). That credential is never sent anywhere: this module turns it into
- * a short-lived signed URL locally, with WebCrypto, so document bytes travel from this browser to the
- * bucket and the server in the middle is not involved at all.
- *
- * A presigned URL is a SigV4 signature carried in the query string: the canonical request, the
- * string to sign, and the HMAC chain in [`signingKey`]. The server used to compute this in Rust
- * (`server/src/storage.rs`); it moved here with the credential, and `test/s3-stub.mjs` recomputes the
- * signature independently, which is the check that it is still right.
+ * A workspace can be given a bucket of its own, with the user's own credential, which is never sent
+ * anywhere: this module turns it into a short-lived signed URL locally, with WebCrypto, so document
+ * bytes travel from this browser to the bucket and the server in the middle sees nothing. The URL is
+ * a SigV4 signature carried in the query string, and `test/s3-stub.mjs` recomputes it independently,
+ * which is the check that it is still right.
  *
  * The secret itself is only ever an HMAC key. [`importSecret`] is the one place it is touched, and it
- * hands back a **non-extractable** `CryptoKey`: from there on the private half of the pair is used to
- * sign and cannot be read back out of the browser.
+ * hands back a **non-extractable** `CryptoKey`: the private half can sign and cannot be read back out
+ * of the browser.
  */
 
 export type BucketOp = "put" | "get" | "list";
@@ -33,8 +29,7 @@ const METHOD: Record<BucketOp, string> = {
   get: "GET",
   list: "GET",
 };
-/** The AWS SDK's marker for which operation a URL is for. S3 and R2 ignore it; it is here so that
- * this URL is the same request the SDK would have produced. */
+/** The AWS SDK's marker for which operation a URL is for; S3 and R2 ignore it. */
 const OPERATION_ID: Record<BucketOp, string> = {
   put: "PutObject",
   get: "GetObject",
@@ -161,9 +156,8 @@ function pathFor(endpoint: Endpoint, bucket: string, key: string): string {
 }
 
 /**
- * The URL this would sign for, without the signature. The attach form shows it, so the split between
- * endpoint and bucket is visible before anything is written — the two are easy to get wrong, and a
- * bucket pasted into both ends up inside the key.
+ * The URL this would sign for, without the signature. A form shows it, so a bucket pasted into both
+ * the endpoint and the bucket field is visible before anything is written.
  */
 export function targetUrl(request: {
   endpoint: Endpoint;
@@ -176,11 +170,8 @@ export function targetUrl(request: {
 }
 
 /**
- * The URL as far as the object's own directory: the endpoint, the bucket and any key prefix.
- *
- * A workspace that does not exist yet has no id and no document, so an attach form at creation has no key
- * to name. This is the half that is already decided, shown by the same code that signs, so a form can
- * answer "is the endpoint the host, and the bucket the bucket?" before anything is written.
+ * The URL as far as the object's own directory: the endpoint, the bucket and any key prefix, for a
+ * form that creates a workspace and so has no key to name yet.
  */
 export function prefixUrl(request: {
   endpoint: Endpoint;
@@ -192,15 +183,10 @@ export function prefixUrl(request: {
 }
 
 /**
- * The endpoint and the bucket, resolved from fields that are allowed to overlap.
- *
- * A provider's dashboard hands you the bucket's **full S3 URL**, so the bucket name is usually already
- * on the end of the endpoint, and it may or may not also be in the bucket field. Rather than make anyone
- * take that apart, a trailing name that is the bucket — or that arrives where the bucket should be — is
- * taken as the bucket, and the endpoint is left as the account host.
- *
- * A base path that is *not* the bucket is left alone: MinIO behind a reverse proxy has one, and it is a
- * prefix, not a bucket.
+ * The endpoint and the bucket, resolved from fields that are allowed to overlap: a dashboard hands
+ * over the bucket's **full S3 URL**, so a trailing name that is the bucket — or that arrives in the
+ * bucket field — is taken as the bucket, and the endpoint is left as the account host. A base path
+ * that is *not* the bucket is left alone, because MinIO behind a reverse proxy has one.
  */
 export function resolveBucket(
   rawEndpoint: string,
@@ -216,12 +202,32 @@ export function resolveBucket(
 }
 
 /**
- * A whole bucket URL taken apart into the two things it names, which is what a dashboard's copy button
- * hands over: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com/your-bucket-name` becomes the
- * account host and `your-bucket-name`. `null` when there is no trailing name to take.
- *
- * Throws on text that is not a URL, so a caller pasting into a field can tell "nothing to do" from
- * "not a bucket URL" without a second look at the text.
+ * The URL a bucket form would sign for, resolved the way the attach path resolves it so a preview
+ * cannot disagree with what gets attached. `key` names an object, which a workspace that exists can
+ * do; without one the URL stops at the prefix. `null` while the fields do not yet name a bucket.
+ */
+export function resolveTarget(
+  form: { endpoint: string; bucket: string; prefix?: string },
+  key?: string,
+): string | null {
+  if (!form.endpoint.trim()) return null;
+  try {
+    const { endpoint, bucket } = resolveBucket(form.endpoint, form.bucket);
+    if (!bucket) return null;
+    const prefix = normalisePrefix(form.prefix ?? "");
+    return key === undefined
+      ? prefixUrl({ endpoint, bucket, prefix })
+      : targetUrl({ endpoint, bucket, prefix, key });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A whole bucket URL taken apart into the two things it names:
+ * `https://<ACCOUNT_ID>.r2.cloudflarestorage.com/your-bucket-name` becomes the account host and
+ * `your-bucket-name`. `null` when there is no trailing name to take, and a throw on text that is not
+ * a URL, so a paste handler can tell "nothing to do" from "not a bucket URL".
  */
 export function splitBucket(
   url: string,
@@ -268,9 +274,8 @@ async function keyFrom(bytes: Uint8Array): Promise<CryptoKey> {
  * The secret as a key, and the only place the raw secret is touched: it goes straight into the
  * browser's crypto and is not kept.
  *
- * Non-extractable means this code — and any other script on this origin — can *use* the key to sign,
- * but cannot read the secret back out of it and take it elsewhere. That is the whole of what it buys
- * (design, The Bucket Credential).
+ * Non-extractable means this code, and any other script on this origin, can use the key to sign but
+ * cannot read the secret back out of it and take it elsewhere.
  */
 export async function importSecret(
   secretAccessKey: string,
@@ -314,7 +319,7 @@ export interface PresignRequest {
   at?: Date;
 }
 
-/** Sign one operation on one key, locally. Nothing here touches the bucket, or the network. */
+/** Sign one operation on one key, locally: nothing here touches the bucket or the network. */
 export async function presign(request: PresignRequest): Promise<string> {
   const { endpoint, region, bucket, accessKeyId, seed, op } = request;
   const ttl = request.ttlSeconds ?? DEFAULT_TTL_SECONDS;

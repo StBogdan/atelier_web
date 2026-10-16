@@ -1,19 +1,13 @@
 /**
  * The bucket a workspace is given.
  *
- * A workspace carries its own bucket: the user attaches one to a workspace, with their own
- * credential, and this app signs in the browser (`sigv4.ts`). The server has no bucket role at all,
- * and never sees the credential.
+ * The user attaches one per workspace, with their own credential, and this app signs in the browser
+ * (`sigv4.ts`). The server has no bucket role and never sees the credential.
  *
- * The attachment is two halves in two places, deliberately:
- *
- * - what the bucket *is* — endpoint, bucket, region, prefix, access key id — is in
- *   `projects/<id>/bucket.json`, in the OPFS the contract already describes;
- * - what signs for it is a non-extractable `CryptoKey` in IndexedDB.
- *
- * A `CryptoKey` is not bytes, which is exactly why the key half lives elsewhere: OPFS cannot hold
- * one, and the secret is never written down — only ever a key the browser will use and will not
- * hand back.
+ * The attachment is two halves in two places, deliberately: what the bucket *is* — endpoint, bucket,
+ * region, prefix, access key id — is in `projects/<id>/bucket.json`, and what signs for it is a
+ * non-extractable `CryptoKey` in IndexedDB. A `CryptoKey` is not bytes, so OPFS cannot hold one; the
+ * secret itself is never written down, only ever a key the browser will use and will not hand back.
  */
 
 import { base } from "$app/paths";
@@ -74,10 +68,7 @@ async function projectDir(
   return await directory(await directory(space, "projects"), project);
 }
 
-/**
- * IndexedDB, because it is the only origin-scoped store that can hold a `CryptoKey`: structured
- * clone carries one, and a non-extractable key stays non-extractable on the way back out.
- */
+/** IndexedDB, because it is the only origin-scoped store that can hold a `CryptoKey`. */
 function database(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DATABASE, 1);
@@ -136,8 +127,8 @@ export async function readBucketConfig(
 /**
  * The bucket and its signing key, or null when nothing is attached.
  *
- * The config is written after the key, so a `bucket.json` that exists without a key means the store
- * was cleared under it — worth a sentence, rather than a signature that mysteriously comes out wrong.
+ * The config is written after the key, so a `bucket.json` without a key means the store was cleared
+ * under it: worth a sentence, rather than a signature that mysteriously comes out wrong.
  */
 export async function readAttachment(
   space: Directory,
@@ -158,12 +149,9 @@ export async function readAttachment(
 }
 
 /**
- * The bucket and a key that signs for it, from what an attach form collected — validated and imported,
- * but attached to nothing yet.
- *
- * This is what a form needs before there is anything to attach it to: the dialog that starts a workspace
- * from a bucket has to list the bucket to offer what it holds, and the workspace it will belong to does
- * not exist yet.
+ * The bucket and a key that signs for it, from what an attach form collected: validated and imported,
+ * but attached to nothing yet. A form needs this before there is anything to attach it to, which is
+ * the case when a bucket is listed to start a workspace that does not exist yet.
  */
 export async function signingFor(input: BucketInput): Promise<Attachment> {
   // The bucket may have arrived on the end of the endpoint: a dashboard's copy button gives the whole
@@ -230,12 +218,9 @@ export async function detachBucket(
 }
 
 /**
- * The bucket in Cloudflare's dashboard, when the endpoint is R2's. R2's S3 endpoint names the account in
- * its host — `<ACCOUNT_ID>.r2.cloudflarestorage.com` — which is all the dashboard URL needs besides the
- * bucket.
- *
- * `null` for anything else: MinIO, plain S3 and the stub have no equivalent page, and a link that went
- * somewhere wrong would be worse than no link.
+ * The bucket's page in Cloudflare's dashboard, when the endpoint is R2's: `<ACCOUNT_ID>.r2.cloudflarestorage.com`
+ * names the account in its host, which is all the URL needs besides the bucket. `null` for anything
+ * else, since a link that went somewhere wrong would be worse than no link.
  */
 export function r2DashboardUrl(
   config: Pick<BucketConfig, "endpoint" | "bucket">,
@@ -312,10 +297,8 @@ function explainListing(status: number): string {
 }
 
 /**
- * What the bucket holds.
- *
- * This is the one place the design's "never list the bucket" rule bends, and it bends because a person
- * asked: one request, made when the chooser is opened, never on a path the app depends on.
+ * What the bucket holds. The one place the design's "never list the bucket" rule bends: one request,
+ * made when a person opens the chooser, never on a path the app depends on.
  */
 export async function listObjects(
   attachment: Attachment,
@@ -351,9 +334,9 @@ export async function listObjects(
   };
 }
 
-/** The documents in a listing, newest first: what the chooser offers, one entry per object that is
- * not one-save-back shadow (`*.prev.*`). Any format is offered: a workspace can be started from a
- * PSD or a PNG as readily as from a `.pcraft`. */
+/** The documents in a listing, newest first: one entry per object that is not a one-save-back shadow
+ * (`*.prev.*`). Any format is offered, since a workspace can be started from a PSD or a PNG as
+ * readily as from a `.pcraft`. */
 export function bucketDocuments(objects: BucketObject[]): BucketDocument[] {
   const documents: BucketDocument[] = [];
   for (const object of objects) {
@@ -399,13 +382,11 @@ function explain(status: number): string {
 }
 
 /**
- * A request that never completed.
- *
- * `fetch` rejects with a bare `TypeError` — "Failed to fetch" — for anything the network layer will not
- * show us, and for a cross-origin request the usual cause is the bucket's CORS policy: with no
- * `Access-Control-Allow-Origin` the browser withholds the whole response, so there is nothing to report
- * but the fact that there is nothing. It is worth spelling out, because it is the one failure no other
- * part of the app can see, and it reads like bad credentials.
+ * A request that never completed. `fetch` rejects with a bare `TypeError` for anything the network
+ * layer will not show us, and cross-origin the usual cause is the bucket's CORS policy: with no
+ * `Access-Control-Allow-Origin` the browser withholds the whole response, so there is nothing to
+ * report but the fact that there is nothing. Worth spelling out, because it is the one failure no
+ * other part of the app can see, and it reads like bad credentials.
  */
 function unreachable(config: BucketConfig, because: unknown): Problem {
   const origin =
@@ -435,9 +416,6 @@ async function send(
   }
 }
 
-/**
- * Sign one operation.
- */
 async function url(
   attachment: Attachment,
   op: BucketOp,
@@ -471,11 +449,9 @@ export class BucketError extends Error {
 }
 
 /**
- * Upload bytes and report what the bucket said about them.
- *
- * The body is a `Uint8Array` on purpose: `fetch` sets no `Content-Type` for one, and the signature
- * covers only the host, so a header the browser added on its own would be one the bucket has no
- * reason to accept.
+ * Upload bytes and report what the bucket said. The body is a `Uint8Array` on purpose: `fetch` sets
+ * no `Content-Type` for one, and a header the browser added on its own is one the signature does not
+ * cover.
  */
 export async function uploadObject(
   attachment: Attachment,

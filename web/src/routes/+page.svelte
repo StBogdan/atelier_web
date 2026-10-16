@@ -33,7 +33,7 @@
     removeProject,
     type Workspace,
   } from "$lib/contract";
-  import { normalisePrefix, prefixUrl, resolveBucket } from "$lib/sigv4";
+  import { resolveTarget } from "$lib/sigv4";
   import type { Directory } from "$lib/opfs";
   import {
     ensurePersistence,
@@ -168,26 +168,9 @@
 
   /**
    * What the bucket option would sign for, or null while the fields do not yet name one. The workspace
-   * has no id and no document until it exists, so this is as far as the URL can be known — and it is
-   * resolved the way `attachBucket` resolves it, so the two cannot disagree.
+   * has no id and no document until it exists, so this is as far as the URL can be known.
    */
-  const bucketPreview = $derived.by(() => {
-    if (!attaching || !bucketForm.endpoint.trim()) return null;
-    try {
-      const { endpoint, bucket } = resolveBucket(
-        bucketForm.endpoint,
-        bucketForm.bucket,
-      );
-      if (!bucket) return null;
-      return prefixUrl({
-        endpoint,
-        bucket,
-        prefix: normalisePrefix(bucketForm.prefix),
-      });
-    } catch {
-      return null;
-    }
-  });
+  const bucketPreview = $derived(attaching ? resolveTarget(bucketForm) : null);
 
   /**
    * How the list is drawn — a card each or a row each, and whether previews are shown. Both are the
@@ -261,31 +244,7 @@
   /** Which workspace's row is working, so its buttons can wait rather than being pressed twice. */
   let working = $state<string | null>(null);
   /** What the last row action did, or why it could not, in the page's own banner. */
-  /**
-   * The page's own status line: what the last row action did, or why it could not. It is built from
-   * parts rather than a string, so the bits worth reading at a glance — a document, a destination —
-   * can be weighted, and so an informational line reads blue rather than as another warning.
-   */
-  type Status = {
-    kind: "info" | "bad";
-    parts: { text: string; strong?: boolean }[];
-  };
-  let status = $state<Status | null>(null);
-
-  /** A status line from a sentence, with `{ strong: … }` where a bit is worth reading closely. */
-  function line(
-    kind: Status["kind"],
-    ...parts: (string | { strong: string })[]
-  ): Status {
-    return {
-      kind,
-      parts: parts.map((part) =>
-        typeof part === "string"
-          ? { text: part }
-          : { text: part.strong, strong: true },
-      ),
-    };
-  }
+  let status = $state<string | null>(null);
 
   /**
    * Keep the workspace (a revision, then its bucket copy) or take it away (the document), without
@@ -296,22 +255,12 @@
     failure = null;
     status =
       what === "keep"
-        ? line(
-            "info",
-            "Committing ",
-            { strong: workspace.name },
-            " and uploading it…",
-          )
-        : line("info", "Downloading ", { strong: workspace.name }, "…");
+        ? `Committing ${workspace.name} and uploading it…`
+        : `Downloading ${workspace.name}…`;
     try {
       const space = await ensureSpace();
       if (what === "take") {
-        status = line(
-          "info",
-          "Downloaded ",
-          { strong: await downloadWorkspace(space, workspace.id) },
-          ".",
-        );
+        status = `Downloaded ${await downloadWorkspace(space, workspace.id)}.`;
         return;
       }
       const result = await commitAndUpload(space, workspace.id);
@@ -325,38 +274,16 @@
     }
   }
 
-  function describe(name: string, result: CommitResult): Status {
-    if (result.committed && result.uploaded) {
-      return line(
-        "info",
-        "Committed ",
-        { strong: name },
-        ` at rev ${result.rev}, and uploaded `,
-        { strong: result.uploaded.name },
-        ` (${bytes(result.uploaded.size)}) to `,
-        { strong: result.uploaded.where },
-        ".",
-      );
+  function describe(name: string, result: CommitResult): string {
+    const uploaded = result.uploaded;
+    if (result.committed && uploaded) {
+      return `Committed ${name} at rev ${result.rev}, and uploaded ${uploaded.name} (${bytes(uploaded.size)}) to ${uploaded.where}.`;
     }
-    if (result.committed) {
-      return line(
-        "info",
-        "Committed ",
-        { strong: name },
-        ` at rev ${result.rev}.`,
-      );
+    if (result.committed) return `Committed ${name} at rev ${result.rev}.`;
+    if (uploaded) {
+      return `Nothing new to commit: uploaded ${uploaded.name} (${bytes(uploaded.size)}) to ${uploaded.where}.`;
     }
-    if (result.uploaded) {
-      return line(
-        "info",
-        "Nothing new to commit: uploaded ",
-        { strong: result.uploaded.name },
-        ` (${bytes(result.uploaded.size)}) to `,
-        { strong: result.uploaded.where },
-        ".",
-      );
-    }
-    return line("info", { strong: name }, ` is already at rev ${result.rev}.`);
+    return `${name} is already at rev ${result.rev}.`;
   }
 
   onMount(() => {
@@ -476,15 +403,7 @@
       if (bucket) {
         const from =
           source === "bucket" && chosen ? `, starting from ${chosen.key}` : "";
-        status = line(
-          "info",
-          "Created ",
-          { strong: created.name },
-          from,
-          ", attached to ",
-          { strong: bucket.bucket },
-          ".",
-        );
+        status = `Created ${created.name}${from}, attached to ${bucket.bucket}.`;
       }
     } catch (e) {
       problem = e;
@@ -568,14 +487,7 @@
 {/if}
 
 {#if status}
-  <p
-    class="banner"
-    class:info={status.kind === "info"}
-    class:bad={status.kind === "bad"}
-  >
-    {#each status.parts as part}{#if part.strong}<strong>{part.text}</strong
-        >{:else}{part.text}{/if}{/each}
-  </p>
+  <p class="banner info">{status}</p>
 {/if}
 
 {#if $workspaces.length === 0}
@@ -988,8 +900,7 @@
     filter: brightness(1.08);
   }
 
-  /* What a row action did is information, not a warning: blue, with the document and destination
-	   standing out from the sentence around them. A failure keeps the banner's own red. */
+  /* What a row action did is information, not a warning: blue. */
   .banner.info {
     border-left-color: var(--accent);
     color: var(--accent);
