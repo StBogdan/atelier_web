@@ -104,7 +104,7 @@ fn deployment_or_exit() -> Deployment {
         Err(error) => {
             eprintln!("atelier-web: {error}");
             eprintln!("    ATELIER_PROFILE is `standalone` (the default) or `hosted`.");
-            eprintln!("    A hosted deployment also needs ATELIER_CENTRAL_URL. See docs/central.md.");
+            eprintln!("    A hosted deployment also needs ATELIER_CENTRAL_URL.");
             std::process::exit(2);
         }
     }

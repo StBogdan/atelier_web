@@ -244,11 +244,11 @@ the Changes panel exact.
 | `ATELIER_BIND` | `127.0.0.1` | Address to bind. Loopback by default; a container sets `0.0.0.0`. |
 | `PHOTOCRAFT_UPSTREAM` | `http://127.0.0.1:8080` | Where the editor is served from. |
 | `ATELIER_WEB_DIR` | `web/build` | Directory served at `/cloud/`. |
-| `ATELIER_PROFILE` | `standalone` | `standalone`, or `hosted` to put a service behind identity and storage ([`docs/central.md`](docs/central.md)). `self-hosted` is accepted for the first. |
+| `ATELIER_PROFILE` | `standalone` | `standalone`, or `hosted` to put a service behind identity and storage. `self-hosted` is accepted for the first. |
 | `ATELIER_CENTRAL_URL` | — | That service's public base URL. Required by `hosted`, ignored otherwise. |
 
-`hosted` is a seam for a service that does not exist in this repository
-([`docs/central.md`](docs/central.md)); the default runs everything itself and needs no configuration at all.
+`hosted` is a seam for a service that does not exist in this repository: the default runs everything
+itself and needs no configuration at all.
 A profile that cannot be configured stops the process rather than serving a half-configured deployment: an
 unknown `ATELIER_PROFILE`, or `hosted` without `ATELIER_CENTRAL_URL`, prints what is wrong and exits `2`.
 
@@ -376,8 +376,7 @@ atelier_web/
 ├── LICENSE, NOTICE    MIT, and the third-party material
 ├── CONTRIBUTING.md    how to run it, check it, and keep the patch in shape
 ├── Dockerfile         the server and the cloud app in one image (no editor)
-├── docs/              buckets.md, the bucket reference; central.md, a note on a service
-│                     behind this one (not built); and the screenshot the README shows
+├── docs/              buckets.md, the bucket reference, and the screenshot the README shows
 ├── run.sh             start both apps together
 ├── .github/workflows/ patch.yml: applies, builds and weighs the editor patch against the pin
 ├── server/            Atelier web: one process, both apps, one origin
