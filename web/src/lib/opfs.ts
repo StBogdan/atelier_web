@@ -97,14 +97,28 @@ export async function readText(
   return new TextDecoder().decode(await readBytes(parent, name));
 }
 
+/**
+ * The JSON in `name`, or `null` when there is none to read.
+ *
+ * A file being replaced is truncated before its new bytes land, so a reader that arrives inside a
+ * write fails with `NotReadableError`, or parses an empty or half-written file and throws
+ * `SyntaxError`. Neither means the file is missing or broken: the bytes are not there *yet*, and one
+ * retry, after the writer has closed, reads them. A file that is really gone still answers `null`.
+ */
 export async function readJson<T>(
   parent: Directory,
   name: string,
 ): Promise<T | null> {
-  try {
-    return JSON.parse(await readText(parent, name)) as T;
-  } catch {
-    return null;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return JSON.parse(await readText(parent, name)) as T;
+    } catch (error) {
+      const midWrite =
+        error instanceof SyntaxError ||
+        (error instanceof DOMException && error.name === "NotReadableError");
+      if (attempt > 0 || !midWrite) return null;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
   }
 }
 
