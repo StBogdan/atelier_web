@@ -13,7 +13,7 @@
 //! fails silently. Always use this one (design, [The One-Origin Development Setup](../../../docs/atelier_web_design.md),
 //! "Invariant: always open the front port").
 
-use std::{env, net::SocketAddr, path::PathBuf};
+use std::{env, net::IpAddr, net::SocketAddr, path::PathBuf};
 
 use axum::{
     body::to_bytes,
@@ -26,6 +26,10 @@ use axum::{
 use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
 
+mod profile;
+
+use profile::Deployment;
+
 /// Requests are proxied whole; the editor's wasm is ~26 MB, so this is generous but bounded.
 const MAX_BODY: usize = 512 << 20;
 
@@ -34,11 +38,17 @@ struct App {
     /// Where the editor lives, without a trailing slash, e.g. `http://127.0.0.1:8080`.
     upstream: String,
     http: reqwest::Client,
+    /// Which edition this is, and the two answers that follow from it.
+    deployment: Deployment,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = env::var("ATELIER_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(3000);
+    // Loopback by default, which is right for the one-origin development setup and for a deployment
+    // behind a reverse proxy. A container has no loopback to share with its host, so it sets this to
+    // `0.0.0.0` (see the Dockerfile).
+    let bind: IpAddr = env::var("ATELIER_BIND").ok().and_then(|b| b.parse().ok()).unwrap_or(IpAddr::from([127, 0, 0, 1]));
     let upstream = env::var("PHOTOCRAFT_UPSTREAM").unwrap_or_else(|_| "http://127.0.0.1:8080".to_owned());
     let upstream = upstream.trim_end_matches('/').to_owned();
     let web_dir = env::var("ATELIER_WEB_DIR")
@@ -50,10 +60,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("warning: {} has no index.html — build the cloud app: cd ../web && npm install && npm run build", web_dir.display());
     }
 
-    let app = App { upstream: upstream.clone(), http: reqwest::Client::new() };
+    let deployment = deployment_or_exit();
+
+    let app = App {
+        upstream: upstream.clone(),
+        http: reqwest::Client::new(),
+        deployment: deployment.clone(),
+    };
 
     let router = Router::new()
         .route("/api/health", get(health))
+        // What this deployment can do, which is the whole of how the cloud app tells the two
+        // editions apart. See `profile.rs`.
+        .route("/api/capabilities", get(capabilities))
         // `/cloud` without the trailing slash would otherwise 404: point it at the directory.
         .route("/cloud", get(|| async { axum::response::Redirect::permanent("/cloud/") }))
         // Atelier Cloud is a static SPA (design, The Landing Page and Launcher, Milestones: SSR is off). One `index.html` serves every
@@ -64,22 +83,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .fallback(any(editor))
         .with_state(app);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let addr = SocketAddr::from((bind, port));
     let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
         format!("cannot bind {addr}: {e}\n(another process on this port? set ATELIER_PORT to change it)")
     })?;
 
-    println!("Atelier web  →  http://127.0.0.1:{port}/");
-    println!("    /cloud/   Atelier Cloud (static from {})", web_dir.display());
-    println!("    /         the editor (proxy → {upstream})");
-    println!("\nOpen http://127.0.0.1:{port}/cloud/ first, so both apps share one OPFS.");
+    print_banner(addr, &web_dir, &upstream);
 
     axum::serve(listener, router).await?;
     Ok(())
 }
 
+/// A deployment that cannot be configured is not a deployment. Say what is wrong and stop, rather
+/// than serving a half-configured edition. `main` returns a `Box<dyn Error>`, which the runtime
+/// prints with `Debug`, so the message is printed here where it can be the one the operator wrote
+/// the variable for.
+fn deployment_or_exit() -> Deployment {
+    match Deployment::from_env() {
+        Ok(deployment) => deployment,
+        Err(error) => {
+            eprintln!("atelier-web: {error}");
+            eprintln!("    ATELIER_PROFILE is `standalone` (the default) or `hosted`.");
+            eprintln!("    A hosted deployment also needs ATELIER_CENTRAL_URL. See docs/central.md.");
+            std::process::exit(2);
+        }
+    }
+}
+
+fn print_banner(addr: SocketAddr, web_dir: &std::path::Path, upstream: &str) {
+    println!("Atelier web  →  http://{addr}/");
+    println!("    /cloud/   Atelier Cloud (static from {})", web_dir.display());
+    println!("    /         the editor (proxy → {upstream})");
+    println!("\nOpen http://{addr}/cloud/ first, so both apps share one OPFS.");
+}
+
 async fn health() -> Json<serde_json::Value> {
     Json(json!({ "service": "atelier-web", "status": "ok", "hello": "world" }))
+}
+
+/// What the cloud app reads at boot, so it can hide what this deployment has no one to do.
+async fn capabilities(State(app): State<App>) -> Json<profile::Capabilities> {
+    Json(app.deployment.capabilities())
 }
 
 /// The editor, proxied so that it shares this origin — and therefore the OPFS — with the cloud app.

@@ -4,6 +4,11 @@
   import { base } from "$app/paths";
   import { browser } from "$app/environment";
   import "../app.css";
+  import {
+    capabilities,
+    capabilitiesReady,
+    loadCapabilities,
+  } from "$lib/capabilities";
   import { bytes } from "$lib/format";
   import {
     failure,
@@ -17,6 +22,7 @@
   let { children } = $props();
 
   onMount(() => {
+    void loadCapabilities();
     void refresh();
     const stopWatching = watch();
     const stopGuard = guardUnload();
@@ -86,6 +92,12 @@
         aria-current={here.startsWith(`${base}/help`) ? "page" : undefined}
         >Help</a
       >
+      {#if $capabilitiesReady && $capabilities.central}
+        <a
+          href={$capabilities.central.login}
+          title="Sign in through {$capabilities.central.url}">Sign in</a
+        >
+      {/if}
     </span>
     {#if latest}
       <a
