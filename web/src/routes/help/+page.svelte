@@ -83,9 +83,9 @@
         <tr>
           <td>The document</td>
           <td>
-            <code
-              >atelier-cloud/projects/&lt;workspace&gt;/&lt;name&gt;.pcraft</code
-            >, in OPFS. The editor writes only this file and its
+            <code>atelier-cloud/projects/&lt;workspace&gt;/&lt;name&gt;</code>,
+            in OPFS, under the name it has in this workspace whatever format it
+            arrived in. The editor writes only this file and its
             <code>.prev</code> backup, and it is the only copy of your work.
           </td>
         </tr>
@@ -101,8 +101,8 @@
           <td>The bucket copy</td>
           <td>
             one object in your bucket, <code
-              >&lt;prefix&gt;&lt;workspace&gt;/&lt;name&gt;.pcraft</code
-            >, written only when you upload.
+              >&lt;prefix&gt;&lt;workspace&gt;/&lt;name&gt;</code
+            >, under the document's own name, written only when you upload.
           </td>
         </tr>
       </tbody>
@@ -118,6 +118,14 @@
       "uncommitted" state on the workspace card and here. It is not a backup,
       and it keeps no history: the cloudspace holds only the latest revision,
       and only an upload survives the browser clearing your storage.
+    </p>
+    <p>
+      The editor writes here and goes elsewhere by different doors.
+      <em>Save</em>, and <em>Save As</em>, put the document you have open back
+      into this workspace, under the name it already has: that is what the file
+      in the first row above is. <em>Export</em> — Export As, Save for Web, Save a
+      Copy, Quick Export — sends the file to your own computer through the browser's
+      download, and nothing in the workspace changes.
     </p>
     <p>
       The pending change is <code
