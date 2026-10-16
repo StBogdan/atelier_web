@@ -13,10 +13,10 @@ index a4ded641..7022726b 100644
  serde_json = { workspace = true }
 diff --git a/apps/photocraft-web/src/atelier_cloud.rs b/apps/photocraft-web/src/atelier_cloud.rs
 new file mode 100644
-index 00000000..3f16e42c
+index 00000000..35b435d7
 --- /dev/null
 +++ b/apps/photocraft-web/src/atelier_cloud.rs
-@@ -0,0 +1,603 @@
+@@ -0,0 +1,609 @@
 +//! The Atelier Cloud cloudspace, as the editor sees it: the whole of the patch (design, The PhotoCraft Patch).
 +//!
 +//! Three things:
@@ -70,6 +70,9 @@ index 00000000..3f16e42c
 +/// Formats a save may keep inside the bound project. A save to anything else is an export and
 +/// downloads, exactly as before (Saving).
 +const PROJECT_FORMATS: &[&str] = &["pcraft", "psd", "psb", "ora"];
++/// Atelier web's own files inside a project directory (Documents): never documents, whatever the
++/// editor could read.
++const PROJECT_FILES: &[&str] = &["meta.json", "pending.json", "thumb.png", "bucket.json"];
 +
 +/// The project this page was launched into (`?project=`). One per page: a document's own virtual
 +/// path is what binds it, so several open documents need nothing per document here.
@@ -205,7 +208,7 @@ index 00000000..3f16e42c
 +    let dir = project_dir(project).await?;
 +    let name = match document {
 +        Some(name) => name.to_owned(),
-+        None => document_name(&dir).await?.ok_or_else(|| format!("{PROJECTS}/{project} holds no .{EXTENSION} document"))?,
++        None => document_name(&dir).await?.ok_or_else(|| format!("{PROJECTS}/{project} holds no document"))?,
 +    };
 +    let bytes = with_lock(&format!("{LOCK}{project}"), "shared", {
 +        let (dir, name) = (dir.clone(), name.clone());
@@ -299,11 +302,14 @@ index 00000000..3f16e42c
 +    Some((project, document))
 +}
 +
-+/// A document name as the contract defines it (Identifiers): a file name inside the project
-+/// directory — no separator, no leading dot — ending in `.pcraft`. A name that is not one is
-+/// refused rather than turned into a path.
++/// A document name as the contract defines it (Documents): a file name inside the project
++/// directory — no separator, no leading dot — that is not one of Atelier web's own files and not a
++/// one-save-back shadow. Any other format is a document, because the editor decides by content
++/// which files it can read (a `.pcraft`, a PSD, a PNG), so one it cannot opens with that error
++/// rather than being hidden here. A name that is not a document name is refused rather than turned
++/// into a path.
 +fn is_document_name(name: &str) -> bool {
-+    name.len() > EXTENSION.len() + 1 && !name.starts_with('.') && !name.contains('/') && extension_of(name) == EXTENSION
++    !name.is_empty() && !name.starts_with('.') && !name.contains('/') && !name.ends_with(".prev") && !PROJECT_FILES.contains(&name)
 +}
 +
 +/// The virtual path a document of `project` is opened and saved under (Saving).
@@ -408,10 +414,10 @@ index 00000000..3f16e42c
 +        .map_err(|_| format!("`{name}` is not a directory"))
 +}
 +
-+/// The project's first `*.pcraft` in name order (Documents): what a consumer that only knows the
++/// The project's first document in name order (Documents): what a consumer that only knows the
 +/// project opens, and the only document of a project that never held more than one.
 +async fn document_name(dir: &FileSystemDirectoryHandle) -> Result<Option<String>, String> {
-+    let mut names: Vec<String> = names(dir).await?.into_iter().filter(|name| extension_of(name) == EXTENSION).collect();
++    let mut names: Vec<String> = names(dir).await?.into_iter().filter(|name| is_document_name(name)).collect();
 +    names.sort();
 +    Ok(names.into_iter().next())
 +}

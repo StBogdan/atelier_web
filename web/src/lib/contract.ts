@@ -278,7 +278,21 @@ export async function inspect(
     });
   }
   const size = documents.reduce((total, entry) => total + entry.size, 0);
-  const dirty = documents.some((entry) => entry.dirty);
+  // A workspace is uncommitted when the document a commit would record is not what the revision
+  // recorded. Anything else in the project, a PNG or a second .pcraft the revision cannot describe,
+  // is held as it is and does not set this: the badge appears exactly where Commit can clear it.
+  const target =
+    recorded && names.includes(recorded)
+      ? recorded
+      : (names.find((name) => isPcraftName(name)) ?? null);
+  const targetInfo = target ? await stat(dir, target) : null;
+  const dirty =
+    target === null
+      ? false
+      : revision === null ||
+        targetInfo === null ||
+        targetInfo.size !== revision.size ||
+        targetInfo.modified !== revision.modified;
   const thumb = (await stat(dir, THUMB_FILE)) !== null;
 
   if (!meta) {
@@ -553,7 +567,15 @@ export async function commit(
   return await withLock(lockName(project), "exclusive", async () => {
     const meta = (await readJson<Meta>(dir, META_FILE)) ?? null;
     if (!meta) throw new Error("this project has no meta.json");
-    const name = document ?? (await documentName(dir));
+    // What to record: the caller's document, else the one the revision describes, else the first
+    // .pcraft, which is what a workspace started from several files has. Bare name order can put a
+    // PNG first, and a revision cannot describe one.
+    const names = await documentNames(dir);
+    const wanted = document ?? meta.document ?? null;
+    const name =
+      wanted && names.includes(wanted)
+        ? wanted
+        : (names.find((candidate) => isPcraftName(candidate)) ?? names[0] ?? null);
     if (!name) throw new Error("this project has no document to commit");
     // A revision is the document's object set, so it can only describe a .pcraft.
     if (!isPcraft(await readBytes(dir, name)))
@@ -562,6 +584,12 @@ export async function commit(
       );
     const bytes = await readBytes(dir, name);
     const info = await stat(dir, name);
+    // The same bytes as the current revision would be a revision that says nothing, and `rev` is
+    // what a reader counts.
+    if (meta.document === name && meta.revision?.hash === (await hash(bytes))) {
+      await clearPending(space, project);
+      return meta;
+    }
     const entries = readDirectory(bytes);
     const preview = previewEntry(entries);
     if (preview)

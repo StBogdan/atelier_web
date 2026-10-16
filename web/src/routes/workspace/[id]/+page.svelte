@@ -14,7 +14,6 @@
     ensureSpace,
     hash,
     inspect,
-    isPcraftName,
     objectKey,
     pendingChange,
     readMeta,
@@ -527,7 +526,7 @@
     <div class="row actions">
       <a
         class="button primary"
-        href={editorUrl(recordedDocument ?? undefined)}
+        href={editorUrl(shown?.name ?? undefined)}
         target="_blank"
         rel="noopener">Open in editor</a
       >
@@ -708,21 +707,17 @@
                   {document.dirty
                     ? `changed since rev ${meta.rev}`
                     : `revision ${meta.rev}`}
-                {:else if isPcraftName(document.name)}
-                  not in a revision
                 {:else}
-                  kept as it is; the editor opens <code>.pcraft</code>
+                  not in a revision
                 {/if}
               </td>
               <td class="right">
-                {#if isPcraftName(document.name)}
-                  <a
-                    class="button"
-                    href={editorUrl(document.name)}
-                    target="_blank"
-                    rel="noopener">Open</a
-                  >
-                {/if}
+                <a
+                  class="button"
+                  href={editorUrl(document.name)}
+                  target="_blank"
+                  rel="noopener">Open</a
+                >
                 <button
                   onclick={() => saveDocument(document)}
                   disabled={busy !== null}>Download</button
