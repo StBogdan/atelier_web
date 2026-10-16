@@ -559,7 +559,7 @@
 {#if $unsynced > 0}
   <p class="banner">
     {$unsynced === 1 ? "One workspace has" : `${$unsynced} workspaces have`} changes
-    that are not committed yet: they live in <code>atelier-cloud/outbox/</code>.
+    that are not committed yet.
   </p>
 {/if}
 
@@ -660,7 +660,7 @@
             <div class="row">
               {#if buckets[workspace.id]}
                 <button
-                  class="action-button"
+                  class="action-button primary"
                   title={keepTip(workspace)}
                   disabled={working !== null || !workspace.dirty}
                   onclick={() => act(workspace, "keep")}
@@ -670,7 +670,7 @@
                 </button>
               {:else}
                 <button
-                  class="action-button"
+                  class="action-button primary"
                   title={keepTip(workspace)}
                   disabled={working !== null || !workspace.dirty}
                   onclick={() => act(workspace, "keep")}
@@ -970,6 +970,20 @@
 
   .action-button:hover:not(:disabled) {
     color: var(--ink);
+  }
+
+  /* The one action that protects work: solid, so it reads as the thing to press when the badge
+     beside it says there is something to commit. */
+  .action-button.primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--primary-ink);
+    padding: 0.15rem 0.55rem;
+  }
+
+  .action-button.primary:hover:not(:disabled) {
+    color: var(--primary-ink);
+    filter: brightness(1.08);
   }
 
   /* What a row action did is information, not a warning: blue, with the document and destination

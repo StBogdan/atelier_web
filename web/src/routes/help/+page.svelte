@@ -115,10 +115,9 @@
     </p>
     <p>
       What that buys you is the exact diff against the last revision, and the
-      "uncommitted" warnings, including the prompt that asks before you close
-      the tab with work saved but not recorded. It is not a backup, and it keeps
-      no history: the cloudspace holds only the latest revision, and only an
-      upload survives the browser clearing your storage.
+      "uncommitted" state on the workspace card and here. It is not a backup,
+      and it keeps no history: the cloudspace holds only the latest revision,
+      and only an upload survives the browser clearing your storage.
     </p>
     <p>
       The pending change is <code
@@ -374,10 +373,10 @@
             <code>meta.json</code>, the thumbnail is refreshed, and the pending
             change is cleared. Nothing is uploaded. You get the exact diff,
             since there would otherwise be no baseline to compare against, and
-            the "uncommitted" warnings, including the prompt before you close
-            the tab with unrecorded work. It is not a backup and it keeps no
-            history: the cloudspace holds only the latest revision, and only an
-            upload survives the browser clearing your storage.
+            the "uncommitted" state on the workspace card and here. It is not a
+            backup and it keeps no history: the cloudspace holds only the latest
+            revision, and only an upload survives the browser clearing your
+            storage.
           </td>
         </tr>
         <tr>

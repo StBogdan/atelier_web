@@ -10,14 +10,7 @@
     loadCapabilities,
   } from "$lib/capabilities";
   import { bytes } from "$lib/format";
-  import {
-    failure,
-    guardUnload,
-    refresh,
-    storage,
-    watch,
-    workspaces,
-  } from "$lib/session";
+  import { failure, refresh, storage, watch, workspaces } from "$lib/session";
 
   let { children } = $props();
 
@@ -25,10 +18,8 @@
     void loadCapabilities();
     void refresh();
     const stopWatching = watch();
-    const stopGuard = guardUnload();
     return () => {
       stopWatching();
-      stopGuard();
     };
   });
 

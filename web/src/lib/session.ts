@@ -92,19 +92,3 @@ export async function ensurePersistence(): Promise<void> {
   await requestPersistence();
   storage.set(await storageHealth());
 }
-
-/**
- * The provider's own guard, next to the editor's (design, Design Rules, Where Cloud State Is Surfaced): work that is saved to OPFS
- * and not yet committed is the only thing at risk, and the editor does not warn about it.
- */
-export function guardUnload(): () => void {
-  if (typeof window === "undefined") return () => {};
-  const onBeforeUnload = (event: BeforeUnloadEvent) => {
-    if (get(unsynced) > 0) {
-      event.preventDefault();
-      event.returnValue = "";
-    }
-  };
-  window.addEventListener("beforeunload", onBeforeUnload);
-  return () => window.removeEventListener("beforeunload", onBeforeUnload);
-}
