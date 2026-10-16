@@ -14,17 +14,29 @@ UPSTREAM="${PHOTOCRAFT_UPSTREAM:-http://127.0.0.1:8080}"
 
 say() { printf '%s\n' "$*"; }
 
-if [ ! -f "$WEB_DIR/index.html" ]; then
-  say "The cloud app is not built: $WEB_DIR/index.html is missing."
+if ! command -v npm >/dev/null 2>&1; then
+  say "The cloud app is served from $WEB_DIR, and npm is missing to build it."
   say "    cd web && npm install && npm run build"
   say ""
+elif [ ! -f "$WEB_DIR/index.html" ] || [ -n "$(find web/src web/static web/package.json -newer "$WEB_DIR/index.html" -print -quit 2>/dev/null)" ]; then
+  # Built here rather than served stale: this script is the one that serves it, and a page that
+  # disagrees with the editor it shares an origin with is the confusing case.
+  say "cloud app: building into $WEB_DIR"
+  [ -d web/node_modules ] || (cd web && npm install)
+  (cd web && npm run build)
+else
+  say "cloud app: $WEB_DIR is up to date with its sources"
 fi
 
 if ! command -v docker >/dev/null 2>&1; then
   say "docker not found: start the editor some other way, then"
   say "  PHOTOCRAFT_UPSTREAM=http://127.0.0.1:8765 ./run.sh"
 elif docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
-  say "editor: $CONTAINER is already running"
+  # Say what this is: the upstream image, built when it was built, with no patch and no cloudspace.
+  # It is the fallback, not the editor the rest of this repository builds — the root ../run.sh does
+  # that, and its About line names the commit it was built from.
+  say "editor: $CONTAINER is already running — the upstream image, not the patched editor"
+  say "        (the root ../run.sh builds the patched one; it is what shows a cloudspace)"
 elif docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER"; then
   say "editor: starting $CONTAINER…"
   docker start "$CONTAINER" >/dev/null
@@ -60,7 +72,6 @@ fi
 say ""
 say "Atelier Cloud  →  http://127.0.0.1:$PORT/cloud/"
 say "Editor         →  http://127.0.0.1:$PORT/"
-say "Open the first one and use the second from there, so both share one OPFS."
 say ""
 
 exec cargo run --release --manifest-path server/Cargo.toml
