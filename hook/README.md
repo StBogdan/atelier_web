@@ -1,6 +1,6 @@
 # The PhotoCraft patch
 
-One new file and five hunks, applied to a PhotoCraft checkout. This is the only place the patch is
+One new file and six hunks, applied to a PhotoCraft checkout. This is the only place the patch is
 documented. The design says why it exists ([The PhotoCraft Patch](../../docs/atelier_web_design.md#the-photocraft-patch), [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable));
 everything operational is here, next to the file.
 
@@ -13,25 +13,28 @@ apply.sh                   apply / check / revert / build it against any ref
 
 | File | Change |
 |---|---|
-| `apps/photocraft-web/src/atelier_cloud.rs` | new: the whole cloudspace hook, and the link's label and URL |
+| `apps/photocraft-web/src/atelier_cloud.rs` | new: the whole cloudspace hook — reading a document, saving it back, listing a project's documents, and the link's label and URL |
 | `apps/photocraft-web/src/main.rs` | one line: `mod atelier_cloud;` |
-| `apps/photocraft-web/src/web.rs` | `services()`: `file_dialog` and `write` route through the module, plus `home_link` |
+| `apps/photocraft-web/src/web.rs` | `services()`: `write` routes through the module, and the `workspace` and `home_link` fields the shell adds |
 | `apps/photocraft-web/Cargo.toml` | the `web-sys` features the OPFS bindings need |
-| `crates/ui-egui/src/lib.rs` | one `Services` field: `home_link` |
-| `crates/ui-egui/src/panels.rs` | the title bar draws it to the left of its Discord link |
+| `crates/ui-egui/src/lib.rs` | the `Services` fields and the store's types, and the `Inbox`'s third element: the path a document was read from |
+| `crates/ui-egui/src/menus.rs` | `File ▸ Open from Workspace…`, removed from the menu when no store is there |
+| `crates/ui-egui/src/panels.rs` | the door's window, and the title bar drawing the way back to the left of its Discord link |
 
 The `Cargo.toml` hunk has to be there: `FileSystemDirectoryHandle`, `FileSystemFileHandle` and
 `FileSystemWritableFileStream` are the bindings design [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable) names, and none of
 them is switched on for the web runner today. Features are not dependencies, so nothing is added to the
 wasm dependency graph.
 
-The two `crates/ui-egui` hunks are the patch's only footprint outside the web runner, and they are
-deliberate: one `Services` field carrying a label and a URL, and the title bar drawing it. Take them out
-and the way back to the workspace is a link floating over the canvas rather than part of the app.
-Everything else upstream (engine, format, `crates/io`, the `Services` trait) is untouched.
+The four `crates/ui-egui` hunks, across three files, are the patch's only footprint outside the web
+runner, and they are deliberate: the `Services` fields and the store's types, the File menu item the
+shell's store is reached by, and the title bar and the window that draw it. Take them out and the way
+back to the workspace is a link floating over the canvas, and opening one of its documents is a page
+navigation, rather than part of the app. Everything else upstream (engine, format, `crates/io`, the
+`Services` trait) is untouched.
 
-The patch speaks only the contract names in `../contract/protocol.md`, never provider internals, so a
-provider release cannot force a patch release.
+The patch speaks only the contract names in `../contract/protocol.md`, never Atelier web's internals, so
+an Atelier web release cannot force a patch release.
 
 `web.rs` after the patch, in full:
 
@@ -47,25 +50,42 @@ write: Some(Box::new(|path: &str, bytes: &[u8]| match crate::atelier_cloud::targ
     Some((project, document)) => crate::atelier_cloud::write(&project, &document, bytes),
     None => download(path, bytes),
 })),
+// The shell's two contributions to the chrome: the store the workspace door lists, and the way back.
+workspace: crate::atelier_cloud::workspace_open(inbox.clone()),
+home_link: crate::atelier_cloud::home_link(),
 ```
 
 ## What it does
 
-`?project=<id>` binds the page to that project: the module reads `atelier-cloud/provider.json`,
-checks the protocol version, takes the single `*.pcraft` in `projects/<id>/` and hands its bytes to
-the `Inbox`. The app drains the inbox every frame, so the document opens as a normal one. A save
-whose path is `atelier-cloud://<id>/<name>` writes back into that project.
+`?project=<id>` binds the page to that project, and `&document=<name>` says which of its documents to
+open; without a name the module takes the first `*.pcraft` in name order. It reads
+`atelier-cloud/provider.json`, checks the protocol version, reads the document under a shared Web Lock
+and hands its bytes to the `Inbox` **together with its `atelier-cloud://<id>/<name>` path**. The app
+drains the inbox every frame, so the document opens as a normal one — and because the document carries
+its own path, a save writes back to *that* document and not to whichever one the page opened last.
 
-Three details worth knowing before changing it:
+`File ▸ Open` is the local door, and in a bound session the file it picks is written into the project
+as it opens (design, Import on Open): the bytes are copied under the file's own name — `.pcraft` when it
+had no extension — and the tab that opens carries that path, so nothing is in the editor that is not in
+the workspace. A page that is not bound to a project opens the file unbound, exactly as upstream does.
 
-- **Selection stays the provider's job.** `File ▸ Open` re-opens the bound project's document when the
-  page is bound and that document exists. Everywhere else it is the browser's picker, which is how a
-  local file gets in and how its save then lands in the project. Drag-and-drop is unchanged.
+`File ▸ Open from Workspace…` is the second door: it lists the bound project's documents, and the ticked
+ones are read the same way, one tab each. A project's documents are a flat list — nothing nests below
+`projects/<id>/` — so the window is a list of names and sizes.
+
+Four details worth knowing before changing it:
+
+- **`File ▸ Open` stays the browser's picker.** The patch does not claim it, because the picker is the
+  only way a local file gets in and the workspace door exists for the other direction. Drag-and-drop is
+  unchanged.
 - **Only document formats stay in the project.** A save to `.pcraft`, `.psd`, `.psb` or `.ora` goes
   to OPFS; Export As (PNG, JPEG, TIFF, TGA, WebP) still downloads, as it did.
 - **The write is asynchronous.** OPFS cannot be written synchronously from the main thread and the
   editor's `Services::write` is synchronous, so the module schedules the write and reports success.
-  What actually happened to the file is the provider's to derive from the filesystem (design [File Ownership](../../docs/atelier_web_design.md#file-ownership)).
+  What actually happened to the file is Atelier web's to derive from the filesystem (design [File Ownership](../../docs/atelier_web_design.md#file-ownership)).
+- **Nothing here knows which document a save is for beyond its path.** The path is the whole binding: a
+  `Binding` holds the project, never a document, so several documents can be open at once and a save
+  cannot land on the wrong one.
 
 The save follows the [Saving](../../docs/atelier_web_design.md#saving) sequence: exclusive Web Lock, `.prev` beside the document, `tmp/<uuid>`
 staging, then the document. `FileSystemWritableFileStream::close()` swaps the finished file in, so
@@ -77,21 +97,25 @@ Which dialogs it claims:
 
 | Request | Claimed when | Otherwise |
 |---|---|---|
-| `File ▸ Open` (several files, no extension filter) | a project with a document is bound | the browser's picker, unchanged |
+| `File ▸ Open` (several files, no extension filter) | never: this is the local door | the browser's picker, unchanged |
 | `Save`/`Save As` suggesting `.pcraft`, `.psd`, `.psb` or `.ora` | a project is bound | the download name, unchanged |
 | Export As (PNG, JPEG, TIFF, TGA, WebP) | never | downloads, unchanged |
 | Place, scripts, presets (the request carries extensions) | never | unchanged |
 
-Those two tests are all of it: `File ▸ Open` asks for several files and a command reading one file does
-not, and an export suggests a flat format. In a bound session that holds a document, `File ▸ Open`
-reopens it, which makes it the way back to the file on disk. In a workspace with no document yet the
-request is not claimed, the editor's own picker opens, and the save that follows lands in the project.
+`File ▸ Open` is deliberately *not* claimed — the browser's picker is the only way a local file gets
+in, and a workspace's own documents are opened from the workspace door instead, which needs no
+dialog. In a workspace that holds no document yet, the picker opens, and the save that follows names the
+project's first document.
+
+What the picker hands over is written into the bound project as it opens, not on its first save
+(design, Import on Open), so the file is in the workspace and the tab is bound to it. A page that is not
+bound to a project opens it the way it always did, unbound and unsaved.
 
 ## Code-wise
 
 - **No new crates.** OPFS is `web-sys`: `FileSystemDirectoryHandle`, `FileSystemFileHandle`,
   `FileSystemWritableFileStream`. Those features are the whole `Cargo.toml` hunk, so the wasm dependency
-  graph is unchanged. The release build is 23,943,791 bytes, inside Cloudflare's 25 MiB per-file cap.
+  graph is unchanged, and CI holds the release build to Cloudflare's 25 MiB per-file cap.
 - **`js_sys::Reflect` for two APIs.** `navigator.locks.request` and `BroadcastChannel` go through
   `Reflect`, because the typed `LockManager` bindings sit behind `web_sys_unstable_apis`, a cfg this build
   does not set.
@@ -116,6 +140,12 @@ doing it by hand, or against a different ref.
 ./apply.sh revert           # pristine upstream again
 PHOTOCRAFT_DIR=... ./apply.sh check <ref>     # against another checkout or ref
 ```
+
+`build` stamps the build's provenance (`PHOTOCRAFT_BUILD_SHA`, `PHOTOCRAFT_BUILD_DATE`), as upstream's
+own `packaging/env.sh` does for a release. Without it the About dialog reports the last *release*
+number and "(dev build)", which is misleading: PhotoCraft's version is bumped only at a release, so a
+build of the commit before v0.8.2 says `0.7.0 (dev build)` even though it is newer than `v0.7.0`.
+Stamped, the same line reads `0.9.0 (c699e3cda, 2026-10-15)` and names what it was built from.
 
 Keep the pinned submodule clean. Use a scratch checkout:
 
@@ -143,18 +173,20 @@ edit is therefore not a way to prove the build did not change; comparing the pat
 
 ## When upstream moves
 
-The patch is written against `d43db3e153c76aefce9b32cef9099e458eaf17a8` (`v0.8.2`), the
-commit the outer repository pins. Drift shows up as `apply.sh check` failing against a newer ref,
-almost always in the `file_dialog` closure in `services()`, which is where every hunk but `main.rs`
-lands. Checked on 2026-10-13, it applies cleanly to upstream `main` (`6f850542`, 286 commits on) with a
-3-way merge. Coming off the previous pin (`v0.7.0-150-ge2644265`) needed more than a 3-way merge:
-upstream had added the `FileDialogRequest::Folder` arm inside that closure and made the enum
-exhaustive, so the module's `answer()` grew a wildcard arm to go with `claims()`'s. A 3-way merge needs
-the pinned ref in the object database, so fetch it first when the checkout is a shallow clone of
-another branch:
+The patch is written against `c699e3cda69f4852b43c0b191ab0091aaeff9d6a` (`v0.9.0`), the
+commit the outer repository pins. Drift shows up as `apply.sh check` failing against a newer ref.
+Checked on 2026-10-15, it applies cleanly to the pin, and it **conflicts** with upstream `main`
+(`4e7a17cd`, 175 commits on) in the `crates/ui-egui/src/panels.rs` hunk — the title-bar link cluster,
+which grew by 544 lines in those 175 commits. That cluster is the patch's only footprint outside the web
+runner, and it is the place upstream churns fastest; the second place to look is the `file_dialog`
+closure in `services()`, where every hunk but `main.rs` lands. Coming off the previous pin
+(`v0.7.0-150-ge2644265`) that closure was the conflict: upstream had added the
+`FileDialogRequest::Folder` arm inside it and made the enum exhaustive, so the module's `answer()` grew
+a wildcard arm to go with `claims()`'s. A 3-way merge needs the pinned ref in the object database, so
+fetch it first when the checkout is a shallow clone of another branch:
 
 ```sh
-git -C /tmp/photocraft-hook fetch --depth 1 origin d43db3e153c76aefce9b32cef9099e458eaf17a8
+git -C /tmp/photocraft-hook fetch --depth 1 origin c699e3cda69f4852b43c0b191ab0091aaeff9d6a
 ```
 
 Re-apply by hand when upstream moves inside a hunk. `git diff` skips an untracked file, so `git add -N`

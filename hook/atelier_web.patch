@@ -13,25 +13,29 @@ index a4ded641..7022726b 100644
  serde_json = { workspace = true }
 diff --git a/apps/photocraft-web/src/atelier_cloud.rs b/apps/photocraft-web/src/atelier_cloud.rs
 new file mode 100644
-index 00000000..3f3d3532
+index 00000000..3f16e42c
 --- /dev/null
 +++ b/apps/photocraft-web/src/atelier_cloud.rs
-@@ -0,0 +1,451 @@
+@@ -0,0 +1,603 @@
 +//! The Atelier Cloud cloudspace, as the editor sees it: the whole of the patch (design, The PhotoCraft Patch).
 +//!
-+//! Two things, and nothing else:
++//! Three things:
 +//!
-+//! - `?project=<id>`: read the single `*.pcraft` in `atelier-cloud/projects/<id>/` and hand its
-+//!   bytes to the `Inbox`, so the editor opens that document (Opening a Project).
++//! - `?project=<id>`, or `?project=<id>&document=<name>`: read that document — the only one when no
++//!   name is given — from `atelier-cloud/projects/<id>/` and hand its bytes to the `Inbox`, so the
++//!   editor opens it (Opening a Project).
++//! - File › Open from Workspace: list that project's documents for the user to pick several, and
++//!   read the ticked ones into the `Inbox` the same way (Open from Workspace).
 +//! - a save whose path is `atelier-cloud://<id>/<name>`: write the bytes back into that project
 +//!   under a Web Lock (Saving).
 +//!
 +//! It speaks only the OPFS contract — `atelier-cloud/`, `provider.json`, `projects/`, `tmp/`, the
-+//! lock and channel names of Coordination Primitives, and `web-sys`, never provider internals, so a provider release
-+//! cannot force a patch release (Keeping the Patch Re-appliable). Selection stays the provider's job: the editor is told about
-+//! exactly one document and never browses OPFS to choose one (Selection).
++//! lock and channel names of Coordination Primitives, and `web-sys`, never Atelier web's internals,
++//! so an Atelier web release cannot force a patch release (Keeping the Patch Re-appliable). What to
++//! open stays Atelier web's job: this module reads the document it is told about, and lists the ones
++//! the user asked to choose from (Selection, Open from Workspace).
 +//!
-+//! The sections named in parentheses are in `atelier_web_design.md`, in the provider's repository:
++//! The sections named in parentheses are in `atelier_web_design.md`, in Atelier web's repository:
 +//! `hook/README.md` there has the whole story.
 +
 +use std::cell::RefCell;
@@ -40,14 +44,15 @@ index 00000000..3f3d3532
 +use std::sync::{Arc, Mutex};
 +
 +use js_sys::{Function, Promise, Reflect};
-+use photocraft_ui_egui::{FileDialogAnswer, FileDialogReply, FileDialogRequest};
++use photocraft_ui_egui::{FileDialogAnswer, FileDialogReply, FileDialogRequest, WorkspaceDocument, WorkspaceListing, WorkspaceOpen};
 +use wasm_bindgen::closure::Closure;
 +use wasm_bindgen::{JsCast as _, JsValue};
 +use wasm_bindgen_futures::{JsFuture, future_to_promise, spawn_local};
 +use web_sys::{FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemWritableFileStream};
 +
-+/// The inbox `services()` drains every frame (`crate::web::Inbox`).
-+pub type Inbox = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
++/// The inbox `services()` drains every frame (`crate::web::Inbox`), as (name, bytes, where they came
++/// from). The path is the workspace document a save goes back to (Saving).
++pub type Inbox = Arc<Mutex<Vec<(String, Vec<u8>, Option<String>)>>>;
 +
 +// Contract names (design: Layout, Saving, Coordination Primitives). A versioned interface: do not rename.
 +const SPACE: &str = "atelier-cloud";
@@ -60,16 +65,16 @@ index 00000000..3f3d3532
 +
 +/// The `provider.json` protocol this patch speaks.
 +const PROTOCOL: f64 = 1.0;
-+/// The extension a project's document is stored under (The Single-File Document).
++/// The extension a project's documents are stored under (Documents).
 +const EXTENSION: &str = "pcraft";
 +/// Formats a save may keep inside the bound project. A save to anything else is an export and
 +/// downloads, exactly as before (Saving).
 +const PROJECT_FORMATS: &[&str] = &["pcraft", "psd", "psb", "ora"];
 +
-+/// The project this page was launched into (`?project=`), and its document once it is known.
++/// The project this page was launched into (`?project=`). One per page: a document's own virtual
++/// path is what binds it, so several open documents need nothing per document here.
 +struct Binding {
 +    project: String,
-+    document: Option<String>,
 +}
 +
 +thread_local! {
@@ -85,25 +90,22 @@ index 00000000..3f3d3532
 +    with_binding(|binding| binding.project.clone())
 +}
 +
-+fn remember_document(document: Option<String>) {
-+    with_binding(|binding| binding.document = document);
-+}
-+
-+/// Bind this page to `?project=<id>` and open its document (design, Opening a Project). Called once, from
-+/// `services()`; a page without the query parameter behaves exactly as before.
++/// Bind this page to `?project=<id>` and open the document it names — or the project's only one,
++/// when it names none (design, Opening a Project). Called once, from `services()`; a page without
++/// the query parameter behaves exactly as before.
 +pub fn start(inbox: Inbox) {
-+    let Some(project) = query_project() else { return };
-+    BINDING.with(|binding| *binding.borrow_mut() = Some(Binding { project: project.clone(), document: None }));
++    let Some((project, document)) = query_launch() else { return };
++    BINDING.with(|binding| *binding.borrow_mut() = Some(Binding { project: project.clone() }));
 +    spawn_local(async move {
 +        if let Err(e) = check_provider().await {
 +            log::warn!("atelier-cloud: {e}");
 +            return;
 +        }
-+        match read_document(&project).await {
++        match read_document(&project, document.as_deref()).await {
 +            Ok((name, bytes)) => {
 +                log::info!("atelier-cloud: opening {name} ({} bytes) from project {project}", bytes.len());
-+                remember_document(Some(name.clone()));
-+                inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
++                let path = document_path(&project, &name);
++                inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes, Some(path)));
 +                wake();
 +            }
 +            // A project without a document yet is not an error: Save creates one (Selection).
@@ -112,45 +114,34 @@ index 00000000..3f3d3532
 +    });
 +}
 +
-+/// Whether this dialog belongs to the cloudspace (The Hook Point): `File › Open` in a bound page that
-+/// has a document, and a save that keeps a document format. Anything else — the browser's picker, an
-+/// export — is the app's own, unchanged.
++/// Whether this dialog belongs to the cloudspace (The Hook Point): a save that keeps a document
++/// format, on a page that is bound to a project.
++///
++/// File › Open is deliberately not claimed. The browser's picker is the only way a local file gets
++/// in, and a workspace document is opened from File › Open from Workspace instead, so the two are
++/// separate doors rather than one request that has to guess (Open from Workspace).
 +pub fn claims(request: &FileDialogRequest) -> bool {
 +    BINDING.with(|cell| {
-+        let binding = cell.borrow();
-+        let Some(binding) = binding.as_ref() else { return false };
++        if cell.borrow().is_none() {
++            return false;
++        }
 +        match request {
-+            // `File › Open` asks for several files; a command reading one file does not. A project
-+            // that holds no document yet must reach the editor's own picker, which is the way a local
-+            // file gets in, and whose save then lands in the project (Selection).
-+            FileDialogRequest::Open { multiple: true, extensions: None, .. } => binding.document.is_some(),
 +            FileDialogRequest::Save { suggested } => PROJECT_FORMATS.contains(&extension_of(&file_name(suggested)).as_str()),
 +            _ => false,
 +        }
 +    })
 +}
 +
-+/// Answer a dialog [`claims`] took: the bound project's document instead of the browser's files,
-+/// and the project's virtual path instead of a download name (Saving).
++/// Answer a dialog [`claims`] took: the project's virtual path instead of a download name (Saving).
 +pub fn answer(request: FileDialogRequest, reply: FileDialogReply) {
 +    match request {
-+        FileDialogRequest::Open { .. } => spawn_local(async move {
-+            let answer = match bound_document().await {
-+                Ok((name, bytes)) => Some(FileDialogAnswer::Contents(name, bytes)),
-+                Err(e) => {
-+                    log::warn!("atelier-cloud: could not open the project's document: {e}");
-+                    None
-+                }
-+            };
-+            reply.send(answer);
-+        }),
 +        FileDialogRequest::Save { suggested } => {
 +            let name = file_name(&suggested);
 +            let path = save_target(&name).unwrap_or_else(|| name.clone());
 +            reply.send(Some(FileDialogAnswer::SaveTo(path)));
 +        }
-+        // `claims` takes only Open and Save, so nothing else reaches `answer`: the arm keeps a
-+        // request variant upstream adds from breaking the build, as Folder did in v0.8.2.
++        // `claims` takes only Save, so nothing else reaches `answer`: the arm keeps a request
++        // variant upstream adds from breaking the build, as Folder did before v0.8.2.
 +        _ => {}
 +    }
 +}
@@ -172,9 +163,8 @@ index 00000000..3f3d3532
 +///
 +/// The write is asynchronous: OPFS cannot be written synchronously from the main thread, and the
 +/// editor's write service is synchronous. Failure is logged; what actually happened to the file is
-+/// the provider's to derive from the filesystem (File Ownership).
++/// Atelier web's to derive from the filesystem (File Ownership).
 +pub fn write(project: &str, document: &str, bytes: &[u8]) -> Result<(), String> {
-+    remember_document(Some(document.to_owned()));
 +    let (project, document, bytes) = (project.to_owned(), document.to_owned(), bytes.to_vec());
 +    let len = bytes.len();
 +    spawn_local(async move {
@@ -209,15 +199,14 @@ index 00000000..3f3d3532
 +    .await
 +}
 +
-+/// The bound project's document, read under a shared lock so a concurrent swap (Saving) cannot be
-+/// caught half-written.
-+async fn bound_document() -> Result<(String, Vec<u8>), String> {
-+    read_document(&bound_project().ok_or("no project is bound")?).await
-+}
-+
-+async fn read_document(project: &str) -> Result<(String, Vec<u8>), String> {
++/// The document `document` names, or the project's only one when it names none, read under a shared
++/// lock so a concurrent swap (Saving) cannot catch it half-written.
++async fn read_document(project: &str, document: Option<&str>) -> Result<(String, Vec<u8>), String> {
 +    let dir = project_dir(project).await?;
-+    let name = document_name(&dir).await?.ok_or_else(|| format!("{PROJECTS}/{project} holds no .{EXTENSION} document"))?;
++    let name = match document {
++        Some(name) => name.to_owned(),
++        None => document_name(&dir).await?.ok_or_else(|| format!("{PROJECTS}/{project} holds no .{EXTENSION} document"))?,
++    };
 +    let bytes = with_lock(&format!("{LOCK}{project}"), "shared", {
 +        let (dir, name) = (dir.clone(), name.clone());
 +        async move { read_file(&dir, &name).await }
@@ -226,12 +215,17 @@ index 00000000..3f3d3532
 +    Ok((name, bytes))
 +}
 +
-+/// The virtual path a save goes to, given what the dialog suggested (Saving). A document already
-+/// open keeps the project's own name, so a save cannot rename the project's document.
++/// The virtual path a save goes to, given what the dialog suggested (Saving). The editor suggests
++/// the path a document already holds, so saving one it opened keeps that document; a document with
++/// no path yet — a new one, or a local file being filed — takes the name the editor suggests for it.
 +fn save_target(suggested: &str) -> Option<String> {
++    let name = file_name(suggested);
 +    with_binding(|binding| {
-+        let document = binding.document.clone().unwrap_or_else(|| format!("{}.{EXTENSION}", stem(suggested)));
-+        format!("{SCHEME}{}/{document}", binding.project)
++        let document = match target(&name) {
++            Some((_, document)) => document,
++            None => format!("{}.{EXTENSION}", stem(&name)),
++        };
++        document_path(&binding.project, &document)
 +    })
 +}
 +
@@ -248,8 +242,8 @@ index 00000000..3f3d3532
 +    }
 +}
 +
-+/// Tell the provider a document changed (Saving, step 6, and Coordination Primitives). A latency optimization only: the
-+/// provider re-scans OPFS, which is what keeps it correct when this message is lost.
++/// Tell Atelier web a document changed (Saving, step 6, and Coordination Primitives). A latency optimization only: it
++/// re-scans OPFS, which is what keeps it correct when this message is lost.
 +fn ping(project: &str, document: &str, bytes: usize) {
 +    let message = js_sys::Object::new();
 +    for (key, value) in [
@@ -289,14 +283,32 @@ index 00000000..3f3d3532
 +    }
 +}
 +
-+/// The `?project=<id>` of Opening a Project. Project ids are the provider's, `[A-Za-z0-9_-]` only, so they
-+/// reach the page unescaped.
-+fn query_project() -> Option<String> {
++/// The `?project=<id>&document=<name>` of Opening a Project. Project ids are Atelier web's,
++/// `[A-Za-z0-9_-]` only, so they reach the page unescaped; a document name is a file name inside the
++/// project directory (Identifiers).
++fn query_launch() -> Option<(String, Option<String>)> {
 +    let search = web_sys::window()?.location().search().ok()?;
-+    search.trim_start_matches('?').split('&').find_map(|pair| {
-+        let (key, value) = pair.split_once('=')?;
-+        (key == "project" && is_project_id(value)).then(|| value.to_owned())
-+    })
++    let parameter = |wanted: &str| {
++        search.trim_start_matches('?').split('&').find_map(|pair| {
++            let (key, value) = pair.split_once('=')?;
++            (key == wanted && !value.is_empty()).then(|| value.to_owned())
++        })
++    };
++    let project = parameter("project").filter(|id| is_project_id(id))?;
++    let document = parameter("document").filter(|name| is_document_name(name));
++    Some((project, document))
++}
++
++/// A document name as the contract defines it (Identifiers): a file name inside the project
++/// directory — no separator, no leading dot — ending in `.pcraft`. A name that is not one is
++/// refused rather than turned into a path.
++fn is_document_name(name: &str) -> bool {
++    name.len() > EXTENSION.len() + 1 && !name.starts_with('.') && !name.contains('/') && extension_of(name) == EXTENSION
++}
++
++/// The virtual path a document of `project` is opened and saved under (Saving).
++fn document_path(project: &str, document: &str) -> String {
++    format!("{SCHEME}{project}/{document}")
 +}
 +
 +fn is_project_id(id: &str) -> bool {
@@ -369,7 +381,7 @@ index 00000000..3f3d3532
 +        .map_err(|_| "the OPFS root is not a directory".to_owned())
 +}
 +
-+/// `atelier-cloud/` (Layout). Read-only: the provider owns it, and the patch never creates it.
++/// `atelier-cloud/` (Layout). Read-only: Atelier web owns it, and the patch never creates it.
 +async fn space() -> Result<FileSystemDirectoryHandle, String> {
 +    directory(&root().await?, SPACE, false).await.map_err(|_| format!("{SPACE}/ is missing: open the editor through Atelier Cloud"))
 +}
@@ -380,7 +392,7 @@ index 00000000..3f3d3532
 +    directory(&projects, project, false).await.map_err(|_| format!("there is no {SPACE}/{PROJECTS}/{project}/"))
 +}
 +
-+/// `atelier-cloud/tmp/`: write staging (Layout). The provider creates it; the patch creates it too,
++/// `atelier-cloud/tmp/`: write staging (Layout). Atelier web creates it; the patch creates it too,
 +/// so a save cannot fail because the space was made by an older provider.
 +async fn tmp_dir(space: &FileSystemDirectoryHandle) -> Result<FileSystemDirectoryHandle, String> {
 +    directory(space, TMP, true).await
@@ -396,7 +408,8 @@ index 00000000..3f3d3532
 +        .map_err(|_| format!("`{name}` is not a directory"))
 +}
 +
-+/// The project's single `*.pcraft` (Selection): the provider's selection, not ours.
++/// The project's first `*.pcraft` in name order (Documents): what a consumer that only knows the
++/// project opens, and the only document of a project that never held more than one.
 +async fn document_name(dir: &FileSystemDirectoryHandle) -> Result<Option<String>, String> {
 +    let mut names: Vec<String> = names(dir).await?.into_iter().filter(|name| extension_of(name) == EXTENSION).collect();
 +    names.sort();
@@ -468,6 +481,145 @@ index 00000000..3f3d3532
 +fn unique_name() -> String {
 +    format!("{:x}{:08x}", js_sys::Date::now() as u64, (js_sys::Math::random() * f64::from(u32::MAX)) as u32)
 +}
++
++/// Whether this page was launched into a project: the one condition that decides whether the editor
++/// takes what the reader opens, lists the workspace's documents, and shows the way back.
++pub fn bound() -> bool {
++    with_binding(|_| ()).is_some()
++}
++
++/// Take picked files into the bound project (design, Import on Open). Called only when [`bound`]: each
++/// document arrives through the `Inbox` bound to the file it was written to.
++///
++/// This is what keeps "I opened it in the editor" and "it is in the workspace" the same thing: a
++/// document picked from this computer is written into the project as it opens, not only when it is
++/// saved, so closing the editor cannot leave the reader thinking a workspace holds files it does not.
++pub fn take(files: Vec<(String, Vec<u8>)>, inbox: Inbox) {
++    let Some(project) = bound_project() else { return };
++    for (name, bytes) in files {
++        let document = document_file_name(&name);
++        let path = document_path(&project, &document);
++        let (project, inbox) = (project.clone(), inbox.clone());
++        let len = bytes.len();
++        spawn_local(async move {
++            let written = save_document(&project, document.clone(), bytes.clone()).await;
++            match &written {
++                Ok(()) => {
++                    log::info!("atelier-cloud: imported {document} ({len} bytes) into project {project}");
++                    ping(&project, &document, len);
++                }
++                Err(e) => log::error!("atelier-cloud: could not import {document} into project {project}: {e}"),
++            }
++            // Bound to the file when the write landed, unbound when it did not: the document opens
++            // either way, and a Save that follows files it into the project (Saving).
++            let path = written.is_ok().then_some(path);
++            inbox.lock().unwrap_or_else(|e| e.into_inner()).push((document, bytes, path));
++            wake();
++        });
++    }
++}
++
++/// The name a picked file is stored under (Documents): its own name, with any path part and leading
++/// dot dropped, and `.<EXTENSION>` when it has no extension of its own. The editor decides which
++/// reader to use by extension or magic bytes, so a name it arrives under is the name it keeps.
++fn document_file_name(name: &str) -> String {
++    let base = file_name(name).trim_start_matches('.').to_owned();
++    if base.is_empty() {
++        return format!("document.{EXTENSION}");
++    }
++    if extension_of(&base).is_empty() {
++        return format!("{base}.{EXTENSION}");
++    }
++    base
++}
++
++// ------------------------------------------------------------------- open from workspace
++
++thread_local! {
++    /// The project's documents as of the last read, for File › Open from Workspace. The window asks
++    /// every frame and OPFS cannot be read on the UI thread, so the answer is cached here and
++    /// refreshed when the window opens.
++    static LISTING: RefCell<WorkspaceListing> = const { RefCell::new(WorkspaceListing::Loading) };
++}
++
++/// The store File › Open from Workspace opens, or `None` on a page that is not bound to a project —
++/// which leaves the menu item out entirely (Open from Workspace).
++pub fn workspace_open(inbox: Inbox) -> Option<WorkspaceOpen> {
++    let project = bound_project()?;
++    let (refreshing, opening) = (project.clone(), project);
++    Some(WorkspaceOpen {
++        label: "Open from Workspace…".to_owned(),
++        listing: Box::new(|| LISTING.with(|listing| listing.borrow().clone())),
++        refresh: Box::new(move || refresh_listing(refreshing.clone())),
++        open: Box::new(move |names: &[String]| open_documents(opening.clone(), names.to_vec(), inbox.clone())),
++    })
++}
++
++/// Read the project's documents again, for the window to show.
++fn refresh_listing(project: String) {
++    LISTING.with(|listing| *listing.borrow_mut() = WorkspaceListing::Loading);
++    spawn_local(async move {
++        let read = async {
++            check_provider().await?;
++            list_documents(&project).await
++        }
++        .await;
++        LISTING.with(|listing| {
++            *listing.borrow_mut() = match read {
++                Ok(documents) => {
++                    log::info!("atelier-cloud: {project} holds {} document(s)", documents.len());
++                    WorkspaceListing::Ready(documents)
++                }
++                Err(e) => WorkspaceListing::Failed(e),
++            };
++        });
++        wake();
++    });
++}
++
++/// The project's documents, in name order, with the size of each (Layout).
++async fn list_documents(project: &str) -> Result<Vec<WorkspaceDocument>, String> {
++    let dir = project_dir(project).await?;
++    let mut names: Vec<String> = names(&dir).await?.into_iter().filter(|name| is_document_name(name)).collect();
++    names.sort();
++    let mut documents = Vec::with_capacity(names.len());
++    for name in names {
++        let size = document_size(&dir, &name).await.unwrap_or(0);
++        documents.push(WorkspaceDocument { name, size });
++    }
++    Ok(documents)
++}
++
++/// A document's size, or `None` when it cannot be read: a listing is not worth failing over.
++async fn document_size(dir: &FileSystemDirectoryHandle, name: &str) -> Option<u64> {
++    let handle = JsFuture::from(dir.get_file_handle(name)).await.ok()?.dyn_into::<FileSystemFileHandle>().ok()?;
++    let file = JsFuture::from(handle.get_file()).await.ok()?.dyn_into::<web_sys::File>().ok()?;
++    Some(file.size() as u64)
++}
++
++/// Read these documents and hand them to the editor, one tab each (Open from Workspace). The editor
++/// drains the inbox every frame, so a slow read never blocks one.
++fn open_documents(project: String, names: Vec<String>, inbox: Inbox) {
++    for name in names.into_iter().filter(|name| is_document_name(name)) {
++        let (project, inbox) = (project.clone(), inbox.clone());
++        spawn_local(async move {
++            let path = document_path(&project, &name);
++            let read = with_lock(&format!("{LOCK}{project}"), "shared", {
++                let (project, name) = (project.clone(), name.clone());
++                async move { read_file(&project_dir(&project).await?, &name).await }
++            })
++            .await;
++            match read {
++                Ok(bytes) => {
++                    log::info!("atelier-cloud: opening {name} ({} bytes) from project {project}", bytes.len());
++                    inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes, Some(path)));
++                    wake();
++                }
++                Err(e) => log::error!("atelier-cloud: could not open {name} in project {project}: {e}"),
++            }
++        });
++    }
++}
 diff --git a/apps/photocraft-web/src/main.rs b/apps/photocraft-web/src/main.rs
 index 5ba75f52..836bc81c 100644
 --- a/apps/photocraft-web/src/main.rs
@@ -483,11 +635,29 @@ index 5ba75f52..836bc81c 100644
  mod indexed_presets;
  
 diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
-index 6c993960..75ac0c9e 100644
+index a5c9d8a5..546599cf 100644
 --- a/apps/photocraft-web/src/web.rs
 +++ b/apps/photocraft-web/src/web.rs
-@@ -349,48 +349,61 @@ fn services(inbox: Inbox) -> Services {
-             opts.image_previews = settings.image_previews;
+@@ -12,7 +12,7 @@ use photocraft_ui_egui::theme::ThemeKind;
+ use photocraft_ui_egui::{FileDialogAnswer, FileDialogRequest, PhotocraftApp, Services};
+ use wasm_bindgen::JsCast as _;
+ 
+-type Inbox = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
++type Inbox = Arc<Mutex<Vec<(String, Vec<u8>, Option<String>)>>>;
+ 
+ /// Everything File › Open reads: PhotoCraft, Photoshop, OpenRaster, Krita and Affinity documents, flat images, and
+ /// Photoshop brushes (.abr), gradients (.grd) and swatches (.aco, .ase), which go to the preset libraries.
+@@ -292,7 +292,7 @@ impl eframe::App for WebShell {
+                 let name = f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped".into());
+                 match f.bytes_async().await {
+                     Ok(bytes) => {
+-                        inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
++                        inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes, None));
+                         ctx.request_repaint();
+                     }
+                     Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
+@@ -355,48 +355,85 @@ fn services(inbox: Inbox) -> Services {
+             opts.psd_maximize_compatibility = settings.psd_maximize_compatibility;
              photocraft_io::export(doc, path, &opts).map(|r| (r.bytes, r.warnings)).map_err(|e| e.to_string())
          })),
 -        file_dialog: Some(Box::new(|request, _parent, reply| match request {
@@ -509,35 +679,60 @@ index 6c993960..75ac0c9e 100644
 +            // A page launched as `/?project=<id>` opens that project's document, and a bound
 +            // session's saves go back into it (design: Opening a Project, Saving, Patch Shape).
 +            crate::atelier_cloud::start(inbox.clone());
++            // What was picked goes into the project and arrives through the inbox (design, Import on
++            // Open), so the closure needs a handle of its own: the one below still reaches `Services`.
++            let picker_inbox = inbox.clone();
 +            move |request, _parent, reply| match request {
 +                request if crate::atelier_cloud::claims(&request) => crate::atelier_cloud::answer(request, reply),
 +                // The browser's file picker hands over the files' contents, not paths. File › Open
 +                // asks for several files (`multiple`), each opened in its own tab.
-+                FileDialogRequest::Open { multiple, extensions, .. } => wasm_bindgen_futures::spawn_local(async move {
++                FileDialogRequest::Open { multiple, extensions, .. } => {
++                    let inbox = picker_inbox.clone();
++                    wasm_bindgen_futures::spawn_local(async move {
 +                    let dialog = if let Some(exts) = extensions {
 +                        rfd::AsyncFileDialog::new().add_filter("Supported Files", &exts)
 +                    } else {
 +                        rfd::AsyncFileDialog::new().add_filter("All Formats", OPEN_EXTS).add_filter("SVG", SVG_EXTS)
 +                    };
-+                    let answer = if multiple {
++                    let files: Vec<(String, Vec<u8>)> = if multiple {
 +                        match dialog.pick_files().await {
 +                            Some(picked) if !picked.is_empty() => {
 +                                let mut files = Vec::with_capacity(picked.len());
 +                                for file in picked {
 +                                    files.push((file.file_name(), file.read().await));
 +                                }
-+                                Some(FileDialogAnswer::ContentsMany(files))
++                                files
                              }
 -                            Some(FileDialogAnswer::ContentsMany(files))
-+                            _ => None,
++                            _ => Vec::new(),
                          }
 -                        _ => None,
--                    }
++                    } else {
++                        match dialog.pick_file().await {
++                            Some(file) => vec![(file.file_name(), file.read().await)],
++                            None => Vec::new(),
++                        }
++                    };
++                    if files.is_empty() {
++                        reply.send(None);
++                        return;
+                     }
 -                } else {
 -                    match dialog.pick_file().await {
 -                        Some(file) => Some(FileDialogAnswer::Contents(file.file_name(), file.read().await)),
 -                        None => None,
--                    }
++                    // A page bound to a project takes what was picked into it, so the documents are in
++                    // the workspace as they open rather than on their first save; each arrives through
++                    // the inbox, bound to its own file (design, Import on Open). Anywhere else the
++                    // picker's own answer opens them, exactly as it did.
++                    if crate::atelier_cloud::bound() {
++                        crate::atelier_cloud::take(files, inbox);
++                        reply.send(None);
++                    } else if multiple {
++                        reply.send(Some(FileDialogAnswer::ContentsMany(files)));
++                    } else {
++                        reply.send(files.into_iter().next().map(|(name, bytes)| FileDialogAnswer::Contents(name, bytes)));
+                     }
 -                };
 -                reply.send(answer);
 -            }),
@@ -547,14 +742,8 @@ index 6c993960..75ac0c9e 100644
 -            FileDialogRequest::Save { suggested } => {
 -                let name = std::path::Path::new(&suggested).file_name().map_or_else(|| suggested.clone(), |n| n.to_string_lossy().to_string());
 -                reply.send(Some(FileDialogAnswer::SaveTo(name)));
-+                    } else {
-+                        match dialog.pick_file().await {
-+                            Some(file) => Some(FileDialogAnswer::Contents(file.file_name(), file.read().await)),
-+                            None => None,
-+                        }
-+                    };
-+                    reply.send(answer);
-+                }),
++                    });
++                }
 +                // Browser folder handles cannot be represented as filesystem paths for engine commands.
 +                FileDialogRequest::Folder { .. } => reply.send(None),
 +                // No save dialog on the web: the suggested name becomes the download name.
@@ -575,6 +764,9 @@ index 6c993960..75ac0c9e 100644
              let img = Image::from_u8(w, h, ChannelLayout::Rgba, rgba.to_vec()).map_err(|e| e.to_string())?;
              photocraft_codecs::encode(&img, photocraft_codecs::Format::Png, &EncodeOptions::default()).map_err(|e| e.to_string())
          })),
++        // File › Open from Workspace: the second door next to File › Open, which stays the browser's
++        // picker. `None` unless this page is bound to a project (design, Open from Workspace).
++        workspace: crate::atelier_cloud::workspace_open(inbox.clone()),
          inbox: Some(inbox),
 +        // The Home screen's way back to the workspace, in the editor's own UI (design, The Hook Point).
 +        home_link: crate::atelier_cloud::home_link(),
@@ -582,10 +774,72 @@ index 6c993960..75ac0c9e 100644
          load_prefs: Some(Box::new(|| local_storage()?.get_item(PREFS_KEY).ok().flatten())),
          save_prefs: Some(Box::new(|text: &str| local_storage().ok_or("no localStorage")?.set_item(PREFS_KEY, text).map_err(|e| format!("{e:?}")))),
 diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
-index 2042e1e5..6d28c831 100644
+index 38118955..3d2f4c28 100644
 --- a/crates/ui-egui/src/lib.rs
 +++ b/crates/ui-egui/src/lib.rs
-@@ -396,6 +396,10 @@ pub struct Services {
+@@ -343,8 +343,9 @@ pub type EncodePngFn = Box<dyn Fn(u32, u32, &[u8]) -> Result<Vec<u8>, String>>;
+ pub type ClipboardSetFn = Box<dyn FnMut(u32, u32, &[u8]) -> Result<(), String>>;
+ /// Read an RGBA8 image from the OS clipboard.
+ pub type ClipboardGetFn = Box<dyn FnMut() -> Option<(u32, u32, Vec<u8>)>>;
+-/// Shared queue of (file name, bytes) delivered asynchronously.
+-pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
++/// Shared queue of (file name, bytes, the path they were read from) delivered asynchronously. The
++/// path is what makes File › Save write back to the file a shell opened, rather than to a download.
++pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>, Option<String>)>>>;
+ /// Read the saved preferences text (`None` when there is none yet).
+ pub type LoadTextFn = Box<dyn FnMut() -> Option<String>>;
+ /// Persist the preferences text.
+@@ -393,6 +394,49 @@ pub type WindowFrameFn = Box<dyn FnMut()>;
+ /// The caption buttons' current style ([`Services::caption_style`]).
+ pub type CaptionStyleFn = Box<dyn Fn(&egui::Context) -> CaptionStyle>;
+ 
++/// A store a shell can open documents from, so the editor offers more than the browser's file
++/// picker (design, Open from Workspace). Closures rather than a trait, so a shell outside this
++/// crate can build one without depending on the app's types.
++pub struct WorkspaceOpen {
++    /// What the File menu item says, e.g. `"Open from Workspace…"`.
++    pub label: String,
++    /// What the store holds right now. Read every frame the window is open, so a document the
++    /// editor itself just saved shows up without the window being reopened.
++    pub listing: Box<dyn Fn() -> WorkspaceListing>,
++    /// Read the store again.
++    pub refresh: Box<dyn Fn()>,
++    /// Hand these documents back to the app, by name. The shell reads them and answers through the
++    /// [`Inbox`], so a slow read never blocks a frame.
++    pub open: Box<dyn Fn(&[String])>,
++}
++
++/// What a [`WorkspaceOpen`] can offer.
++#[derive(Clone)]
++pub enum WorkspaceListing {
++    /// The store is still being read.
++    Loading,
++    /// The documents it holds, in the order they should be shown.
++    Ready(Vec<WorkspaceDocument>),
++    /// The read failed, in the user's words.
++    Failed(String),
++}
++
++/// One document a [`WorkspaceOpen`] offers.
++#[derive(Clone)]
++pub struct WorkspaceDocument {
++    /// The file name, which is also what [`WorkspaceOpen::open`] takes back.
++    pub name: String,
++    /// Its size in bytes, as the store last saw it.
++    pub size: u64,
++}
++
++/// The state of the Open from Workspace window: whether it is up, and what is ticked in it.
++#[derive(Default)]
++pub(crate) struct WorkspaceUi {
++    pub(crate) open: bool,
++    pub(crate) chosen: std::collections::BTreeSet<String>,
++}
++
+ /// Platform services injected by the app binary (file dialogs, codecs), keeping this crate free of
+ /// I/O dependencies.
+ #[derive(Default)]
+@@ -427,6 +471,13 @@ pub struct Services {
      pub encode_png: Option<EncodePngFn>,
      /// Open a URL in the system browser (native). Falls back to `ctx.open_url` (web) when unset.
      pub open_url: Option<OpenUrlFn>,
@@ -593,14 +847,133 @@ index 2042e1e5..6d28c831 100644
 +    /// launched this editor supplies its own way back. `None` when nothing wrapped the editor, which
 +    /// leaves the screen exactly as it was.
 +    pub home_link: Option<(String, String)>,
++    /// A store this shell can open documents from: File › Open from Workspace…. `None` when no
++    /// store wrapped the editor, which leaves the File menu exactly as upstream draws it.
++    pub workspace: Option<WorkspaceOpen>,
      /// Preferences ▸ General ▸ Beep When Done: the platform's default beep, played when a
      /// background job finishes successfully. `None` in the web build (and in tests).
      pub beep: Option<fn()>,
+@@ -536,6 +587,9 @@ pub struct PhotocraftApp {
+     pub(crate) remove_trail: Option<stroke_trail::Trail>,
+     /// The open menus' items, reused between frames (`menus::ItemCache`).
+     pub(crate) menu_cache: Option<menus::ItemCache>,
++    /// File › Open from Workspace: whether that window is up and what is ticked in it, when a
++    /// shell supplied a store ([`Services::workspace`]).
++    pub(crate) workspace_ui: WorkspaceUi,
+     /// Move tool drag shown live (`move_ui`).
+     pub(crate) move_preview: Option<move_ui::MovePreview>,
+     /// Move tool › Show Highlight on Rollover: the last hover answer (`move_hover`).
+@@ -786,6 +840,7 @@ impl PhotocraftApp {
+             remove_pending_doc: None,
+             remove_trail: None,
+             menu_cache: None,
++            workspace_ui: WorkspaceUi::default(),
+             move_preview: None,
+             move_hover: None,
+             object_finder: None,
+@@ -1731,10 +1786,10 @@ impl eframe::App for PhotocraftApp {
+             filter_preview_worker::discard_closed(self);
+             shortcuts::handle(self, ctx);
+         }
+-        let arrived: Vec<(String, Vec<u8>)> =
++        let arrived: Vec<(String, Vec<u8>, Option<String>)> =
+             self.services.inbox.as_ref().map(|q| std::mem::take(&mut *q.lock().unwrap_or_else(|e| e.into_inner()))).unwrap_or_default();
+-        for (name, bytes) in arrived {
+-            if let Err(e) = self.open_bytes(&name, &bytes) {
++        for (name, bytes, path) in arrived {
++            if let Err(e) = self.open_bytes_from(&name, &bytes, path.as_deref()) {
+                 self.open_failed(&name, &e);
+             }
+         }
+@@ -1863,6 +1918,7 @@ impl eframe::App for PhotocraftApp {
+         analysis_ui::windows(self, &ctx);
+         timeline_ui::windows(self, &ctx);
+         workspace_ui::windows(self, &ctx);
++        panels::workspace_window(self, &ctx);
+         palette::show(self, &ctx);
+         dialogs::show(self, &ctx);
+         rasterize_prompt::run_pending(self, &ctx);
+diff --git a/crates/ui-egui/src/menus.rs b/crates/ui-egui/src/menus.rs
+index 403994ac..772ac524 100644
+--- a/crates/ui-egui/src/menus.rs
++++ b/crates/ui-egui/src/menus.rs
+@@ -33,6 +33,7 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
+     ("window.panel.activate", "Activate Panel", &[], None),
+     ("window.panel.close", "Close Panel", &[], None),
+     ("file.open", "Open…", &["File"], Some("Cmd+O")),
++    ("file.openWorkspace", "Open from Workspace…", &["File"], None),
+     ("file.save", "Save", &["File"], Some("Cmd+S")),
+     ("file.saveAs", "Save As…", &["File"], Some("Cmd+Shift+S")),
+     ("file.exit", "Exit", &["File"], Some("Cmd+Q")),
+@@ -305,6 +306,15 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
+         "file.import.videoFramesToLayers" if params.get("path").and_then(Value::as_str).is_none() => {
+             app.ask_folder(|app, path| app.run("file.import.videoFramesToLayers", json!({"path": path})).map_err(|e| e.to_string()))
+         }
++        "file.openWorkspace" => {
++            {
++                let store = app.services.workspace.as_ref().ok_or("no workspace to open from")?;
++                (store.refresh)();
++            }
++            app.workspace_ui.chosen.clear();
++            app.workspace_ui.open = true;
++            Ok(Value::Null)
++        }
+         "file.save" => {
+             // Writes back only to a layered file that holds the whole document; anything else
+             // goes through Save As, so the original is never overwritten with less (#3806).
+@@ -745,6 +755,8 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
+     match id {
+         "window.panel.activate" | "window.panel.layout" => true,
+         "window.panel.group" | "window.panel.move" | "window.panel.float" | "window.panel.dock" | "window.panel.close" => !app.session.prefs().workspace_locked,
++        // A shell's own store, when it has one: the same door the File menu lists it under.
++        "file.openWorkspace" => app.services.workspace.is_some(),
+         "file.open" | "file.exit" | "file.clearRecent" | "file.removeRecent" | "help.about" | "help.systemInfo" | "edit.search" => true,
+         i if i.starts_with("file.openRecent.") => true,
+         i if i.starts_with(DOCUMENT_ITEM) => true,
+@@ -951,6 +963,7 @@ pub fn is_live(id: &str) -> bool {
+ /// catalogue spells it differently (Filter › "Other…").
+ const PLACE_AFTER: &[(&str, &str)] = &[
+     ("file.newFromClipboard", "file.new"),
++    ("file.openWorkspace", "file.open"),
+     ("filter.render.relight", "filter.render.lightingEffects"),
+     ("view.resetView", "view.flipHorizontal"),
+     ("filter.other.colorToAlpha", "filter.other.offset"),
+@@ -1129,6 +1142,16 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
+         item.label = "Release Clipping Mask".into();
+         item.enabled = is_enabled(app, &item.id);
+     }
++    // A shell that can hand the editor documents from its own store gets that door in the File
++    // menu, next to Open. Without one the menu is exactly upstream's (design, Open from Workspace).
++    match app.services.workspace.as_ref() {
++        Some(store) => {
++            if let Some(item) = items.iter_mut().find(|i| i.id == "file.openWorkspace") {
++                item.label = store.label.clone();
++            }
++        }
++        None => items.retain(|i| i.id != "file.openWorkspace"),
++    }
+     items
+ }
+ 
+@@ -2233,3 +2256,4 @@ mod window_documents_tests {
+         assert_eq!(app.session.active_index(), Some(0));
+     }
+ }
++
 diff --git a/crates/ui-egui/src/panels.rs b/crates/ui-egui/src/panels.rs
-index 0f6a1b83..2d197d0d 100644
+index 733f923c..72595950 100644
 --- a/crates/ui-egui/src/panels.rs
 +++ b/crates/ui-egui/src/panels.rs
-@@ -642,6 +642,22 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+@@ -8,7 +8,7 @@ use serde_json::{Value, json};
+ use crate::mask_thumbs_ui::MaskKind;
+ use crate::state::Tool;
+ use crate::theme::{self, Tokens};
+-use crate::{PhotocraftApp, icons, widgets};
++use crate::{PhotocraftApp, WorkspaceListing, icons, widgets};
+ 
+ // ----------------------------------------------------------------------------- toolbar
+ 
+@@ -699,6 +699,22 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                              crate::links::open(app, ui.ctx(), crate::links::DISCORD);
                          }
                      }
@@ -623,7 +996,7 @@ index 0f6a1b83..2d197d0d 100644
                      if rtl { ui.min_rect().right() } else { ui.min_rect().left() }
                  };
                  free = if rtl { (controls_end, menus_end) } else { (menus_end, controls_end) };
-@@ -700,6 +716,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
+@@ -757,6 +773,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
  const TITLE_GAP: f32 = 16.0;
  /// Free room the title bar needs after its other controls to show the Discord button.
  const DISCORD_ROOM: f32 = 120.0;
@@ -632,3 +1005,114 @@ index 0f6a1b83..2d197d0d 100644
  /// The workspace switcher's narrowest width, and one 28 pt title-bar icon with its spacing.
  const WORKSPACE_MIN: f32 = 90.0;
  const ICON_SLOT: f32 = 34.0;
+@@ -6053,6 +6071,110 @@ mod properties_target_regressions {
+     }
+ }
+ 
++// ----------------------------------------------------------- open from workspace
++
++/// File › Open from Workspace: the documents the shell can hand over, ticked and opened together
++/// (design, Open from Workspace). Drawn only while the menu item has raised it, and only a shell
++/// that supplied [`crate::Services::workspace`] can reach it.
++pub fn workspace_window(app: &mut PhotocraftApp, ctx: &egui::Context) {
++    if !app.workspace_ui.open {
++        return;
++    }
++    if app.services.workspace.is_none() {
++        app.workspace_ui.open = false;
++        return;
++    }
++    // Off the app for the frame: the closure below borrows these, never `app`, because the shell's
++    // own closures borrow `app.services` for as long as the window lives.
++    let mut chosen = std::mem::take(&mut app.workspace_ui.chosen);
++    let (title, listing) = {
++        let store = app.services.workspace.as_ref().expect("checked above");
++        (store.label.trim_end_matches('…').to_string(), (store.listing)())
++    };
++    let t = Tokens::get(ctx);
++    let (mut refresh, mut open_now, mut close) = (false, false, false);
++    egui::Window::new(title)
++        .id(egui::Id::new("workspace-open"))
++        .collapsible(false)
++        .resizable(true)
++        .default_width(400.0)
++        .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
++        .show(ctx, |ui| {
++            match &listing {
++                WorkspaceListing::Loading => {
++                    ui.horizontal(|ui| {
++                        ui.spinner();
++                        ui.label(RichText::new("Reading the workspace…").color(t.text_dim).size(12.0));
++                    });
++                }
++                WorkspaceListing::Failed(why) => {
++                    ui.label(RichText::new(why.as_str()).color(t.text).size(12.0));
++                }
++                WorkspaceListing::Ready(documents) if documents.is_empty() => {
++                    ui.label(RichText::new("This workspace holds no documents yet.").color(t.text_dim).size(12.0));
++                }
++                WorkspaceListing::Ready(documents) => {
++                    ui.horizontal(|ui| {
++                        if ui.button("All").clicked() {
++                            chosen = documents.iter().map(|d| d.name.clone()).collect();
++                        }
++                        if ui.button("None").clicked() {
++                            chosen.clear();
++                        }
++                        ui.label(RichText::new(format!("{} document(s)", documents.len())).color(t.text_dim).size(11.0));
++                    });
++                    ui.add_space(4.0);
++                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
++                        for d in documents {
++                            let mut on = chosen.contains(&d.name);
++                            let label = format!("{}  ·  {}", d.name, crate::sizing::human_bytes(d.size as f64));
++                            if widgets::checkbox(ui, &mut on, &label).changed() {
++                                if on {
++                                    chosen.insert(d.name.clone());
++                                } else {
++                                    chosen.remove(&d.name);
++                                }
++                            }
++                        }
++                    });
++                }
++            }
++            ui.add_space(8.0);
++            widgets::hairline(ui);
++            ui.add_space(4.0);
++            ui.horizontal(|ui| {
++                let ready = matches!(listing, WorkspaceListing::Ready(ref d) if !d.is_empty());
++                if ui.add_enabled(ready && !chosen.is_empty(), egui::Button::new("Open").selected(true)).clicked() {
++                    open_now = true;
++                }
++                if ui.add_enabled(!matches!(listing, WorkspaceListing::Loading), egui::Button::new("Refresh")).clicked() {
++                    refresh = true;
++                }
++                if ui.button("Cancel").clicked() {
++                    close = true;
++                }
++            });
++        });
++    app.workspace_ui.chosen = chosen;
++    if refresh {
++        if let Some(store) = app.services.workspace.as_ref() {
++            (store.refresh)();
++        }
++    }
++    if open_now {
++        // The shell reads them and answers through the Inbox a frame or two later, so the window
++        // closes now rather than holding the frame until the bytes arrive.
++        let names: Vec<String> = app.workspace_ui.chosen.iter().cloned().collect();
++        if let Some(store) = app.services.workspace.as_ref() {
++            (store.open)(&names);
++        }
++        app.workspace_ui.open = false;
++    }
++    if close {
++        app.workspace_ui.open = false;
++    }
++}
++
+ #[cfg(test)]
+ #[path = "history_panel_select_tests.rs"]
+ mod history_panel_select_tests;

@@ -17,8 +17,8 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 PATCH="$HERE/atelier_web.patch"
 CHECKOUT=${PHOTOCRAFT_DIR:-$HERE/../../photocraft}
-# Recorded upstream ref: v0.8.2, the pin in the outer repository's .gitmodules.
-PINNED_REF=d43db3e153c76aefce9b32cef9099e458eaf17a8
+# Recorded upstream ref: v0.9.0, the pin in the outer repository's .gitmodules.
+PINNED_REF=c699e3cda69f4852b43c0b191ab0091aaeff9d6a
 # The one file the patch adds, so `revert` knows what to remove.
 ADDED_FILE=apps/photocraft-web/src/atelier_cloud.rs
 
@@ -101,8 +101,15 @@ build)
 	apply
 	say "building (trunk build --release)…"
 	cd "$CHECKOUT/apps/photocraft-web"
+	# Provenance, so the About dialog names the commit this build came from instead of "(dev build)".
+	# Upstream's own packaging does this in `packaging/env.sh`. Without it every local build reports the
+	# last *release* number as a dev build: a build of the pin before v0.8.2 says "0.7.0 (dev build)",
+	# which reads as an old editor when it is really a newer commit than the version implies.
+	PHOTOCRAFT_BUILD_SHA=$(git_in rev-parse HEAD)
+	PHOTOCRAFT_BUILD_DATE=$(date -u +%Y-%m-%d)
+	export PHOTOCRAFT_BUILD_SHA PHOTOCRAFT_BUILD_DATE
 	trunk build --release
-	say "built into $CHECKOUT/dist/web"
+	say "built into $CHECKOUT/dist/web — About reports $(git_in rev-parse --short HEAD), $PHOTOCRAFT_BUILD_DATE"
 	;;
 *)
 	die "usage: $0 check|apply|revert|build [ref]"
