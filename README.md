@@ -46,8 +46,6 @@ Both halves live here, and both are reached through **one process on one origin*
 - [Testing](#testing)
 - [Samples](#samples)
 - [Project layout](#project-layout)
-- [Licence](#licence)
-- [Contributing](#contributing)
 
 ## Status
 
@@ -396,21 +394,3 @@ atelier_web/
 ├── test/              the browser walkthroughs, and a local S3 stand-in for the bucket one
 └── file_samples/      the PSD/PSB originals, and to-pcraft.sh
 ```
-
-## Licence
-
-MIT License — the full text is in [`LICENSE`](LICENSE), and [`NOTICE`](NOTICE) records the third-party
-material.
-
-`atelier_web` patches [PhotoCraft](https://github.com/storytold/photocraft), an external project under the
-MIT or Apache-2.0 licence, at your option. It is not vendored or redistributed here:
-[`hook/apply.sh`](hook/apply.sh) fetches the pinned commit and applies
-[`hook/atelier_web.patch`](hook/atelier_web.patch), and that patch is our work under the licence above.
-PhotoCraft's name, wordmark and logos are excluded from its licence, so you may not ship them as your own;
-[`NOTICE`](NOTICE) says what that means in practice.
-
-## Contributing
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: `./run.sh` runs it, `cargo test` in `server/` and
-`npm run check && npm run format:check` in `web/` are the checks, and the editor patch must stay inside its
-documented footprint.
