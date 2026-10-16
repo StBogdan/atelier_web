@@ -92,7 +92,7 @@ await editor.click('#photocraft_canvas', { position: { x: 400, y: 400 } });
 await editor.keyboard.press('Control+s');
 await editor.waitForTimeout(6000);
 const after = await files(cloud, project);
-const untouched = Object.keys(before).filter((n) => n !== first && !n.endsWith('.prev'));
+const untouched = documents(before).filter((n) => n !== first);
 check('a save did not land on the other document', untouched.every((n) => after[n] === before[n]), JSON.stringify(after));
 check('and it did land on the one that was open', after[first] !== before[first], `${before[first]} -> ${after[first]}`);
 
@@ -161,20 +161,31 @@ await cloud.waitForSelector('.documents tbody tr', { timeout: 15_000 });
 const remaining = await cloud.$$eval('.documents tbody tr td.mono:first-child', (cells) => cells.map((c) => c.textContent.trim()));
 check('and the panel agrees', remaining.length === 1, remaining.join());
 
-step('Several documents at once, and one the editor does not open');
+step('Several documents at once, in several formats');
 {
-	// A workspace can be started from several files, and from a format the editor reads only through its
-	// own File › Open. What it holds is listed here; what the editor opens from here is `.pcraft`.
+	// A workspace can be started from several files, whatever their formats: what it holds is listed
+	// here, and the editor opens any of them from here.
 	const many = 'Many documents';
-	const png = readFileSync('/tmp/atelier-test.png');
+	// A real PNG, made here so the harness needs nothing on disk: the editor has to be able to read it
+	// for the save below to mean anything.
+	const png = Buffer.from(
+		'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',
+		'base64'
+	);
 	await cloud.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
 	await cloud.click('button:has-text("New workspace")');
 	await cloud.fill('input[type=text]', many);
 	await cloud.click('.option:has-text("document from this computer") input[type=radio]');
+	// Playwright rejects a mix of paths and buffers, so every file arrives as bytes.
+	const sample = (name) => ({
+		name,
+		mimeType: 'application/octet-stream',
+		buffer: readFileSync(new URL(name, SAMPLES)),
+	});
 	await cloud.setInputFiles('input[type=file]', [
-		new URL('01-rgb-layered.pcraft', SAMPLES).pathname,
-		new URL('03-psb.pcraft', SAMPLES).pathname,
-		'/tmp/atelier-test.png',
+		sample('01-rgb-layered.pcraft'),
+		sample('03-psb.pcraft'),
+		{ name: 'atelier-test.png', mimeType: 'image/png', buffer: png },
 	]);
 	await cloud.waitForTimeout(600);
 	const chosen = await cloud.textContent('.option:has-text("documents from this computer")');
@@ -193,10 +204,79 @@ step('Several documents at once, and one the editor does not open');
 		list.map((row) => ({ name: row.getAttribute('data-document'), open: Boolean(row.querySelector('a.button')) })),
 	);
 	check('all three are listed', rows.length === 3, rows.map((r) => r.name).join());
-	check('every .pcraft row opens in the editor', rows.filter((r) => r.name?.endsWith('.pcraft')).every((r) => r.open), JSON.stringify(rows));
-	check('the one the editor does not open offers no Open', rows.filter((r) => !r.name?.endsWith('.pcraft')).every((r) => !r.open), JSON.stringify(rows));
+	check('every document offers Open, whatever its format', rows.every((r) => r.open), JSON.stringify(rows));
 	const held = await files(cloud, manyProject);
 	check('the PNG arrived whole', held['atelier-test.png'] === png.length, String(held['atelier-test.png']));
+
+	// The editor is handed a name and its bytes; it decides by content what it can read, so a PNG
+	// opens the same way a .pcraft does (the patch's own console says which one it took).
+	const editor = await cloud.context().newPage();
+	const editorLog = [];
+	const downloads = [];
+	editor.on('console', (message) => editorLog.push(message.text()));
+	editor.on('download', (download) => downloads.push(download.suggestedFilename()));
+	const pngHref = await cloud.getAttribute(`.documents tbody tr[data-document="atelier-test.png"] a.button`, 'href');
+	await editor.goto(new URL(pngHref, ORIGIN).toString(), { waitUntil: 'networkidle' });
+	await editor.waitForFunction(() => document.querySelector('#photocraft_canvas') !== null, null, { timeout: 30_000 });
+	await editor.waitForTimeout(8_000);
+	check(
+		'the editor opens the PNG from the workspace, not the .pcraft next to it',
+		editorLog.some((line) => line.includes('atelier-cloud: opening atelier-test.png')),
+		editorLog.filter((line) => line.includes('atelier-cloud:')).join(' | ')
+	);
+
+	// Paint on it and save: the editor can write a PNG, so the save belongs in the workspace rather
+	// than in a download. The .pcraft beside it must not move.
+	await editor.bringToFront();
+	await editor.click('#photocraft_canvas', { position: { x: 400, y: 400 } });
+	await editor.keyboard.press('Control+s');
+	await editor.waitForTimeout(10_000);
+	const afterEdit = await files(cloud, manyProject);
+	const savedLog = editorLog.filter((line) => line.includes('atelier-cloud:')).join(' | ');
+	check(
+		'the save landed in the workspace, under the document it came from',
+		/saved atelier-test.png/.test(savedLog),
+		savedLog
+	);
+	check(
+		'with the edited bytes on disk and the one-save-back copy beside it',
+		afterEdit['atelier-test.png'] !== png.length && afterEdit['atelier-test.png.prev'] > 0,
+		`${afterEdit['atelier-test.png']} B, was ${png.length} B; prev ${afterEdit['atelier-test.png.prev']} B`
+	);
+	check(
+		'no second document was made for it',
+		Object.keys(afterEdit).filter((name) => name.endsWith('.pcraft')).length === 2,
+		Object.keys(afterEdit).join()
+	);
+	check('and the editor offered no download for it', downloads.length === 0, downloads.join());
+	await editor.close();
+
+	// An export is the other direction, and the reason it is checked at all: the editor asks for a
+	// destination through the same dialog a save does, so an export answered as a save would leave the
+	// reader with a file they asked for sitting in storage they cannot see, and nothing on their disk.
+	// Export As is Cmd+Alt+Shift+W (Ctrl+Alt+Shift+W: egui reads either as the command key), and the
+	// dialog's Export is its default button, so Enter confirms it.
+	const exporting = await cloud.context().newPage();
+	const exported = [];
+	exporting.on('download', (download) => exported.push(download.suggestedFilename()));
+	const pcraftHref = await cloud.getAttribute(`.documents tbody tr[data-document="01-rgb-layered.pcraft"] a.button`, 'href');
+	await exporting.goto(new URL(pcraftHref, ORIGIN).toString(), { waitUntil: 'networkidle' });
+	await exporting.waitForFunction(() => document.querySelector('#photocraft_canvas') !== null, null, { timeout: 30_000 });
+	await exporting.waitForTimeout(8_000);
+	await exporting.bringToFront();
+	await exporting.keyboard.press('Control+Alt+Shift+W');
+	await exporting.waitForTimeout(3_000);
+	await exporting.keyboard.press('Enter');
+	await exporting.waitForTimeout(8_000);
+	const afterExport = await files(cloud, manyProject);
+	check('an export downloads to the reader instead of the workspace', exported.length === 1, exported.join());
+	check('and it is the format the export dialog asked for', exported[0]?.endsWith('.png'), exported.join());
+	check(
+		'and the workspace is untouched by it',
+		JSON.stringify(afterExport) === JSON.stringify(afterEdit),
+		`${Object.keys(afterEdit).join()} → ${Object.keys(afterExport).join()}`
+	);
+	await exporting.close();
 
 	await cloud.evaluate(async () => {
 		const root = await navigator.storage.getDirectory();

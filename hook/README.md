@@ -18,7 +18,7 @@ apply.sh                   apply / check / revert / build it against any ref
 | `apps/photocraft-web/src/web.rs` | `services()`: `write` routes through the module, and the `workspace` and `home_link` fields the shell adds |
 | `apps/photocraft-web/Cargo.toml` | the `web-sys` features the OPFS bindings need |
 | `crates/ui-egui/src/lib.rs` | the `Services` fields and the store's types, and the `Inbox`'s third element: the path a document was read from |
-| `crates/ui-egui/src/menus.rs` | `File ▸ Open from Workspace…`, removed from the menu when no store is there |
+| `crates/ui-egui/src/menus.rs` | `File ▸ Open from Workspace…`: the item the shell's store inserts, labelled by that shell, and the command behind it |
 | `crates/ui-egui/src/panels.rs` | the door's window, and the title bar drawing the way back to the left of its Discord link |
 
 The `Cargo.toml` hunk has to be there: `FileSystemDirectoryHandle`, `FileSystemFileHandle` and
@@ -78,8 +78,15 @@ Four details worth knowing before changing it:
 - **`File ▸ Open` stays the browser's picker.** The patch does not claim it, because the picker is the
   only way a local file gets in and the workspace door exists for the other direction. Drag-and-drop is
   unchanged.
-- **Only document formats stay in the project.** A save to `.pcraft`, `.psd`, `.psb` or `.ora` goes
-  to OPFS; Export As (PNG, JPEG, TIFF, TGA, WebP) still downloads, as it did.
+- **The project answers for two saves, by name, and leaves the rest to the shell.** A save asking for a
+  name the project already holds is a document going back where it came from, and the answer is that
+  document's path. A save asking for a name it does not hold is answered with `<stem>.pcraft` when the
+  project holds no document at all — the save that makes its first one. Every other save, and every
+  export, is answered the way the shell answers it with no project bound: the file's own name, which
+  carries no scheme and so downloads. An export belongs on the reader's disk, and a document saved
+  under a name the project does not hold has nowhere in it to go. The one case the dialog cannot tell
+  apart is a flat document exported as its own format while the project already holds that name
+  (a `photo.png` workspace document exported as PNG): it writes over it.
 - **The write is asynchronous.** OPFS cannot be written synchronously from the main thread and the
   editor's `Services::write` is synchronous, so the module schedules the write and reports success.
   What actually happened to the file is Atelier web's to derive from the filesystem (design [File Ownership](../../docs/atelier_web_design.md#file-ownership)).
@@ -98,8 +105,8 @@ Which dialogs it claims:
 | Request | Claimed when | Otherwise |
 |---|---|---|
 | `File ▸ Open` (several files, no extension filter) | never: this is the local door | the browser's picker, unchanged |
-| `Save`/`Save As` suggesting `.pcraft`, `.psd`, `.psb` or `.ora` | a project is bound | the download name, unchanged |
-| Export As (PNG, JPEG, TIFF, TGA, WebP) | never | downloads, unchanged |
+| `Save`/`Save As` of a name the project holds, or of any name when it holds no document | a project is bound | the shell's own answer: the file's name, which downloads |
+| Export As, Save for Web, Save a Copy, Quick Export | no: an export belongs on the reader's disk | downloads, unchanged |
 | Place, scripts, presets (the request carries extensions) | never | unchanged |
 
 `File ▸ Open` is deliberately *not* claimed — the browser's picker is the only way a local file gets

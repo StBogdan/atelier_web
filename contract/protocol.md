@@ -17,7 +17,7 @@ state from those files.
 | Party | Reads | Writes |
 |---|---|---|
 | Atelier Cloud (provider) | everything below it | everything except the documents, which it replaces whole in the cases in [Documents](#documents), or removes |
-| The editor (the patch) | `provider.json`, `projects/<id>/` | `<name>.pcraft` and its `.prev` |
+| The editor (the patch) | `provider.json`, `projects/<id>/` | any document, whatever its format, and its `.prev` |
 
 ## Layout
 
@@ -190,12 +190,21 @@ other format is held without one, and `commit` refuses with that reason rather t
 object set. `<name>` is the editor's own document name, so it round-trips into the editor's title bar.
 
 A consumer that wants "the project's document" takes `document` when it is there, else the first
-`*.pcraft` in name order, else the first file — so a project with several, or with a format that is not
-`.pcraft`, is additive to protocol 1 rather than a break in it.
+document in name order — so a project with several, or with a format that is not `.pcraft`, is additive
+to protocol 1 rather than a break in it.
 
-The editor's reach from a workspace follows the same rule: a document it opens from here is a `.pcraft`.
-Its own file picker reads every format it can read from the reader's computer, and saving into a project
-writes one as a `.pcraft` (design, Selection).
+The editor's reach from a workspace follows the same rule, with the editor deciding which files it can
+read: it opens a document of any format from here, its own file picker reads every format it can read
+from the reader's computer, and saving into a project writes the document back under its own name.
+
+An *export* is the other direction, and never a write here. Export As, Save for Web, Save a Copy and
+Quick Export go to the reader's own computer through the shell's download, because the file they asked
+for would otherwise be filed into storage they cannot see. The editor's dialog carries only a name, so
+the patch decides by it: a name this project already holds is a save back to that document, and the save
+that makes a project's first document is answered with `<stem>.pcraft`. Every other name it leaves to the
+shell, which writes it out. The one save this cannot tell from an export is a flat document exported as
+its own format while the project already holds that name (an `photo.png` workspace document exported as
+PNG): it writes over that document rather than downloading.
 
 **A document opened into a bound editor session is written as it opens**, not on its first save
 (design, Import on Open): the reader picked a file from their own computer, and leaving it out of the
