@@ -16,7 +16,9 @@
  * hand back.
  */
 
+import { base } from "$app/paths";
 import { PROTOCOL } from "./contract";
+import { Problem } from "./problem";
 import { directory, readJson, remove, writeJson, type Directory } from "./opfs";
 import {
   DEFAULT_TTL_SECONDS,
@@ -155,12 +157,15 @@ export async function readAttachment(
   return { config, seed };
 }
 
-/** Attach a bucket to a workspace: validate, import the key, then record it. */
-export async function attachBucket(
-  space: Directory,
-  project: string,
-  input: BucketInput,
-): Promise<BucketConfig> {
+/**
+ * The bucket and a key that signs for it, from what an attach form collected — validated and imported,
+ * but attached to nothing yet.
+ *
+ * This is what a form needs before there is anything to attach it to: the dialog that starts a workspace
+ * from a bucket has to list the bucket to offer what it holds, and the workspace it will belong to does
+ * not exist yet.
+ */
+export async function signingFor(input: BucketInput): Promise<Attachment> {
   // The bucket may have arrived on the end of the endpoint: a dashboard's copy button gives the whole
   // URL, and taking it apart is our job, not the user's.
   const { endpoint, bucket } = resolveBucket(input.endpoint, input.bucket);
@@ -187,8 +192,8 @@ export async function attachBucket(
   }
   const prefix = normalisePrefix(input.prefix ?? "");
 
-  // Import before writing anything: a secret this browser cannot take is a bucket it cannot sign
-  // for, and half an attachment is worse than none.
+  // Import before anything else can be written: a secret this browser cannot take is a bucket it cannot
+  // sign for, and half an attachment is worse than none.
   const seed = await importSecret(input.secretAccessKey);
   const config: BucketConfig = {
     protocol: PROTOCOL,
@@ -200,6 +205,16 @@ export async function attachBucket(
     urlTtlSeconds,
     attachedAt: new Date().toISOString(),
   };
+  return { config, seed };
+}
+
+/** Attach a bucket to a workspace: validate, import the key, then record it. */
+export async function attachBucket(
+  space: Directory,
+  project: string,
+  input: BucketInput,
+): Promise<BucketConfig> {
+  const { config, seed } = await signingFor(input);
   await withStore("readwrite", (store) => store.put(seed, project));
   await writeJson(await projectDir(space, project), BUCKET_FILE, config);
   return config;
@@ -336,13 +351,15 @@ export async function listObjects(
   };
 }
 
-/** The documents in a listing, newest first: what the chooser offers, one entry per `*.pcraft`. */
+/** The documents in a listing, newest first: what the chooser offers, one entry per object that is
+ * not one-save-back shadow (`*.prev.*`). Any format is offered: a workspace can be started from a
+ * PSD or a PNG as readily as from a `.pcraft`. */
 export function bucketDocuments(objects: BucketObject[]): BucketDocument[] {
   const documents: BucketDocument[] = [];
   for (const object of objects) {
     const slash = object.logical.lastIndexOf("/");
     const name = slash < 0 ? object.logical : object.logical.slice(slash + 1);
-    if (!name.endsWith(".pcraft") || name.endsWith(".prev.pcraft")) continue;
+    if (!name || name.startsWith(".") || /\.prev\.[^.]*$/.test(name)) continue;
     documents.push({
       id: slash < 0 ? "" : object.logical.slice(0, slash),
       name,
@@ -390,16 +407,18 @@ function explain(status: number): string {
  * but the fact that there is nothing. It is worth spelling out, because it is the one failure no other
  * part of the app can see, and it reads like bad credentials.
  */
-function unreachable(config: BucketConfig, because: unknown): Error {
+function unreachable(config: BucketConfig, because: unknown): Problem {
   const origin =
     typeof location === "undefined" ? "this origin" : location.origin;
   const reason = because instanceof Error ? because.message : String(because);
-  return new Error(
-    `The browser could not send the request to ${config.endpoint} at all (${reason}).\n\n` +
-      `That is almost always the bucket's CORS policy: it has to allow ${origin} with PUT, GET and HEAD, and ` +
-      `expose ETag, or the browser refuses to hand us the answer. The policy to paste is in ` +
-      `atelier_web/README.md, "CORS on the bucket".\n\n` +
-      `If it is already set, check that this is the bucket's S3 API endpoint and not its public URL.`,
+  return new Problem(
+    "Set your CORS config for this website",
+    [
+      `The browser could not send the request to ${config.endpoint} at all (${reason}).`,
+      `That is almost always the bucket's CORS policy: it has to allow ${origin} with PUT, GET and HEAD, and expose ETag, or the browser refuses to hand us the answer.`,
+      "If it is already set, check that this is the bucket's S3 API endpoint and not its public URL.",
+    ],
+    { href: `${base}/help#cors`, text: "Copy the policy from Help" },
   );
 }
 

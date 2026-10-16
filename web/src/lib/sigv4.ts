@@ -176,6 +176,22 @@ export function targetUrl(request: {
 }
 
 /**
+ * The URL as far as the object's own directory: the endpoint, the bucket and any key prefix.
+ *
+ * A workspace that does not exist yet has no id and no document, so an attach form at creation has no key
+ * to name. This is the half that is already decided, shown by the same code that signs, so a form can
+ * answer "is the endpoint the host, and the bucket the bucket?" before anything is written.
+ */
+export function prefixUrl(request: {
+  endpoint: Endpoint;
+  bucket: string;
+  prefix: string;
+}): string {
+  const { endpoint, bucket, prefix } = request;
+  return `${endpoint.scheme}://${endpoint.host}${pathFor(endpoint, bucket, prefix)}`;
+}
+
+/**
  * The endpoint and the bucket, resolved from fields that are allowed to overlap.
  *
  * A provider's dashboard hands you the bucket's **full S3 URL**, so the bucket name is usually already
@@ -201,8 +217,8 @@ export function resolveBucket(
 
 /**
  * A whole bucket URL taken apart into the two things it names, which is what a dashboard's copy button
- * hands over: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com/atelier-development-test` becomes the
- * account host and `atelier-development-test`. `null` when there is no trailing name to take.
+ * hands over: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com/your-bucket-name` becomes the
+ * account host and `your-bucket-name`. `null` when there is no trailing name to take.
  *
  * Throws on text that is not a URL, so a caller pasting into a field can tell "nothing to do" from
  * "not a bucket URL" without a second look at the text.
