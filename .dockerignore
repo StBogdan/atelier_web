@@ -1,0 +1,15 @@
+# Nothing here is needed to build the image: sources are copied explicitly, and the two build stages
+# install their own dependencies. This keeps the context small, which is most of the build time.
+
+.git
+.github
+node_modules
+**/node_modules
+server/target
+web/build
+web/.svelte-kit
+test
+file_samples
+
+# Not in this image, and large: the editor is upstream and built separately.
+photocraft

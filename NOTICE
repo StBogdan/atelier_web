@@ -1,0 +1,25 @@
+Atelier Cloud (atelier_web)
+Copyright 2026 the Atelier authors
+
+Licensed under the MIT License (LICENSE).
+
+The editor
+
+This repository does not bundle or redistribute the editor. `hook/apply.sh` fetches PhotoCraft at a pinned
+commit and applies `hook/atelier_web.patch` to it; only the patch is ours.
+
+PhotoCraft is Copyright (c) 2026 ArtCraft Team and the PhotoCraft contributors, and is licensed under the
+MIT License or the Apache License, Version 2.0, at your option. Its own NOTICE and ATTRIBUTION.md ship with
+it and list the third-party material it bundles. Because the editor is patched from source at build time
+rather than redistributed here, honouring that licence and those notices is the job of whoever builds it —
+which for the self-hosted edition is you.
+
+PhotoCraft's name, wordmark and the files under its `docs/brand/` are trademarks of the ArtCraft Team and
+are excluded from its source licences. Building and running the editor for your own deployment is what the
+licence permits; presenting it as the official PhotoCraft product, or as endorsed or sponsored by the
+ArtCraft Team, is not. Do not ship its marks as your own.
+
+Samples
+
+The files in `file_samples/` are generated with ag-psd (MIT); the licence is alongside them, in
+`file_samples/LICENSE-ag-psd.txt`.
