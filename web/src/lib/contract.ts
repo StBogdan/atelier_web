@@ -575,7 +575,9 @@ export async function commit(
     const name =
       wanted && names.includes(wanted)
         ? wanted
-        : (names.find((candidate) => isPcraftName(candidate)) ?? names[0] ?? null);
+        : (names.find((candidate) => isPcraftName(candidate)) ??
+          names[0] ??
+          null);
     if (!name) throw new Error("this project has no document to commit");
     // A revision is the document's object set, so it can only describe a .pcraft.
     if (!isPcraft(await readBytes(dir, name)))
@@ -585,10 +587,21 @@ export async function commit(
     const bytes = await readBytes(dir, name);
     const info = await stat(dir, name);
     // The same bytes as the current revision would be a revision that says nothing, and `rev` is
-    // what a reader counts.
+    // what a reader counts. The file's own modified time still moves (a save that changed nothing),
+    // and that is what `inspect` compares, so the record of the revision follows it instead.
     if (meta.document === name && meta.revision?.hash === (await hash(bytes))) {
+      const next: Meta = {
+        ...meta,
+        size: bytes.length,
+        revision: {
+          ...meta.revision,
+          size: bytes.length,
+          modified: info?.modified ?? meta.revision.modified,
+        },
+      };
+      await writeJson(dir, META_FILE, next);
       await clearPending(space, project);
-      return meta;
+      return next;
     }
     const entries = readDirectory(bytes);
     const preview = previewEntry(entries);

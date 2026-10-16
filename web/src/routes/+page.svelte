@@ -660,7 +660,8 @@
             <div class="row">
               {#if buckets[workspace.id]}
                 <button
-                  class="action-button primary"
+                  class="action-button"
+                  class:primary={workspace.dirty}
                   title={keepTip(workspace)}
                   disabled={working !== null || !workspace.dirty}
                   onclick={() => act(workspace, "keep")}
@@ -670,7 +671,8 @@
                 </button>
               {:else}
                 <button
-                  class="action-button primary"
+                  class="action-button"
+                  class:primary={workspace.dirty}
                   title={keepTip(workspace)}
                   disabled={working !== null || !workspace.dirty}
                   onclick={() => act(workspace, "keep")}
@@ -766,7 +768,7 @@
             >{files.map((chosen) => chosen.name).join(", ")}{files.some(
               (chosen) => !isPcraftName(chosen.name),
             )
-              ? " — saved as it is; the editor's first save writes a .pcraft"
+              ? " — saved as it is"
               : ""}</span
           >
         {/if}
