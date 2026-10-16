@@ -47,8 +47,23 @@ export const META_FILE = "meta.json";
 export const PENDING_FILE = "pending.json";
 export const THUMB_FILE = "thumb.png";
 
+/**
+ * The names the provider keeps inside a project directory. Everything else in there is a document.
+ * A project's documents are therefore whatever the editor saved into it and whatever a workspace was
+ * started from, which is how a workspace can be seeded from a PSD or a PNG.
+ */
+export const PROJECT_FILES = new Set([
+  META_FILE,
+  PENDING_FILE,
+  THUMB_FILE,
+  "bucket.json",
+]);
+
 /** The document name an empty project's first save lands under, when nothing suggests a better one. */
 export const DEFAULT_DOCUMENT = "doc.pcraft";
+
+/** The extension the editor saves as, and the only kind of document a revision can describe. */
+export const DOCUMENT_EXTENSION = "pcraft";
 
 export type SyncState = "local";
 
@@ -100,13 +115,28 @@ export interface Workspace {
   role: "owner";
   rev: number;
   dirty: boolean;
-  /** Document bytes as they are on disk now, not as of the revision. */
+  /** Every document's bytes as they are on disk now, not as of the revision. */
   size: number;
   document: string | null;
   updatedAt: string;
   thumb: boolean;
   /** Set when the project directory is there but its metadata is not. */
   broken?: string;
+  /**
+   * Every document in the project, in name order (design, Documents). `document` above is the one the
+   * revision describes; the rest are documents the editor saved that no revision covers yet.
+   */
+  documents: WorkspaceDocument[];
+}
+
+/** One document in a project, as a listing shows it. */
+export interface WorkspaceDocument {
+  name: string;
+  size: number;
+  /** The file's `File.lastModified`. */
+  modified: number;
+  /** Whether this document, in these bytes, is what the project's revision recorded. */
+  dirty: boolean;
 }
 
 export interface Pending {
@@ -189,12 +219,20 @@ async function sweepStaging(space: Directory): Promise<void> {
   }
 }
 
-/** The document of a project: the one `*.pcraft` in it (design, The Single-File Document, Selection). */
+/**
+ * Every document a project holds, in name order (design, Documents). A document is any file in the
+ * project directory that is not the provider's own (`meta.json`, `bucket.json`, `thumb.png`) and not
+ * a one-save-back shadow: what a workspace was started from, and what the editor has saved into it.
+ */
+export async function documentNames(dir: Directory): Promise<string[]> {
+  return (await files(dir))
+    .filter((name) => !PROJECT_FILES.has(name) && !name.endsWith(".prev"))
+    .sort();
+}
+
+/** The document of a project: the first in name order, which is all a bare listing needs. */
 export async function documentName(dir: Directory): Promise<string | null> {
-  const names = (await files(dir)).filter(
-    (name) => name.endsWith(".pcraft") && !name.endsWith(".prev"),
-  );
-  return names[0] ?? null;
+  return (await documentNames(dir))[0] ?? null;
 }
 
 export async function readMeta(
@@ -204,22 +242,43 @@ export async function readMeta(
   return await readJson<Meta>(await projectDir(space, project), META_FILE);
 }
 
-/** A project's state as the catalog shows it: no document bytes are read (design, The Workspace Grid). */
+/**
+ * A project's state as the catalog shows it: no document bytes are read (design, The Workspace Grid).
+ *
+ * A project holds as many documents as the editor has saved into it. `meta.json` names the one its
+ * revision describes — the document the panels act on — and every other one is listed beside it,
+ * uncommitted by definition, because the revision does not describe it.
+ */
 export async function inspect(
   space: Directory,
   project: string,
 ): Promise<Workspace> {
   const dir = await projectDir(space, project);
   const meta = await readJson<Meta>(dir, META_FILE);
-  const document = await documentName(dir);
-  const info = document ? await stat(dir, document) : null;
-  const size = info?.size ?? 0;
+  const names = await documentNames(dir);
+  const recorded = meta?.document ?? null;
+  const document =
+    recorded && names.includes(recorded) ? recorded : (names[0] ?? null);
   const revision = meta?.revision ?? null;
-  const dirty =
-    revision === null
-      ? size > 0
-      : info !== null &&
-        (info.size !== revision.size || info.modified !== revision.modified);
+  const documents: WorkspaceDocument[] = [];
+  for (const name of names) {
+    const info = await stat(dir, name);
+    const size = info?.size ?? 0;
+    documents.push({
+      name,
+      size,
+      modified: info?.modified ?? 0,
+      // Only the document the revision describes can be what it recorded.
+      dirty:
+        name !== document || revision === null
+          ? true
+          : info === null ||
+            info.size !== revision.size ||
+            info.modified !== revision.modified,
+    });
+  }
+  const size = documents.reduce((total, entry) => total + entry.size, 0);
+  const dirty = documents.some((entry) => entry.dirty);
   const thumb = (await stat(dir, THUMB_FILE)) !== null;
 
   if (!meta) {
@@ -233,6 +292,7 @@ export async function inspect(
       document,
       updatedAt: new Date(0).toISOString(),
       thumb,
+      documents,
       broken: "no meta.json",
     };
   }
@@ -251,6 +311,7 @@ export async function inspect(
     document,
     updatedAt: meta.updatedAt,
     thumb,
+    documents,
   };
 }
 
@@ -274,7 +335,7 @@ export async function scan(space: Directory): Promise<Workspace[]> {
       rev: workspace.rev,
       dirty: workspace.dirty,
       bytes: workspace.size,
-      documents: workspace.document ? 1 : 0,
+      documents: workspace.documents.length,
       document: workspace.document,
       updatedAt: workspace.updatedAt,
       thumb: workspace.thumb,
@@ -305,24 +366,44 @@ export function objectKey(
 
 /** `doc.pcraft` for a suggested display name, keeping the extension the contract requires. */
 export function documentFileName(name: string): string {
-  const base =
-    name.replace(/^[\s.]+|[\s]+$/g, "").replace(/[/\\]/g, "-") || "document";
-  const stem = base.toLowerCase().endsWith(".pcraft")
-    ? base.slice(0, -".pcraft".length)
-    : base.replace(/\.[^.]*$/, "");
-  return `${stem || "document"}.pcraft`;
+  const base = sanitiseDocumentName(name);
+  if (!base) return DEFAULT_DOCUMENT;
+  return extensionOf(base) ? base : `${base}.${DOCUMENT_EXTENSION}`;
+}
+
+/** Drop any path part, leading dots and a trailing dot: a document name is a file name, nothing else. */
+export function sanitiseDocumentName(name: string): string {
+  return name
+    .replace(/^[\s.]+|[\s]+$/g, "")
+    .replace(/[/\\]/g, "-")
+    .replace(/\.+$/, "");
+}
+
+/** `.psd`, `.pcraft` — the part of a name the editor picks its reader by. Empty when there is none. */
+export function extensionOf(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && dot < name.length - 1 ? name.slice(dot) : "";
+}
+
+/** Whether a name is one the editor saves as a `.pcraft` — the only kind a revision can describe. */
+export function isPcraftName(name: string): boolean {
+  return name.toLowerCase().endsWith(`.${DOCUMENT_EXTENSION}`);
 }
 
 export interface NewProject {
   name: string;
-  /** The document to start from, or null for a project with no document yet. */
-  document?: { name: string; bytes: Uint8Array } | null;
+  /**
+   * The documents to start from, in the order they were chosen. Empty for a project with no document
+   * yet. Several are written as they come; the one the revision describes is the first `.pcraft` among
+   * them, because only a `.pcraft` can be recorded (Documents).
+   */
+  documents?: { name: string; bytes: Uint8Array }[];
 }
 
 /** Create a project and commit its first revision. The provider owns project creation (design, File Ownership). */
 export async function createProject(
   space: Directory,
-  { name, document = null }: NewProject,
+  { name, documents = [] }: NewProject,
 ): Promise<Workspace> {
   const id = crypto.randomUUID();
   const dir = await directory(await projectsDir(space), id, true);
@@ -342,15 +423,20 @@ export async function createProject(
     revision: null,
   };
   await writeJson(dir, META_FILE, meta);
-  if (document) {
-    await writeBytes(dir, document.name, document.bytes);
+  if (documents.length) {
+    for (const document of documents)
+      await writeBytes(dir, document.name, document.bytes);
+    // The recorded document is the first `.pcraft` chosen: a revision is that format's object set, so
+    // a workspace started from a PSD alone is committed only once the editor saves one.
+    const recordable = documents.find((document) => isPcraft(document.bytes));
+    const recorded = recordable ?? documents[0];
     await writeJson(dir, META_FILE, {
       ...meta,
-      document: document.name,
-      size: document.bytes.length,
+      document: recordable ? recorded.name : null,
+      size: recorded.bytes.length,
       dirty: true,
     });
-    await commit(space, id);
+    if (recordable) await commit(space, id);
   }
   return await inspect(space, id);
 }
@@ -358,6 +444,12 @@ export async function createProject(
 export interface ReadDocument {
   name: string;
   bytes: Uint8Array;
+  /**
+   * Whether these bytes are a `.pcraft` document — the only kind a revision can describe, because
+   * the object set, the diff and the thumbnail all come out of its ZIP. A workspace started from a
+   * PSD or a PNG holds a document the editor can open and save, and no revision until it saves one.
+   */
+  pcraft: boolean;
   entries: ZipEntry[];
   objects: Map<string, number>;
 }
@@ -366,18 +458,26 @@ export interface ReadDocument {
 export async function readDocument(
   space: Directory,
   project: string,
+  document?: string,
 ): Promise<ReadDocument | null> {
   const dir = await projectDir(space, project);
-  const name = await documentName(dir);
+  const name = document ?? (await documentName(dir));
   if (!name) return null;
   const bytes = await withLock(
     lockName(project),
     "shared",
     async () => await readBytes(dir, name),
   );
-  if (!isPcraft(bytes)) throw new Error(`${name} is not a .pcraft document`);
+  if (!isPcraft(bytes))
+    return { name, bytes, pcraft: false, entries: [], objects: new Map() };
   const entries = readDirectory(bytes);
-  return { name, bytes, entries, objects: objectSet(entries) };
+  return {
+    name,
+    bytes,
+    pcraft: true,
+    entries,
+    objects: objectSet(entries),
+  };
 }
 
 /** The exact change against the committed revision, and what the Changes panel renders (design, Where Cloud State Is Surfaced). */
@@ -393,9 +493,12 @@ export async function pendingChange(
   space: Directory,
   project: string,
   meta: Meta,
+  document?: string,
 ): Promise<Change | null> {
-  const read = await readDocument(space, project);
+  const read = await readDocument(space, project, document);
   if (!read) return null;
+  // A document that is not a .pcraft has no object set to diff, and no revision can describe it.
+  if (!read.pcraft) return null;
   const previous = meta.revision?.objects ?? {};
   const difference_ = difference(previous, read.objects, read.entries);
   const info = await stat(await projectDir(space, project), read.name);
@@ -441,13 +544,22 @@ async function clearPending(space: Directory, project: string): Promise<void> {
  * Commit the document as a new revision: record its object set, refresh the thumbnail, and clear
  * the pending change. In M1 the revision is recorded locally; M2 uploads the same set (design, Delta Sync).
  */
-export async function commit(space: Directory, project: string): Promise<Meta> {
+export async function commit(
+  space: Directory,
+  project: string,
+  document?: string,
+): Promise<Meta> {
   const dir = await projectDir(space, project);
   return await withLock(lockName(project), "exclusive", async () => {
     const meta = (await readJson<Meta>(dir, META_FILE)) ?? null;
     if (!meta) throw new Error("this project has no meta.json");
-    const name = await documentName(dir);
+    const name = document ?? (await documentName(dir));
     if (!name) throw new Error("this project has no document to commit");
+    // A revision is the document's object set, so it can only describe a .pcraft.
+    if (!isPcraft(await readBytes(dir, name)))
+      throw new Error(
+        `${name} is not a .pcraft yet: open it in the editor and save it as one to record a version`,
+      );
     const bytes = await readBytes(dir, name);
     const info = await stat(dir, name);
     const entries = readDirectory(bytes);
@@ -486,11 +598,12 @@ export async function commit(space: Directory, project: string): Promise<Meta> {
 export async function discard(
   space: Directory,
   project: string,
+  document?: string,
 ): Promise<"revision" | "previous"> {
   const dir = await projectDir(space, project);
   const meta = await readJson<Meta>(dir, META_FILE);
   const outcome = await withLock(lockName(project), "exclusive", async () => {
-    const name = await documentName(dir);
+    const name = document ?? (await documentName(dir));
     if (!name) throw new Error("this project has no document");
     const previous = await readBytes(dir, `${name}.prev`).catch(() => null);
     if (!previous) throw new Error("there are no previous bytes to restore");
@@ -533,10 +646,11 @@ export async function restoreDocument(
   space: Directory,
   project: string,
   bytes: Uint8Array,
+  document?: string,
 ): Promise<void> {
   const dir = await projectDir(space, project);
   await withLock(lockName(project), "exclusive", async () => {
-    const name = (await documentName(dir)) ?? DEFAULT_DOCUMENT;
+    const name = document ?? (await documentName(dir)) ?? DEFAULT_DOCUMENT;
     await writeBytes(dir, name, bytes);
     const meta = await readJson<Meta>(dir, META_FILE);
     // `document` and `size` are the provider's record of the slot; the editor only ever writes
@@ -556,18 +670,17 @@ export async function documentBytes(
   space: Directory,
   project: string,
   previous = false,
+  document?: string,
 ): Promise<{ name: string; bytes: Uint8Array } | null> {
   const dir = await projectDir(space, project);
-  const name = await documentName(dir);
+  const name = document ?? (await documentName(dir));
   if (!name) return null;
   const file = previous ? `${name}.prev` : name;
   const bytes = await readBytes(dir, file).catch(() => null);
-  return bytes
-    ? {
-        name: previous ? `${name.replace(/\.pcraft$/, "")}.prev.pcraft` : name,
-        bytes,
-      }
-    : null;
+  if (!bytes) return null;
+  // A previous copy downloads under the name it had, one save back: `photo.psd` is `photo.prev.psd`.
+  const oneSaveBack = `${name.slice(0, name.length - extensionOf(name).length)}.prev${extensionOf(name)}`;
+  return { name: previous ? oneSaveBack : name, bytes };
 }
 
 export async function rename(
@@ -583,6 +696,94 @@ export async function rename(
     name: name.trim() || meta.name,
     updatedAt: new Date().toISOString(),
   });
+}
+
+/**
+ * Delete one document from a project: the document, its one-save-back `.prev`, and — when it was the
+ * document the revision described — that record too, so the project is uncommitted again rather than
+ * describing bytes that are gone. The exclusive lock is the one a save takes, so a delete cannot land
+ * in the middle of one.
+ *
+ * The bucket copy is deliberately left where it is, the same as deleting a whole workspace: this is
+ * not a delete-everywhere, and the object may be the only copy off this machine.
+ */
+export async function removeDocument(
+  space: Directory,
+  project: string,
+  document: string,
+): Promise<void> {
+  const dir = await projectDir(space, project);
+  await withLock(lockName(project), "exclusive", async () => {
+    await remove(dir, document).catch(() => {});
+    await remove(dir, `${document}.prev`).catch(() => {});
+    const meta = await readJson<Meta>(dir, META_FILE);
+    if (meta && meta.document === document)
+      await writeJson(dir, META_FILE, {
+        ...meta,
+        document: null,
+        revision: null,
+        dirty: true,
+        size: 0,
+      });
+  });
+  await clearPending(space, project);
+  await inspect(space, project);
+}
+
+/**
+ * Rename a document inside its project: the file, its one-save-back copy beside it, and — when it was
+ * the document the revision described — that record, so the revision follows the name rather than
+ * pointing at a file that is gone.
+ *
+ * OPFS has no `move()` every browser has (design, Saving), so this is read, write, remove under the
+ * project's exclusive lock. A name already taken in the project is refused rather than written over,
+ * and the recorded bucket copy is forgotten: `sync.remote.key` names the *old* document, and the next
+ * upload records the new one. Object storage has no rename, and the copy under the old name is left
+ * where it is.
+ */
+export async function renameDocument(
+  space: Directory,
+  project: string,
+  from: string,
+  to: string,
+): Promise<string> {
+  // A name typed without an extension keeps the document's own: renaming `photo.psd` to `holiday`
+  // gives `holiday.psd`, which is still a PSD to the editor that reads it.
+  const base = sanitiseDocumentName(to);
+  if (!base) throw new Error("a document needs a name");
+  const name = extensionOf(base)
+    ? base
+    : `${base}${extensionOf(from) || `.${DOCUMENT_EXTENSION}`}`;
+  if (name === from) return name;
+  const dir = await projectDir(space, project);
+  await withLock(lockName(project), "exclusive", async () => {
+    const names = await documentNames(dir);
+    if (!names.includes(from))
+      throw new Error(`${from} is not in this workspace`);
+    if (names.includes(name))
+      throw new Error(`${name} is already in this workspace`);
+    const bytes = await readBytes(dir, from);
+    const previous = await readBytes(dir, `${from}.prev`).catch(() => null);
+    await writeBytes(dir, name, bytes);
+    await remove(dir, from).catch(() => {});
+    // The one-save-back copy comes across only once the new document is in place.
+    if (previous) {
+      await writeBytes(dir, `${name}.prev`, previous);
+      await remove(dir, `${from}.prev`).catch(() => {});
+    }
+    const meta = await readJson<Meta>(dir, META_FILE);
+    if (meta && meta.document === from) {
+      const { remote: _forgotten, ...sync } = meta.sync;
+      await writeJson(dir, META_FILE, {
+        ...meta,
+        document: name,
+        sync,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  });
+  await inspect(space, project);
+  return name;
 }
 
 export async function removeProject(

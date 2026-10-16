@@ -6,8 +6,20 @@
   import { browser } from "$app/environment";
   import Thumb from "$lib/Thumb.svelte";
   import Icon from "$lib/Icon.svelte";
+  import BucketFields from "$lib/BucketFields.svelte";
+  import Problem from "$lib/Problem.svelte";
   import { bytes, since } from "$lib/format";
-  import { readBucketConfig, type BucketConfig } from "$lib/bucket";
+  import {
+    attachBucket,
+    bucketDocuments,
+    detachBucket,
+    downloadObject,
+    listObjects,
+    readBucketConfig,
+    signingFor,
+    type BucketConfig,
+    type BucketDocument,
+  } from "$lib/bucket";
   import {
     commitAndUpload,
     downloadWorkspace,
@@ -17,8 +29,12 @@
     createProject,
     documentFileName,
     ensureSpace,
+    isPcraftName,
+    removeProject,
     type Workspace,
   } from "$lib/contract";
+  import { normalisePrefix, prefixUrl, resolveBucket } from "$lib/sigv4";
+  import type { Directory } from "$lib/opfs";
   import {
     ensurePersistence,
     refresh,
@@ -32,16 +48,146 @@
     bytes: number;
   }
 
+  /** What a card says the workspace holds: the one document it names, or how many there are. */
+  function workspaceDocumentLabel(workspace: Workspace): string {
+    if (!workspace.documents.length) return "no document yet";
+    if (workspace.documents.length === 1)
+      return workspace.document ?? workspace.documents[0].name;
+    return `${workspace.documents.length} documents`;
+  }
+
+  /**
+   * What the picker offers: the formats the editor's own importer reads, which is the only thing that
+   * decides whether a document can be opened. The picker's filter is a convenience — a document the
+   * editor cannot read is still accepted, and it reports that itself when it is opened.
+   */
+  const DOCUMENT_EXTENSIONS = [
+    ".pcraft",
+    ".psd",
+    ".psb",
+    ".psdt",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+    ".webp",
+    ".gif",
+    ".bmp",
+    ".tga",
+    ".ico",
+    ".qoi",
+    ".exr",
+    ".hdr",
+    ".svg",
+    ".svgz",
+    ".ora",
+    ".kra",
+    ".krz",
+    ".pdn",
+    ".dng",
+    ".cr2",
+    ".cr3",
+    ".nef",
+    ".arw",
+    ".raf",
+  ].join(",");
+
   let dialog = $state<HTMLDialogElement | null>(null);
   let name = $state("");
   let busy = $state(false);
-  let problem = $state<string | null>(null);
+  let problem = $state<unknown>(null);
   let samples = $state<Sample[]>([]);
-  let source = $state<"empty" | "sample" | "file">("empty");
+  let source = $state<"empty" | "sample" | "file" | "bucket">("empty");
   let sample = $state("");
-  let file = $state<File | null>(null);
+  /** The documents chosen from this computer, in the order they were picked. */
+  let files = $state<File[]>([]);
   let fileInput = $state<HTMLInputElement | null>(null);
+  /**
+   * The dialog's optional bucket. These are the same fields the workspace page's *Bucket* panel takes, so
+   * a workspace can be given its bucket as it is made rather than opened and given one afterwards — and
+   * a workspace can be *started* from one, which is the same bucket read the other way round.
+   */
+  let withBucket = $state(false);
+  let bucketForm = $state({
+    endpoint: "",
+    bucket: "",
+    region: "auto",
+    prefix: "",
+    accessKeyId: "",
+    secretAccessKey: "",
+  });
+  /** The bucket name the fields put in the field themselves, so a paste does not overwrite a typed one. */
+  let bucketFilled = $state("");
+  /** What the bucket holds, once it has been listed, and which of them to start from. `null` until asked. */
+  let bucketList = $state<BucketDocument[] | null>(null);
+  let bucketChoice = $state("");
+  let listing = $state(false);
+  let listProblem = $state<unknown>(null);
+  /** The fields a listing was taken from, as one string. */
+  let listedFor = $state("");
   const now = Date.now();
+
+  /** Whether this creation attaches a bucket: asked for on its own, or because the document comes from one. */
+  const attaching = $derived(withBucket || source === "bucket");
+
+  /**
+   * A source that needs a bucket cannot outlive the section that holds its fields: shut the section and the
+   * creation goes back to being an ordinary one, rather than attaching a bucket from a form nobody can see.
+   * It reads the element rather than `withBucket`, because `bind:open`'s own listener may not have run yet.
+   */
+  function onBucketToggle(
+    event: Event & { currentTarget: HTMLDetailsElement },
+  ) {
+    if (!event.currentTarget.open && source === "bucket") source = "empty";
+  }
+
+  /**
+   * A listing belongs to the fields that produced it: change the account, the bucket, the prefix or the key,
+   * and what was listed is a list of something else. So the listing is only ever *shown* while the fields
+   * still name the bucket it came from, and an edit simply puts the list away.
+   */
+  const bucketFields = $derived(
+    [
+      bucketForm.endpoint,
+      bucketForm.bucket,
+      bucketForm.region,
+      bucketForm.prefix,
+      bucketForm.accessKeyId,
+    ].join("\n"),
+  );
+  const documents = $derived(
+    bucketList !== null && listedFor === bucketFields ? bucketList : null,
+  );
+  /** The document to start from: the one chosen, or the bucket's most recent when none has been. */
+  const chosen = $derived(
+    documents?.find((document) => document.key === bucketChoice) ??
+      documents?.[0] ??
+      null,
+  );
+
+  /**
+   * What the bucket option would sign for, or null while the fields do not yet name one. The workspace
+   * has no id and no document until it exists, so this is as far as the URL can be known — and it is
+   * resolved the way `attachBucket` resolves it, so the two cannot disagree.
+   */
+  const bucketPreview = $derived.by(() => {
+    if (!attaching || !bucketForm.endpoint.trim()) return null;
+    try {
+      const { endpoint, bucket } = resolveBucket(
+        bucketForm.endpoint,
+        bucketForm.bucket,
+      );
+      if (!bucket) return null;
+      return prefixUrl({
+        endpoint,
+        bucket,
+        prefix: normalisePrefix(bucketForm.prefix),
+      });
+    } catch {
+      return null;
+    }
+  });
 
   /**
    * How the list is drawn — a card each or a row each, and whether previews are shown. Both are the
@@ -109,6 +255,9 @@
       : `Record ${workspace.name} as a version here. No bucket is attached, so there is nowhere to upload it.`;
   }
 
+  /** What the last row action failed with, when it is worth a heading rather than one coloured line. */
+  let failure = $state<unknown>(null);
+
   /** Which workspace's row is working, so its buttons can wait rather than being pressed twice. */
   let working = $state<string | null>(null);
   /** What the last row action did, or why it could not, in the page's own banner. */
@@ -144,6 +293,7 @@
    */
   async function act(workspace: Workspace, what: "keep" | "take") {
     working = workspace.id;
+    failure = null;
     status =
       what === "keep"
         ? line(
@@ -168,7 +318,8 @@
       await refresh();
       status = describe(workspace.name, result);
     } catch (e) {
-      status = line("bad", e instanceof Error ? e.message : String(e));
+      failure = e;
+      status = null;
     } finally {
       working = null;
     }
@@ -226,8 +377,22 @@
     name = `Workspace ${$workspaces.length + 1}`;
     source = samples.length ? "sample" : "empty";
     sample = samples[0]?.file ?? "";
-    file = null;
+    files = [];
     if (fileInput) fileInput.value = "";
+    withBucket = false;
+    bucketForm = {
+      endpoint: "",
+      bucket: "",
+      region: "auto",
+      prefix: "",
+      accessKeyId: "",
+      secretAccessKey: "",
+    };
+    bucketFilled = "";
+    bucketList = null;
+    bucketChoice = "";
+    listProblem = null;
+    listedFor = "";
     dialog?.showModal();
   }
 
@@ -237,7 +402,29 @@
    */
   function chooseFile(event: Event & { currentTarget: HTMLInputElement }) {
     source = "file";
-    file = event.currentTarget.files?.[0] ?? null;
+    files = [...(event.currentTarget.files ?? [])];
+  }
+
+  /**
+   * List the bucket the fields name, so a workspace can be started from a document already in it. This
+   * signs with the fields alone — nothing is attached anywhere yet, because there is no workspace yet.
+   */
+  async function listBucket() {
+    listing = true;
+    listProblem = null;
+    bucketList = null;
+    listedFor = "";
+    try {
+      const attachment = await signingFor(bucketForm);
+      const { objects } = await listObjects(attachment);
+      bucketList = bucketDocuments(objects);
+      listedFor = bucketFields;
+      bucketChoice = bucketList[0]?.key ?? "";
+    } catch (e) {
+      listProblem = e;
+    } finally {
+      listing = false;
+    }
   }
 
   async function create() {
@@ -245,29 +432,86 @@
     problem = null;
     try {
       await ensurePersistence();
-      let document: { name: string; bytes: Uint8Array } | null = null;
+      const space = await ensureSpace();
+      let documents: { name: string; bytes: Uint8Array }[] = [];
       if (source === "sample" && sample) {
         const response = await fetch(`${base}/samples/${sample}`);
         if (!response.ok)
           throw new Error(`could not fetch ${sample}: ${response.status}`);
-        document = {
-          name: documentFileName(sample),
-          bytes: new Uint8Array(await response.arrayBuffer()),
-        };
+        documents = [
+          {
+            name: documentFileName(sample),
+            bytes: new Uint8Array(await response.arrayBuffer()),
+          },
+        ];
       } else if (source === "file") {
-        if (!file) throw new Error("choose a .pcraft file");
-        document = {
-          name: documentFileName(file.name),
-          bytes: new Uint8Array(await file.arrayBuffer()),
-        };
+        if (!files.length) throw new Error("choose a document");
+        // Read every chosen file before anything is written, so a partly-read set cannot leave a
+        // half-made workspace behind.
+        documents = await Promise.all(
+          files.map(async (chosen) => ({
+            name: documentFileName(chosen.name),
+            bytes: new Uint8Array(await chosen.arrayBuffer()),
+          })),
+        );
+      } else if (source === "bucket") {
+        if (!chosen)
+          throw new Error(
+            "list the bucket and choose a document to start from",
+          );
+        const attachment = await signingFor(bucketForm);
+        documents = [
+          {
+            name: documentFileName(chosen.name),
+            bytes: await downloadObject(attachment, chosen.logical),
+          },
+        ];
       }
-      await createProject(await ensureSpace(), { name, document });
+      // The bucket is read before anything is written, so a bucket that cannot be reached leaves no
+      // half-made workspace behind to explain.
+      const created = await createProject(space, { name, documents });
+      const bucket = attaching ? await attachOrUndo(space, created.id) : null;
       dialog?.close();
       await refresh();
+      if (bucket) {
+        const from =
+          source === "bucket" && chosen ? `, starting from ${chosen.key}` : "";
+        status = line(
+          "info",
+          "Created ",
+          { strong: created.name },
+          from,
+          ", attached to ",
+          { strong: bucket.bucket },
+          ".",
+        );
+      }
     } catch (e) {
-      problem = e instanceof Error ? e.message : String(e);
+      problem = e;
+      // A creation that was undone has already touched the catalog, so the grid re-reads either way.
+      await refresh();
     } finally {
       busy = false;
+    }
+  }
+
+  /**
+   * Attach the bucket the dialog collected, or leave nothing behind at all. A workspace made for a bucket
+   * that could not be attached is not what was asked for, and keeping it would put a second one behind
+   * the next click on *Create*; the message belongs in the dialog, which is what has to change.
+   */
+  async function attachOrUndo(
+    space: Directory,
+    id: string,
+  ): Promise<BucketConfig> {
+    try {
+      const attached = await attachBucket(space, id, bucketForm);
+      bucketForm.secretAccessKey = "";
+      return attached;
+    } catch (e) {
+      await detachBucket(space, id).catch(() => {});
+      await removeProject(space, id).catch(() => {});
+      throw e;
     }
   }
 
@@ -319,6 +563,10 @@
   </p>
 {/if}
 
+{#if failure}
+  <Problem problem={failure} banner />
+{/if}
+
 {#if status}
   <p
     class="banner"
@@ -361,12 +609,14 @@
           />
         {/if}
         <div class="body">
-          <h2 title={workspace.name}>{workspace.name}</h2>
+          <h2 title={workspace.name}>
+            <a class="name" href="{base}/workspace/{workspace.id}"
+              >{workspace.name}</a
+            >
+          </h2>
           <div class="facts">
             <p class="muted small">
-              {workspace.document || "no document yet"} · {bytes(
-                workspace.size,
-              )} local
+              {workspaceDocumentLabel(workspace)} · {bytes(workspace.size)} local
             </p>
             <p class="small">
               {#if workspace.dirty}
@@ -454,25 +704,14 @@
   <p class="small muted">
     It is early, unfinished work, offered as is and with <b
       >no warranty of any kind</b
-    >, express or implied — including merchantability, fitness for a particular
-    purpose and non-infringement. A workspace lives in this browser and can be
-    cleared at any time, so keep your own copies of anything that matters.
+    >, express or implied — including merchantability and fitness for a
+    particular purpose. A workspace lives in this browser and can be cleared at
+    any time, so keep your own copies of anything that matters.
   </p>
   <p class="small muted">
     The editor is <b>PhotoCraft</b>, the ArtCraft Team's editor — copyright ©
-    2026 ArtCraft Team and the PhotoCraft contributors — used under its
-    <a
-      href="https://github.com/storytold/photocraft/blob/main/LICENSE-MIT"
-      target="_blank"
-      rel="noopener">MIT</a
-    >
-    or
-    <a
-      href="https://github.com/storytold/photocraft/blob/main/LICENSE-APACHE"
-      target="_blank"
-      rel="noopener">Apache&nbsp;2.0</a
-    >
-    licence, at your option. Source code, licence texts and the full attribution list:
+    2026 ArtCraft Team and the PhotoCraft contributors. Source code, licence
+    texts and the full attribution list:
     <a
       href="https://github.com/storytold/photocraft"
       target="_blank"
@@ -512,22 +751,98 @@
       </label>
       <label class="option">
         <input type="radio" value="file" bind:group={source} />
-        A <code>.pcraft</code> file from this computer
+        {files.length > 1
+          ? `${files.length} documents from this computer`
+          : "A document from this computer"}
         <input
           type="file"
-          accept=".pcraft"
+          multiple
+          accept={DOCUMENT_EXTENSIONS}
           bind:this={fileInput}
           onchange={chooseFile}
         />
+        {#if files.length}
+          <span class="muted small"
+            >{files.map((chosen) => chosen.name).join(", ")}{files.some(
+              (chosen) => !isPcraftName(chosen.name),
+            )
+              ? " — saved as it is; the editor's first save writes a .pcraft"
+              : ""}</span
+          >
+        {/if}
+      </label>
+      <label class="option">
+        <input
+          type="radio"
+          value="bucket"
+          bind:group={source}
+          onchange={() => (withBucket = true)}
+        />
+        A cloud bucket
       </label>
     </fieldset>
+    <details
+      class="bucket-option"
+      bind:open={withBucket}
+      ontoggle={onBucketToggle}
+    >
+      <summary>Attach a bucket (optional)</summary>
+      {#if withBucket}
+        <div class="fields">
+          <BucketFields bind:form={bucketForm} bind:filled={bucketFilled} />
+          {#if source === "bucket"}
+            <div class="row">
+              <button type="button" onclick={listBucket} disabled={listing}>
+                {listing ? "Listing…" : "List documents"}
+              </button>
+            </div>
+            {#if listProblem}
+              <Problem problem={listProblem} small />
+            {:else if documents?.length === 0}
+              <p class="muted small">
+                The bucket holds no <code>.pcraft</code> documents.
+              </p>
+            {:else if documents}
+              <label>
+                Start from
+                <select bind:value={bucketChoice}>
+                  {#each documents as document (document.key)}
+                    <option value={document.key}
+                      >{document.key} ({bytes(document.size)})</option
+                    >
+                  {/each}
+                </select>
+              </label>
+            {:else}
+              <p class="muted small">
+                List the bucket to choose the document to start from.
+              </p>
+            {/if}
+          {/if}
+          {#if bucketPreview}
+            <p class="muted small">
+              Writes under <span class="mono">{bucketPreview}</span>
+            </p>
+          {/if}
+          <p class="muted small">
+            The credential stays in this browser, and the bytes go from here
+            straight to the bucket.
+            <a href="{base}/help#setup">How this works</a>
+          </p>
+        </div>
+      {/if}
+    </details>
     {#if problem}
-      <p class="bad small">{problem}</p>
+      <Problem {problem} small />
     {/if}
     <div class="row">
-      <button class="primary" onclick={create} disabled={busy}
-        >{busy ? "Creating…" : "Create"}</button
+      <button
+        class="primary"
+        onclick={create}
+        disabled={busy || (source === "bucket" && !chosen)}
       >
+        {busy ? "Creating…" : "Create"}
+      </button>
       <button onclick={() => dialog?.close()} disabled={busy}>Cancel</button>
     </div>
   </form>
@@ -573,6 +888,7 @@
     margin-left: auto;
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.5rem;
   }
 
@@ -734,6 +1050,20 @@
     overflow: hidden;
   }
 
+  /* The name is the way into the workspace, so it reads as a link without turning into a button:
+	   the heading's own colour, underlined when the pointer or the keyboard is on it. */
+  .name {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .name:hover,
+  .name:focus-visible {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
   /* Editor and Details over Commit and Download: two rows, so the card's actions are not one long
 	   ribbon of buttons, and the card's own line-up does not become a grid of columns. The rows are
 	   independent — each is only as wide as its own buttons — so a longer row below cannot open a blank
@@ -763,6 +1093,34 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  /* The dialog's optional bucket, shaped like the fieldset above it, and shut until it is wanted.
+	   Not `.bucket`: that name is the card's cloud icon, down in the list. */
+  .bucket-option {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.5rem 0.6rem 0.6rem;
+  }
+
+  .bucket-option > summary {
+    cursor: pointer;
+    color: var(--dim);
+  }
+
+  .bucket-option .fields {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  /* The one field the dialog brings itself — which document to start from — dressed like the ones the
+	   bucket form brings: the caption above its control, quiet, small. */
+  .bucket-option .fields > label {
+    display: grid;
+    gap: 0.15rem;
+    font-size: 0.86rem;
+    color: var(--dim);
   }
 
   .option {

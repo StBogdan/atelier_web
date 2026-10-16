@@ -297,7 +297,9 @@ code {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  /* The track never asks for more than the page has: below 19rem the card takes the width it is given
+     instead of pushing the grid (and the page) sideways. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
   gap: 1rem;
 }
 
@@ -401,7 +403,27 @@ dialog {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   padding: 1.1rem 1.2rem;
-  max-width: 34rem;
+  /* A modal dialog's own max-width is the browser's, and it is what keeps one inside a narrow viewport:
+     setting one here replaces it, so the viewport and its gutter come back into the sum. */
+  max-width: min(34rem, calc(100vw - 2.5rem));
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  /* A dialog taller than the screen scrolls rather than losing its buttons under the edge. */
+  overflow: auto;
+}
+
+/* A file input is as wide as its button and its "no file chosen" want to be, which is wider than a phone:
+   let it shrink, and keep the option rows from being measured at their widest. */
+input[type="file"] {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Chrome floors a fieldset at its content's min-content width, so the box refuses to shrink below the
+   widest row inside it and a narrow dialog ends up wider than the screen. The floor is the browser's
+   default, not a design decision. */
+fieldset {
+  min-inline-size: 0;
 }
 
 dialog::backdrop {

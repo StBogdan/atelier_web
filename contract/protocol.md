@@ -16,7 +16,7 @@ state from those files.
 
 | Party | Reads | Writes |
 |---|---|---|
-| Atelier Cloud (provider) | everything below it | everything except the document, which it replaces whole in the two cases in [The document](#the-document) |
+| Atelier Cloud (provider) | everything below it | everything except the documents, which it replaces whole in the cases in [Documents](#documents), or removes |
 | The editor (the patch) | `provider.json`, `projects/<id>/` | `<name>.pcraft` and its `.prev` |
 
 ## Layout
@@ -29,8 +29,9 @@ state from those files.
     ├── projects/<id>/
     │   ├── meta.json                 identity, revision and sync state
     │   ├── bucket.json               the bucket this workspace is attached to — never a credential
-    │   ├── <name>.pcraft             the document: the bytes the editor produces and consumes
-    │   ├── <name>.pcraft.prev        the previous bytes, beside it during a swap
+    │   ├── <name>                     the documents: what a workspace was started from and what the
+    │   │                             editor saved into it — any format, `.pcraft` to record versions
+    │   ├── <name>.prev                the previous bytes, beside it during a swap
     │   └── thumb.png                 preview for the landing page
     ├── outbox/<id>/pending.json      the change the provider has not committed yet
     └── tmp/<uuid>                    write staging (transient; either side may leave a file behind)
@@ -43,6 +44,9 @@ running editor to open another document. Nothing writes either, and a consumer m
 `provider.json` and `index/` are created by the provider on first use. `projects/` and `tmp/` are
 created with them; `outbox/<id>/` is created when a project has an uncommitted change, and
 `bucket.json` when a workspace is given a bucket.
+
+A project holds one or more documents, all in its one directory. Nothing nests below `projects/<id>/`:
+what a browser of a workspace shows is a list of file names, not a tree.
 
 ### provider.json
 
@@ -172,15 +176,34 @@ signing, and it costs the attachment, never the bucket.
 it went there. Detaching removes this file and the key with it, and leaves both the document here and
 the copy in the bucket alone.
 
-### The document
+### Documents
 
-`projects/<id>/<name>.pcraft`, the single-file ZIP the editor produces, and `tmp/<uuid>` staging
-beside it during a swap. A project holds exactly one `*.pcraft`: that is what a consumer looks for,
-and why the editor never needs a file list. `<name>` is the editor's own document name, so it
-round-trips into the editor's title bar; the change is a new name in the same slot, not a second
-document.
+The files directly in `projects/<id>/`, beside `tmp/<uuid>` staging. A document is any file there that
+is not Atelier web's own (`meta.json`, `bucket.json`, `thumb.png`) and not a one-save-back shadow
+(`<name>.prev`), so a project's documents are what a workspace was started from and what the editor has
+saved into it. They are flat: a browser of a workspace lists file names, not a tree.
 
-The provider writes this file in exactly two cases, always as a whole-document replace under
+`.pcraft` is the editor's own single-file ZIP — the bytes it produces and consumes — and the only format
+a revision can describe, because `revision.objects`, the diff and the thumbnail all come out of that ZIP.
+`meta.json` therefore records the one `.pcraft` its revision describes, in `document`; a document of any
+other format is held without one, and `commit` refuses with that reason rather than recording an empty
+object set. `<name>` is the editor's own document name, so it round-trips into the editor's title bar.
+
+A consumer that wants "the project's document" takes `document` when it is there, else the first
+`*.pcraft` in name order, else the first file — so a project with several, or with a format that is not
+`.pcraft`, is additive to protocol 1 rather than a break in it.
+
+The editor's reach from a workspace follows the same rule: a document it opens from here is a `.pcraft`.
+Its own file picker reads every format it can read from the reader's computer, and saving into a project
+writes one as a `.pcraft` (design, Selection).
+
+**A document opened into a bound editor session is written as it opens**, not on its first save
+(design, Import on Open): the reader picked a file from their own computer, and leaving it out of the
+workspace until a Save would let a workspace look emptier than the editor makes it look. It is written
+under its own name — the extension it arrived with, `.pcraft` when it had none — and the tab that opens
+is bound to that file, so the Save that follows writes it rather than a second copy of it.
+
+The provider writes a document in exactly two cases, always as a whole-document replace under
 `atelier-cloud:project:<id>` in `exclusive` mode, so no reader can catch it half-written:
 
 | Case | From |
@@ -188,8 +211,21 @@ The provider writes this file in exactly two cases, always as a whole-document r
 | *Discard* on a workspace | the editor's `<name>.pcraft.prev`, one save back |
 | *Download from bucket* | the object store, at `sync.remote.key` |
 
-Both leave the project uncommitted: those bytes are not the last revision until a commit names them.
-The editor's save is not blocked by either — it takes the same lock and writes over it.
+It renames one in exactly one case: *Rename* on a document row, which keeps the document and its
+one-save-back copy and gives them the new name. OPFS has no `move()` every browser has, so that is a
+read, a write and a remove under the same exclusive lock. A name already used in the project is
+refused rather than written over, and a recorded bucket copy is forgotten with it: `sync.remote.key`
+names the document the object was uploaded as, and object storage has no rename.
+
+It removes one in exactly one case: *Delete* on a document row, which takes the same exclusive lock and
+removes `<name>.pcraft` and its `.prev`. The copy in the bucket is deliberately left where it is —
+it may be the only one off this machine — and the project goes back to uncommitted when the deleted
+document was the one the revision described.
+
+The revision is kept honest in both cases: a rename carries the name in `meta.json` with it, and
+deleting the document the revision described clears that record, so the project is uncommitted again
+rather than naming a file that is gone. Neither blocks the editor's save — it takes the same lock and
+writes over it.
 
 ### outbox/&lt;id&gt;/pending.json
 
@@ -260,8 +296,8 @@ documents, not history.
 
 ## What is deliberately not here
 
-- No listing, no browsing, no "open recent". Selection is the provider's, and it hands over exactly
-  one document (design [Selection](../../docs/atelier_web_design.md#selection)).
+- No listing API, no browsing, no "open recent". Selection is the provider's to render, and what it
+  hands over is named: the document, or the documents, the user chose (design [Selection](../../docs/atelier_web_design.md#selection)).
 - No provider API in the filesystem: no request queue, no job file, no state the provider must poll.
   The provider derives what it needs from `meta.json` and the document.
 - No lock file. Web Locks has no leak to clean up after a crashed tab.

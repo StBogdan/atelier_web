@@ -82,7 +82,11 @@ async function main() {
 	);
 
 	const browser = await chromium.launch({ channel: 'chrome', headless: true });
-	const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
+	const context = await browser.newContext({
+		viewport: { width: 1280, height: 900 },
+		deviceScaleFactor: 1,
+		permissions: ['clipboard-read', 'clipboard-write']
+	});
 	const page = await context.newPage();
 	const consoleLog = [];
 	const requested = [];
@@ -106,6 +110,18 @@ async function main() {
 		"Help's CORS policy carries this origin, so it can be pasted as it stands",
 		help.includes(`"AllowedOrigins": ["${ORIGIN}"]`),
 		help.split('\n').find((line) => line.includes('AllowedOrigins')) ?? 'no policy'
+	);
+	await page.click('section#cors .snippet-head button');
+	await page.waitForTimeout(200);
+	const pasted = await page.evaluate(() => navigator.clipboard.readText());
+	check(
+		'and its copy button puts the whole policy on the clipboard, not a selection of it',
+		pasted.startsWith(`[\n  {\n    "AllowedOrigins": ["${ORIGIN}"]`) && pasted.includes('"MaxAgeSeconds": 3600'),
+		pasted.slice(0, 60).replace(/\n/g, '\\n')
+	);
+	check(
+		'and the button says it did — it is pasted into someone else’s dashboard',
+		(await page.innerText('section#cors .snippet-head button')) === 'Copied'
 	);
 	check(
 		'the nav links to it',
@@ -424,6 +440,7 @@ async function main() {
 	stub.objects.set(`${otherId}/02-layer-groups.pcraft`, Buffer.from(otherBytes));
 	stub.objects.set(`${otherId}/01-rgb-layered.prev.pcraft`, Buffer.from([1, 2, 3]));
 	stub.objects.set('readme.txt', Buffer.from('not a document'));
+	stub.objects.set('.hidden.pcraft', Buffer.from('a document nobody meant to offer'));
 	stub.objects.set('notes.pcraft', Buffer.from('a document at the root'));
 
 	await page.click('button:has-text("Choose from bucket")');
@@ -439,7 +456,12 @@ async function main() {
 		choosing
 	);
 	check('a previous version is not offered as a document to load', !/prev\.pcraft/.test(choosing), choosing);
-	check('nor is an object that is not a document', !/readme\.txt/.test(choosing), choosing);
+	check('a dotfile is not offered either', !/\.hidden\.pcraft/.test(choosing), choosing);
+	check(
+		'any other format is, since a workspace holds any file — readme.txt is offered',
+		/readme\.txt/.test(choosing),
+		choosing
+	);
 
 	const listing = stub.operations.find((operation) => operation.method === 'GET' && operation.key === '');
 	check('the listing is a signed request to the bucket itself', listing?.verified === true, JSON.stringify(stub.operations));
@@ -575,7 +597,7 @@ async function main() {
 	step('An R2 endpoint also links to the bucket in Cloudflare');
 	await page.fill(
 		'label:has-text("Endpoint") input',
-		'https://23729efcdbed36a6174df3c0ada00195.r2.cloudflarestorage.com/atelier-development-test'
+		'https://ACCOUNT_ID.r2.cloudflarestorage.com/your-bucket-name'
 	);
 	await page.fill('label:has-text("Access key id") input', 'an-access-key-id');
 	await page.fill('input[type=password]', 'a-secret');
@@ -586,12 +608,111 @@ async function main() {
 	check(
 		'the account id and bucket name make the dashboard URL',
 		cloudflare ===
-			'https://dash.cloudflare.com/23729efcdbed36a6174df3c0ada00195/r2/default/buckets/atelier-development-test',
+			'https://dash.cloudflare.com/ACCOUNT_ID/r2/default/buckets/your-bucket-name',
 		String(cloudflare)
 	);
 	check('and the stub endpoint got no such link', stub.failures.length === 0);
 
+	step('A workspace can be started from a document the bucket already holds');
+	stub.objects.set('seeded-workspace/start-here.pcraft', Buffer.from(otherBytes));
+	const projectCount = () =>
+		page.evaluate(async () => {
+			const space = await (await navigator.storage.getDirectory()).getDirectoryHandle('atelier-cloud');
+			const projects = await space.getDirectoryHandle('projects');
+			let count = 0;
+			for await (const _ of projects.keys()) count++;
+			return count;
+		});
+	await page.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+	await page.waitForSelector('text=Workspaces');
+	const projectsBefore = await projectCount();
+
+	await page.click('button:has-text("New workspace")');
+	await page.fill('input[type=text]', 'Started from the bucket');
+	await page.check('input[type=radio][value="bucket"]');
+	await page.fill('label:has-text("Endpoint") input', `${stub.url}/${stub.bucket}`);
+	await page.fill('label:has-text("Access key id") input', ACCESS_KEY_ID);
+	await page.fill('input[type=password]', SECRET_ACCESS_KEY);
+	await page.click('button:has-text("List documents")');
+	await page.waitForSelector('label:has-text("Start from") select option:has-text("start-here.pcraft")', {
+		state: 'attached',
+		timeout: 15_000
+	});
+	check(
+		'listing the bucket needs no workspace yet, so nothing was written to make the list',
+		(await projectCount()) === projectsBefore,
+		`${projectsBefore} projects before, ${await projectCount()} after`
+	);
+	check('and the list is taken from the bucket itself', stub.failures.length === 0, stub.failures.join('; '));
+
+	await page.selectOption('label:has-text("Start from") select', 'seeded-workspace/start-here.pcraft');
+	await page.click('button:has-text("Create")');
+	await page.waitForSelector('article h2:has-text("Started from the bucket")');
+	const startedHref = await page.getAttribute(
+		'article:has(h2:has-text("Started from the bucket")) a:has-text("Editor")',
+		'href'
+	);
+	const started = new URL(startedHref, ORIGIN).searchParams.get('project');
+	const startedBytes = await documentBytes(page, started);
+	check(
+		'the new workspace holds the document the bucket was holding',
+		Boolean(startedBytes) && digest(startedBytes) === digest(Buffer.from(otherBytes)),
+		`${startedBytes?.length ?? 'no document'} B, wanted ${otherBytes.length} B`
+	);
+	const startedConfig = await readJson(page, started, 'bucket.json');
+	check(
+		'and the bucket is attached to it, so its next upload has somewhere to go',
+		startedConfig?.bucket === stub.bucket,
+		String(startedConfig?.bucket)
+	);
+	check(
+		'with the page saying which document and which bucket',
+		/starting from seeded-workspace\/start-here\.pcraft/.test(await page.innerText('.banner.info')) &&
+			/attached to/.test(await page.innerText('.banner.info')),
+		await page.innerText('.banner.info')
+	);
+
 	check('the page never asked the server about a bucket', !requested.includes('/api/storage'), requested.filter((path) => path.startsWith('/api')).join(', '));
+
+	step('The new-workspace dialog fits a narrow screen');
+	await page.setViewportSize({ width: 320, height: 640 });
+	await page.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+	await page.waitForSelector('text=Workspaces');
+	await page.click('button:has-text("New workspace")');
+	await page.check('input[type=radio][value="bucket"]');
+	await page.waitForTimeout(200);
+	const narrow = await page.evaluate(() => {
+		const dialog = document.querySelector('dialog');
+		const style = getComputedStyle(dialog);
+		const box = dialog.getBoundingClientRect();
+		const inner = { left: box.left + parseFloat(style.paddingLeft), right: box.right - parseFloat(style.paddingRight) };
+		const outside = [...dialog.querySelectorAll('*')]
+			.filter((el) => el.tagName !== 'OPTION')
+			.filter((el) => {
+				const r = el.getBoundingClientRect();
+				return r.width > 0 && (r.right > inner.right + 0.5 || r.left < inner.left - 0.5);
+			})
+			.map((el) => el.tagName);
+		return {
+			left: Math.round(box.left),
+			right: Math.round(box.right),
+			outside: [...new Set(outside)],
+			pageScrollWidth: document.documentElement.scrollWidth
+		};
+	});
+	check(
+		'the dialog is inside the viewport, with a gutter rather than flush to the edges',
+		narrow.left >= 20 && narrow.right <= 300,
+		`${narrow.left}..${narrow.right}`
+	);
+	check(
+		'and nothing inside it is wider than the dialog, so no field is cut off',
+		narrow.outside.length === 0,
+		narrow.outside.join(', ')
+	);
+	check('and the page itself does not scroll sideways', narrow.pageScrollWidth === 320, String(narrow.pageScrollWidth));
+	await page.click('button:has-text("Cancel")');
+	await page.setViewportSize({ width: 1280, height: 900 });
 
 	if (consoleLog.length) log(`\n   page console:\n${consoleLog.map((line) => `     ${line}`).join('\n')}`);
 	await browser.close();

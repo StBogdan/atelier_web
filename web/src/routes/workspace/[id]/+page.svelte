@@ -4,6 +4,8 @@
   import { base } from "$app/paths";
   import { page } from "$app/state";
   import Thumb from "$lib/Thumb.svelte";
+  import BucketFields from "$lib/BucketFields.svelte";
+  import Problem from "$lib/Problem.svelte";
   import { bytes, objects, plural, since } from "$lib/format";
   import { downloadWorkspace, uploadDocument } from "$lib/actions";
   import {
@@ -11,14 +13,19 @@
     discard,
     ensureSpace,
     hash,
+    inspect,
+    isPcraftName,
     objectKey,
     pendingChange,
     readMeta,
+    removeDocument,
     removeProject,
     rename,
+    renameDocument,
     restoreDocument,
     type Change,
     type Meta,
+    type WorkspaceDocument,
   } from "$lib/contract";
   import {
     BucketError,
@@ -34,20 +41,29 @@
     type BucketConfig,
     type BucketDocument,
   } from "$lib/bucket";
-  import {
-    normalisePrefix,
-    resolveBucket,
-    splitBucket,
-    targetUrl,
-  } from "$lib/sigv4";
+  import { normalisePrefix, resolveBucket, targetUrl } from "$lib/sigv4";
   import { ensurePersistence, refresh } from "$lib/session";
 
   const id = $derived(page.params.id ?? "");
 
+  /** Where the editor is sent to open one document; the workspace's own when none is named. */
+  const editorUrl = (document?: string) =>
+    `/?project=${encodeURIComponent(id)}${
+      document ? `&document=${encodeURIComponent(document)}` : ""
+    }`;
+
   let meta = $state<Meta | null>(null);
+  /** The documents this workspace holds, from `inspect` (design, Documents). */
+  let documents = $state<WorkspaceDocument[]>([]);
+  /** The one the project's revision describes, which the panels act on. */
+  let recordedDocument = $state<string | null>(null);
+  /** The document a row is renaming, and the name it is being given. */
+  let renamingDocument = $state<string | null>(null);
+  let documentName = $state("");
   let change = $state<Change | null>(null);
   let bucket = $state<BucketConfig | null>(null);
-  let bucketProblem = $state<string | null>(null);
+  /** What the bucket panel last failed with: an error as thrown, so a `Problem` can be drawn as one. */
+  let bucketProblem = $state<unknown>(null);
   /** What the attach form holds. The secret lives here until it is imported, and is cleared then. */
   let form = $state({
     endpoint: "",
@@ -57,23 +73,29 @@
     accessKeyId: "",
     secretAccessKey: "",
   });
-  /** The bucket name this form put in the field itself, so a paste does not overwrite a typed one. */
-  let filled = "";
+  /** The bucket name the fields put in the field themselves, so a paste does not overwrite a typed one. */
+  let filled = $state("");
   /** Attached already, and the form reopened to change it. */
   let editing = $state(false);
   /** The bucket's contents, shown when the chooser is open. `null` while the listing is on its way. */
   let choosing = $state(false);
   let choices = $state<BucketDocument[] | null>(null);
   let truncated = $state(false);
-  let chooseProblem = $state<string | null>(null);
+  let chooseProblem = $state<unknown>(null);
   let busy = $state<string | null>(null);
-  let problem = $state<string | null>(null);
+  let problem = $state<unknown>(null);
   let notice = $state<string | null>(null);
   let renaming = $state(false);
   let newName = $state("");
   let now = $state(Date.now());
 
   const remote = $derived(meta?.sync?.remote ?? null);
+  /** The document the workspace shows: the one a revision describes, else the first it holds. */
+  const shown = $derived(
+    documents.find((document) => document.name === recordedDocument) ??
+      documents[0] ??
+      null,
+  );
   /** The bytes on disk right now, as the Changes panel already knows them. */
   const currentHash = $derived(change?.hash ?? meta?.revision?.hash ?? null);
 
@@ -130,35 +152,12 @@
     }
   });
 
-  /**
-   * A dashboard's copy button hands over the bucket's whole URL, so a paste into Endpoint is taken
-   * apart: the account host stays, and the bucket name moves to its own field where it can be seen.
-   * Only on paste — an endpoint typed by hand must not be dismembered as it is typed.
-   */
-  function acceptPastedBucket(event: ClipboardEvent) {
-    const text = event.clipboardData?.getData("text") ?? "";
-    let split: { endpoint: string; bucket: string } | null = null;
-    try {
-      split = splitBucket(text);
-    } catch {
-      return;
-    }
-    if (!split) return;
-    event.preventDefault();
-    form.endpoint = split.endpoint;
-    // Only if this field is empty, or still holds what this handler put there.
-    if (!form.bucket || form.bucket === filled) {
-      filled = split.bucket;
-      form.bucket = split.bucket;
-    }
-  }
-
   async function loadBucket() {
     bucketProblem = null;
     try {
       bucket = await readBucketConfig(await ensureSpace(), id);
     } catch (e) {
-      bucketProblem = e instanceof Error ? e.message : String(e);
+      bucketProblem = e;
     }
   }
 
@@ -173,10 +172,14 @@
       return;
     }
     newName = found.name;
+    // Which documents the workspace holds is a listing of the project directory, not metadata.
+    const workspace = await inspect(space, id);
+    documents = workspace.documents;
+    recordedDocument = workspace.document;
     try {
       change = await pendingChange(space, id, found);
     } catch (e) {
-      problem = e instanceof Error ? e.message : String(e);
+      problem = e;
     }
     now = Date.now();
   }
@@ -201,7 +204,7 @@
     try {
       await action();
     } catch (e) {
-      problem = e instanceof Error ? e.message : String(e);
+      problem = e;
     } finally {
       busy = null;
     }
@@ -232,6 +235,55 @@
   const save = (previous: boolean) =>
     run("download", async () => {
       await downloadWorkspace(await ensureSpace(), id, previous);
+    });
+
+  /** Save one document of this workspace to the computer, whichever one it is. */
+  const saveDocument = (document: WorkspaceDocument) =>
+    run("download", async () => {
+      await downloadWorkspace(await ensureSpace(), id, false, document.name);
+    });
+
+  /** Open a row's name for editing, starting from the name it has. */
+  function startRenamingDocument(document: WorkspaceDocument) {
+    renamingDocument = document.name;
+    documentName = document.name;
+  }
+
+  /**
+   * Rename a document in this workspace: the file, the one-save-back copy beside it, and the record
+   * the revision keeps when this was the document it describes. A name already used here is refused.
+   */
+  const applyDocumentRename = (document: WorkspaceDocument) =>
+    run("rename", async () => {
+      const name = await renameDocument(
+        await ensureSpace(),
+        id,
+        document.name,
+        documentName,
+      );
+      renamingDocument = null;
+      notice =
+        name === document.name
+          ? `${document.name} was not renamed.`
+          : `Renamed ${document.name} to ${name}.`;
+      await load();
+      await refresh();
+    });
+
+  /**
+   * Delete one document from this workspace. Its one-save-back copy goes with it; the copy in the
+   * bucket does not, because that may be the only one off this machine.
+   */
+  const deleteDocument = (document: WorkspaceDocument) =>
+    run("delete", async () => {
+      const confirmed = window.confirm(
+        `Delete ${document.name} from this workspace?\n\nThe one-save-back copy beside it goes too. A copy in the bucket is left alone. This cannot be undone.`,
+      );
+      if (!confirmed) return;
+      await removeDocument(await ensureSpace(), id, document.name);
+      notice = `Deleted ${document.name}.`;
+      await load();
+      await refresh();
     });
 
   /**
@@ -265,7 +317,7 @@
       notice = `Attached ${attached.bucket}. Uploads and downloads from here are signed in this browser.`;
       await loadBucket();
     } catch (e) {
-      bucketProblem = e instanceof Error ? e.message : String(e);
+      bucketProblem = e;
     } finally {
       busy = null;
     }
@@ -315,7 +367,7 @@
       choices = bucketDocuments(listing.objects);
       truncated = listing.truncated;
     } catch (e) {
-      chooseProblem = e instanceof Error ? e.message : String(e);
+      chooseProblem = e;
     } finally {
       busy = null;
     }
@@ -446,7 +498,7 @@
 {#if !meta}
   <div class="panel">
     <h1>Workspace</h1>
-    <p class="bad">{problem ?? "loading…"}</p>
+    <Problem problem={problem ?? "loading…"} />
   </div>
 {:else}
   <div class="top">
@@ -467,15 +519,15 @@
         </h1>
       {/if}
       <p class="muted small">
-        {meta.document ?? "no document yet"} · rev {meta.rev} · {bytes(
-          meta.size,
+        {shown?.name ?? "no document yet"} · rev {meta.rev} · {bytes(
+          shown?.size ?? 0,
         )} · created {since(meta.createdAt, now)}
       </p>
     </div>
     <div class="row actions">
       <a
         class="button primary"
-        href="/?project={id}"
+        href={editorUrl(recordedDocument ?? undefined)}
         target="_blank"
         rel="noopener">Open in editor</a
       >
@@ -483,7 +535,7 @@
   </div>
 
   {#if problem}
-    <p class="banner bad">{problem}</p>
+    <Problem {problem} banner />
   {/if}
   {#if notice}
     <p class="banner">{notice}</p>
@@ -566,11 +618,15 @@
       <h2>Changes — Version up to date</h2>
       <p class="muted small">
         {#if meta.revision}
-          Recorded {since(meta.sync.at, now)} · {Object.keys(
-            meta.revision.objects,
-          ).length} objects ·
+          <span class="mono">{meta.document}</span> · Recorded {since(
+            meta.sync.at,
+            now,
+          )} · {Object.keys(meta.revision.objects).length} objects ·
           {bytes(meta.revision.size)} ·
           <span class="mono">{meta.revision.hash.slice(0, 22)}…</span>
+        {:else if documents.length}
+          No <code>.pcraft</code> here yet, so there is nothing to compare: the editor
+          writes one when it saves into this workspace.
         {/if}
       </p>
       <div class="row">
@@ -591,6 +647,102 @@
       Recording a version marks the current state as the one later changes are
       compared against. Nothing leaves this machine.
     </p>
+  </section>
+  <section class="panel documents">
+    <h2>
+      Documents
+      {#if documents.length > 1}
+        <span class="muted">({documents.length})</span>
+      {/if}
+    </h2>
+    {#if documents.length === 0}
+      <p class="muted small">
+        This workspace holds no documents yet. Open the editor and save one into
+        it, or load one from the bucket.
+      </p>
+    {:else}
+      <table>
+        <thead>
+          <tr>
+            <th>document</th>
+            <th class="right">size</th>
+            <th>state</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each documents as document (document.name)}
+            <tr data-document={document.name}>
+              <td class="mono">
+                {#if renamingDocument === document.name}
+                  <form
+                    class="row"
+                    onsubmit={(event) => {
+                      event.preventDefault();
+                      void applyDocumentRename(document);
+                    }}
+                  >
+                    <input
+                      type="text"
+                      bind:value={documentName}
+                      aria-label="New name for {document.name}"
+                    />
+                    <button
+                      class="primary"
+                      type="submit"
+                      disabled={busy !== null}>Rename</button
+                    >
+                    <button
+                      type="button"
+                      onclick={() => (renamingDocument = null)}
+                      disabled={busy !== null}>Cancel</button
+                    >
+                  </form>
+                {:else}
+                  {document.name}
+                {/if}
+              </td>
+              <td class="right">{bytes(document.size)}</td>
+              <td class="muted small">
+                {#if document.name === recordedDocument}
+                  {document.dirty
+                    ? `changed since rev ${meta.rev}`
+                    : `revision ${meta.rev}`}
+                {:else if isPcraftName(document.name)}
+                  not in a revision
+                {:else}
+                  kept as it is; the editor opens <code>.pcraft</code>
+                {/if}
+              </td>
+              <td class="right">
+                {#if isPcraftName(document.name)}
+                  <a
+                    class="button"
+                    href={editorUrl(document.name)}
+                    target="_blank"
+                    rel="noopener">Open</a
+                  >
+                {/if}
+                <button
+                  onclick={() => saveDocument(document)}
+                  disabled={busy !== null}>Download</button
+                >
+                <button
+                  onclick={() => startRenamingDocument(document)}
+                  disabled={busy !== null || renamingDocument !== null}
+                  >Rename</button
+                >
+                <button
+                  class="danger"
+                  onclick={() => deleteDocument(document)}
+                  disabled={busy !== null}>Delete</button
+                >
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
   </section>
 
   {#if change}
@@ -617,55 +769,11 @@
         void attach();
       }}
     >
-      <label
-        >Endpoint<input
-          type="text"
-          bind:value={form.endpoint}
-          onpaste={acceptPastedBucket}
-          placeholder="https://ACCOUNT_ID.r2.cloudflarestorage.com/atelier-development-test"
-        /></label
-      >
-      <label
-        >Bucket<input
-          type="text"
-          bind:value={form.bucket}
-          placeholder="atelier-development-test"
-        /></label
-      >
-      <label
-        >Region <span class="opt">optional</span><input
-          type="text"
-          bind:value={form.region}
-        /></label
-      >
-      <label
-        >Key prefix <span class="opt">optional</span><input
-          type="text"
-          bind:value={form.prefix}
-          placeholder="for a bucket you share"
-        /></label
-      >
-      <hr />
-      <label
-        >Access key id<input type="text" bind:value={form.accessKeyId} /></label
-      >
-      <label>
-        Secret access key
-        <input
-          type="password"
-          bind:value={form.secretAccessKey}
-          autocomplete="new-password"
-          placeholder={editing ? "not stored — enter it again" : ""}
-        />
-      </label>
-      <p class="muted small">
-        <a
-          href="https://developers.cloudflare.com/r2/api/tokens/"
-          target="_blank"
-          rel="noopener">Create an R2 API token ↗</a
-        >
-        — Object Read &amp; Write, limited to this bucket.
-      </p>
+      <BucketFields
+        bind:form
+        bind:filled
+        secretPlaceholder={editing ? "not stored — enter it again" : ""}
+      />
       {#if preview}
         <p class="muted small">
           Writes to <span class="mono">{preview.target}</span>
@@ -713,7 +821,7 @@
       {/if}
     </summary>
     {#if bucketProblem}
-      <p class="bad small">{bucketProblem}</p>
+      <Problem problem={bucketProblem} small />
     {/if}
     {#if bucket}
       {#if editing}
@@ -772,7 +880,7 @@
         {#if choosing}
           <div class="choose">
             {#if chooseProblem}
-              <p class="bad small">{chooseProblem}</p>
+              <Problem problem={chooseProblem} small />
             {:else if !choices}
               <p class="muted small">asking the bucket…</p>
             {:else if choices.length === 0}
@@ -904,12 +1012,6 @@
     margin: 0 0 0.85rem;
   }
 
-  .opt {
-    color: var(--dim);
-    font-weight: 400;
-    font-size: 0.78rem;
-  }
-
   /* The one action that leaves with the whole workspace, kept at the far end of the row. */
   .push {
     margin-left: auto;
@@ -919,13 +1021,6 @@
     color: var(--dim);
     cursor: help;
     font-size: 0.95rem;
-  }
-
-  .attach hr {
-    border: none;
-    border-top: 1px solid var(--line);
-    margin: 0.35rem 0;
-    width: 100%;
   }
 
   details.panel > summary {
@@ -951,13 +1046,6 @@
 
   details.panel > summary h2 {
     margin: 0;
-  }
-
-  .attach label {
-    display: grid;
-    gap: 0.15rem;
-    font-size: 0.86rem;
-    color: var(--dim);
   }
 
   .choose {

@@ -131,7 +131,7 @@ async function main() {
 	await provider.bringToFront();
 	await provider.goto(`${ORIGIN}/cloud/workspace/${project}`, { waitUntil: 'networkidle' });
 	await provider.waitForSelector('h2:has-text("Changes")');
-	const panel = await provider.innerText('section.panel');
+	const panel = await provider.innerText('section.panel.changes');
 	log('   panel:\n' + panel.split('\n').map((line) => `     ${line}`).join('\n'));
 	check('the panel reports uncommitted changes since rev 1', /uncommitted since rev 1/.test(panel));
 	check('the panel names the document', panel.includes('01-rgb-layered.pcraft'));
@@ -142,7 +142,7 @@ async function main() {
 	step('Atelier Cloud: record the version');
 	await provider.click('button:has-text("Record version")');
 	await provider.waitForTimeout(1500);
-	const committed = await provider.innerText('section.panel');
+	const committed = await provider.innerText('section.panel.changes');
 	log('   panel:\n' + committed.split('\n').map((line) => `     ${line}`).join('\n'));
 	check('the panel is clean after committing', /Version up to date/.test(committed));
 	const cleanHeading = (await provider.innerText('section.panel.changes h2')).trim();
@@ -202,7 +202,7 @@ async function main() {
 	await provider.waitForTimeout(300);
 	await provider.reload({ waitUntil: 'networkidle' });
 	await provider.waitForSelector('h2:has-text("Changes")');
-	const dirty = await provider.innerText('section.panel');
+	const dirty = await provider.innerText('section.panel.changes');
 	check('a change made outside the browser UI is noticed', /uncommitted since rev 2/.test(dirty));
 
 	const previousBytes = (await opfs(provider)).find((entry) => entry.path === `projects/${project}/01-rgb-layered.pcraft.prev`);
@@ -312,19 +312,24 @@ async function main() {
 	const homeSave = home.lines.find((line) => line.includes('atelier-cloud: saved'));
 	check('a document imported into an empty workspace saves into it', Boolean(homeSave), homeSave ?? home.lines.slice(-4).join(' | '));
 	const filled = await opfs(home.page);
-	check('the imported document is the project document now', find(filled, `projects/${homeProject}/01-rgb-layered.pcraft`)?.size === 179714, `${find(filled, `projects/${homeProject}/01-rgb-layered.pcraft`)?.size} B`);
+	const importedSize = find(filled, `projects/${homeProject}/01-rgb-layered.pcraft`)?.size ?? 0;
+	check('the imported document is the project document now', Math.abs(importedSize - 179714) / 179714 < 0.01, `${importedSize} B (the sample is 179714; a save re-encodes it)`);
 
-	// With a document in the project the request is claimed again, so nothing opens a picker.
-	let chopped = false;
+	// File ▸ Open is the local door, so it reaches the picker even when the project holds a document:
+	// that is the only way a file from this computer gets in (design, Selection). Opening from the
+	// workspace is the other File item.
+	let picked = false;
 	home.page.on('filechooser', () => {
-		chopped = true;
+		picked = true;
 	});
 	await home.page.mouse.click(FILE_MENU.x, FILE_MENU.y);
 	await home.page.waitForTimeout(400);
 	await home.page.mouse.click(FILE_MENU_OPEN.x, FILE_MENU_OPEN.y);
 	await home.page.waitForTimeout(2500);
 	const overlayAgain = await home.page.locator('#rfd-input').count();
-	check('File ‣ Open reopens the project document instead of the picker', !chopped && overlayAgain === 0);
+	check('File ‣ Open opens the picker, not the project document', picked || overlayAgain > 0);
+	if (overlayAgain > 0) await home.page.click('button.rfd-button:has-text("Cancel")').catch(() => {});
+	else await home.page.keyboard.press('Escape').catch(() => {});
 
 	const menuProject = await newEmptyWorkspace('Empty workspace (menu)');
 	const menu = await editorOn(menuProject);
@@ -345,7 +350,8 @@ async function main() {
 	const menuSave = menu.lines.find((line) => line.includes('atelier-cloud: saved'));
 	check('its save lands in its workspace too', Boolean(menuSave), menuSave ?? menu.lines.slice(-4).join(' | '));
 	const menuTree = await opfs(menu.page);
-	check('that workspace holds the imported document', find(menuTree, `projects/${menuProject}/01-rgb-layered.pcraft`)?.size === 179714);
+	const menuImported = find(menuTree, `projects/${menuProject}/01-rgb-layered.pcraft`)?.size ?? 0;
+	check('that workspace holds the imported document', Math.abs(menuImported - 179714) / 179714 < 0.01, `${menuImported} B`);
 
 	step("Back to Atelier Cloud, in the editor's title bar");
 	// To the left of the title bar's Discord link, at this viewport: measured from that row, and the

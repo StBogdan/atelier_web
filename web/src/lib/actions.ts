@@ -87,8 +87,9 @@ export async function downloadWorkspace(
   space: Directory,
   project: string,
   previous = false,
+  document?: string,
 ): Promise<string> {
-  const found = await documentBytes(space, project, previous);
+  const found = await documentBytes(space, project, previous, document);
   if (!found) throw new Error("there is nothing to download");
   saveBytes(found.name, found.bytes);
   return found.name;

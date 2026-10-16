@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "walkthrough": "node walkthrough.mjs",
-    "attach": "node attach.mjs"
+    "attach": "node attach.mjs",
+    "documents": "node documents.mjs",
+    "workspace": "node workspace.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.49.0"
