@@ -5,7 +5,47 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <title>Atelier Cloud</title>
+    <!-- Who publishes the app and which origin is canonical. It lives in the template so every
+         generated page, including the client-rendered shell, carries it. Change the host here if the
+         deployment moves. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://ateliercloud.tech/#organization",
+            "name": "Atelier Cloud",
+            "url": "https://ateliercloud.tech/"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://ateliercloud.tech/#website",
+            "name": "Atelier Cloud",
+            "url": "https://ateliercloud.tech/cloud/",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://ateliercloud.tech/#organization" }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://ateliercloud.tech/cloud/#app",
+            "name": "Atelier Cloud",
+            "url": "https://ateliercloud.tech/cloud/",
+            "applicationCategory": "MultimediaApplication",
+            "operatingSystem": "Any",
+            "browserRequirements": "The Origin Private File System and WebAssembly",
+            "description": "A photo editor in the browser with a project library: open PSD, PSB and .pcraft documents, record revisions, and copy a document to your own S3-compatible bucket.",
+            "publisher": { "@id": "https://ateliercloud.tech/#organization" },
+            "featureList": [
+              "Open PSD, PSB and .pcraft documents in PhotoCraft",
+              "One workspace per project, kept in the browser",
+              "Revisions, with a diff against the last recorded version",
+              "Copy a document to your own S3-compatible bucket"
+            ]
+          }
+        ]
+      }
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

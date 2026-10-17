@@ -1,12 +1,19 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { browser } from "$app/environment";
   import { base } from "$app/paths";
   import { capabilities } from "$lib/capabilities";
 
-  /** Rendered into the policy below, so the snippet can be pasted as it stands. */
-  const origin = browser ? location.origin : "http://127.0.0.1:3000";
-  const cors = `[
+  /**
+   * Rendered into the policy below, so the snippet can be pasted as it stands. It starts as a
+   * placeholder because the page is prerendered, where there is no origin to read; the browser puts
+   * the real one in on mount.
+   */
+  let origin = $state("https://your-cloud-host");
+  onMount(() => {
+    origin = location.origin;
+  });
+  const cors = $derived(`[
   {
     "AllowedOrigins": ["${origin}"],
     "AllowedMethods": ["PUT", "GET", "HEAD"],
@@ -14,7 +21,7 @@
     "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3600
   }
-]`;
+]`);
 
   /**
    * What the copy button last did, for its own label: the policy is pasted into someone else's dashboard,
@@ -42,10 +49,76 @@
     copiedFor = window.setTimeout(() => (copied = "idle"), 4000);
   }
 
-  onDestroy(() => window.clearTimeout(copiedFor));
+  // `onDestroy` also runs on the server, after the prerendered page is rendered, where there is no
+  // `window` to clear a timer on.
+  onDestroy(() => {
+    if (browser) window.clearTimeout(copiedFor);
+  });
+
+  /**
+   * The FAQ as data, so the table and the FAQPage structured data cannot say different things. The
+   * answers carry the inline tags the prose needs; the schema takes their text.
+   */
+  const faq = [
+    {
+      q: "Where is the secret kept?",
+      a: "In this browser. The form imports it as a non-extractable <code>CryptoKey</code> and stores that key in IndexedDB; the app never holds the raw value after that. It is not sent to Atelier Cloud, which has no bucket code to receive it.",
+    },
+    {
+      q: "Is that safe?",
+      a: "This limits the risk; it does not remove it. A script running on this origin could still use the key to sign requests, and a copy of this browser's profile may be enough to use the key elsewhere. So attach a bucket-scoped read/write token rather than an account-wide one, and attach a bucket only on an origin you would trust with it.",
+    },
+    {
+      q: "Does the bucket keep my revisions?",
+      a: "No. It holds one object per workspace, the current document, and the next upload overwrites it. Revisions live in the cloudspace. Server-side history is planned but does not exist yet.",
+    },
+    {
+      q: "What does <em>Record version</em> do?",
+      a: 'It saves the document as this workspace\'s next version: the object list, hash and time go into <code>meta.json</code>, the thumbnail is refreshed, and the pending change is cleared. Nothing is uploaded. You get the exact diff, since there would otherwise be no baseline to compare against, and the "uncommitted" state on the workspace card and here. It is not a backup and it keeps no history: the cloudspace holds only the latest revision, and only an upload survives the browser clearing your storage.',
+    },
+    {
+      q: "Do I have to commit before uploading?",
+      a: "No. An upload sends the document as it is on disk right now, recorded or not, and records the upload against that copy. Recording a version is what makes a revision; uploading is what copies the bytes off this machine.",
+    },
+    {
+      q: "Can two workspaces share one bucket?",
+      a: "Yes. Each writes under its own workspace id, so they will not collide. Set the same key prefix on both if the bucket is shared with other people.",
+    },
+    {
+      q: "Can the editor upload to a bucket?",
+      a: "No. Only the workspace page uploads. The editor writes the document into the cloudspace, and the workspace page is what sends it to a bucket.",
+    },
+    {
+      q: "How do I change the bucket, or use a different key?",
+      a: "Use <em>Edit bucket…</em> on the workspace page. The form reopens with everything filled in except the secret, which is never stored in a form the app can read back, so you have to enter it again.",
+    },
+    {
+      q: "Why can't I hand a workspace to someone else?",
+      a: "There are no accounts yet. A cloudspace belongs to this origin in this browser, so anything you have not uploaded or downloaded exists only on this machine.",
+    },
+  ];
+
+  const plain = (html: string) => html.replace(/<[^>]+>/g, "");
+
+  const faqSchema = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faq.map((item) => ({
+      "@type": "Question",
+      name: plain(item.q),
+      acceptedAnswer: { "@type": "Answer", text: plain(item.a) },
+    })),
+  };
 </script>
 
-<svelte:head><title>Help — Atelier Cloud</title></svelte:head>
+<svelte:head>
+  <title>Help — Atelier Cloud</title>
+  <meta
+    name="description"
+    content="How Atelier Cloud keeps your work: the browser's own file system, commits and revisions, bucket setup and CORS, and the errors that read like credentials."
+  />
+  {@html `<script type="application/ld+json">${JSON.stringify(faqSchema).replace(/</g, "\\u003c")}</script>`}
+</svelte:head>
 
 <h1>Help</h1>
 <p class="muted">
@@ -345,89 +418,12 @@
     <h2>FAQ</h2>
     <table>
       <tbody>
-        <tr>
-          <td>Where is the secret kept?</td>
-          <td>
-            In this browser. The form imports it as a non-extractable <code
-              >CryptoKey</code
-            > and stores that key in IndexedDB; the app never holds the raw value
-            after that. It is not sent to Atelier Cloud, which has no bucket code
-            to receive it.
-          </td>
-        </tr>
-        <tr>
-          <td>Is that safe?</td>
-          <td>
-            This limits the risk; it does not remove it. A script running on
-            this origin could still use the key to sign requests, and a copy of
-            this browser's profile may be enough to use the key elsewhere. So
-            attach a bucket-scoped read/write token rather than an account-wide
-            one, and attach a bucket only on an origin you would trust with it.
-          </td>
-        </tr>
-        <tr>
-          <td>Does the bucket keep my revisions?</td>
-          <td>
-            No. It holds one object per workspace, the current document, and the
-            next upload overwrites it. Revisions live in the cloudspace.
-            Server-side history is planned but does not exist yet.
-          </td>
-        </tr>
-        <tr>
-          <td>What does <em>Record version</em> do?</td>
-          <td>
-            It saves the document as this workspace's next version: the object
-            list, hash and time go into
-            <code>meta.json</code>, the thumbnail is refreshed, and the pending
-            change is cleared. Nothing is uploaded. You get the exact diff,
-            since there would otherwise be no baseline to compare against, and
-            the "uncommitted" state on the workspace card and here. It is not a
-            backup and it keeps no history: the cloudspace holds only the latest
-            revision, and only an upload survives the browser clearing your
-            storage.
-          </td>
-        </tr>
-        <tr>
-          <td>Do I have to commit before uploading?</td>
-          <td>
-            No. An upload sends the document as it is on disk right now,
-            recorded or not, and records the upload against that copy. Recording
-            a version is what makes a revision; uploading is what copies the
-            bytes off this machine.
-          </td>
-        </tr>
-        <tr>
-          <td>Can two workspaces share one bucket?</td>
-          <td>
-            Yes. Each writes under its own workspace id, so they will not
-            collide. Set the same key prefix on both if the bucket is shared
-            with other people.
-          </td>
-        </tr>
-        <tr>
-          <td>Can the editor upload to a bucket?</td>
-          <td>
-            No. Only the workspace page uploads. The editor writes the document
-            into the cloudspace, and the workspace page is what sends it to a
-            bucket.
-          </td>
-        </tr>
-        <tr>
-          <td>How do I change the bucket, or use a different key?</td>
-          <td>
-            Use <em>Edit bucket…</em> on the workspace page. The form reopens with
-            everything filled in except the secret, which is never stored in a form
-            the app can read back, so you have to enter it again.
-          </td>
-        </tr>
-        <tr>
-          <td>Why can't I hand a workspace to someone else?</td>
-          <td>
-            There are no accounts yet. A cloudspace belongs to this origin in
-            this browser, so anything you have not uploaded or downloaded exists
-            only on this machine.
-          </td>
-        </tr>
+        {#each faq as item}
+          <tr>
+            <td>{item.q}</td>
+            <td>{@html item.a}</td>
+          </tr>
+        {/each}
       </tbody>
     </table>
   </section>

@@ -446,7 +446,13 @@
   });
 </script>
 
-<svelte:head><title>Workspaces — Atelier Cloud</title></svelte:head>
+<svelte:head>
+  <title>Workspaces — Atelier Cloud</title>
+  <meta
+    name="description"
+    content="Open PSD, PSB and .pcraft files in PhotoCraft, a full photo editor in your browser. Workspaces, revisions, and connect your own storage. Nothing to install."
+  />
+</svelte:head>
 
 <div class="head">
   <h1>Workspaces</h1>
@@ -492,11 +498,13 @@
 
 {#if $workspaces.length === 0}
   <div class="panel empty">
-    <h2>No workspaces yet</h2>
+    <p class="muted small">No workspaces yet</p>
+    <h2 class="hero">
+      A photo editor in your browser, with a project library.
+    </h2>
     <p class="muted">
-      A workspace is a project directory in this origin's OPFS. Nothing on this
-      page touches the network beyond this origin's own files, and nothing is
-      uploaded anywhere.
+      Open a PSD, PSB or .pcraft document, record a version when you want one,
+      and copy it to storage you control. Nothing to install.
     </p>
     <div class="row">
       <button class="primary" onclick={open}>New workspace</button>
@@ -946,8 +954,12 @@
     }
   }
 
-  .empty {
-    max-width: 40rem;
+  /* The first line a visitor reads. It sits under the state, not instead of it, and below the page
+     title in the hierarchy so the screen still reads as a place rather than an advert. */
+  .hero {
+    font-size: 1.25rem;
+    line-height: 1.3;
+    margin: 0.2rem 0 0.6rem;
   }
 
   .small {

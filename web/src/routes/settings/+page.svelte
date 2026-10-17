@@ -72,7 +72,13 @@
   }
 </script>
 
-<svelte:head><title>Settings — Atelier Cloud</title></svelte:head>
+<svelte:head>
+  <title>Settings — Atelier Cloud</title>
+  <meta
+    name="description"
+    content="What this browser's cloudspace uses, whether the origin's storage is persistent, and how to clear what is cached here."
+  />
+</svelte:head>
 
 <h1>Settings</h1>
 

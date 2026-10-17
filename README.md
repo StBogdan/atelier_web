@@ -25,7 +25,7 @@ Both halves live here, and both are reached through **one process on one origin*
 | | What | Where |
 | --- | --- | --- |
 | **Atelier web** | the server: health, capabilities, the cloud app, and the editor proxy | [`server/`](server) — Rust, axum |
-| **Atelier Cloud** | the app: workspace grid, workspace detail, settings, help | [`web/`](web) — SvelteKit, static, SSR off |
+| **Atelier Cloud** | the app: workspace grid, workspace detail, settings, help | [`web/`](web) — SvelteKit, static, launcher and prose pages prerendered |
 
 > [!WARNING]
 > **Atelier Cloud is alpha software.** It is early, unfinished work, offered as is and with no warranty of
@@ -156,8 +156,10 @@ attached with the user's own credential ([Buckets](#buckets)).
 | <http://127.0.0.1:3000/> | PhotoCraft; launched into a workspace, its title bar links back to it |
 | <http://127.0.0.1:3000/api/health> | `{"service":"atelier-web","status":"ok","hello":"world"}` |
 
-`/cloud/` is a static SPA, so one `index.html` is served for every route under it — which is why
-`/cloud/settings` and `/cloud/workspace/<id>` work with no server behind them.
+`/cloud/`, `/cloud/settings` and `/cloud/help` are prerendered at build time, so the HTML a client
+receives already holds the page: its title, description, headings and copy. A workspace id is not known
+at build time, so `/cloud/workspace/<id>` is rendered by the client from `200.html`. No server rendering
+is involved either way, which is why all four work with no server behind them.
 
 ### One origin, or the two apps cannot see each other
 
@@ -214,10 +216,14 @@ Two things are worth knowing before you attach one:
 
 [`server/`](server) is **Atelier web**: one small [axum](https://github.com/tokio-rs/axum) process that both
 apps are reached through, on one port. It is the reason they share an origin — and therefore one OPFS — and
-it holds no credential of any kind. It is three routes:
+it holds no credential of any kind. It serves:
 
 - `/api/health` — the hello-world JSON endpoint.
-- `/cloud/…` — the built SvelteKit app, falling back to its `index.html` for client routes.
+- `/cloud/…` — the built SvelteKit app: the prerendered launcher, settings and help, and `200.html` for
+  `/cloud/workspace/<id>`. Any other path is a 404, so an invented URL is not an indexable copy of the app.
+  Hashed files under `_app/` are cached for a year; everything else revalidates.
+- `/robots.txt` and `/sitemap.xml` — built from the request's own `Host`, so a second deployment advertises
+  itself. Workspaces are disallowed and settings is left out of the sitemap.
 - everything else, reverse-proxied to `PHOTOCRAFT_UPSTREAM`, so the editor is on our origin.
 
 Requests and responses are forwarded with hop-by-hop headers stripped and `Host` re-derived, so the editor's
@@ -381,7 +387,7 @@ atelier_web/
 ├── .github/workflows/ patch.yml: applies, builds and weighs the editor patch against the pin
 ├── server/            Atelier web: one process, both apps, one origin
 │   └── src/           main.rs, the one-origin server; profile.rs, which deployment this is
-├── web/               Atelier Cloud: SvelteKit, static, SSR off
+├── web/               Atelier Cloud: SvelteKit, static, three pages prerendered
 │   ├── src/lib/       the OPFS contract, the .pcraft reader, the pages' shared state, the bucket,
 │   │                  and what the deployment has to offer (capabilities.ts)
 │   ├── src/routes/    /, /workspace/<id>, /settings, /help

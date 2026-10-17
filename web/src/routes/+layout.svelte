@@ -156,7 +156,3 @@
 
   {@render children()}
 </main>
-
-<svelte:head>
-  <title>Atelier Cloud</title>
-</svelte:head>

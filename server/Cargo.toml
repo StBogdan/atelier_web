@@ -12,6 +12,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 # and a lighter dependency tree keeps the first build quick. HTTP/1 is always available; pointing
 # PHOTOCRAFT_UPSTREAM at an https:// URL needs `rustls-tls` added here.
 reqwest = { version = "0.12", default-features = false }
-tower-http = { version = "0.6", features = ["fs"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "set-header"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -18,13 +18,17 @@ use std::{env, net::IpAddr, net::SocketAddr, path::PathBuf};
 use axum::{
     body::to_bytes,
     extract::{Request, State},
-    http::{header, HeaderMap, HeaderName, StatusCode},
+    http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Json, Response},
     routing::{any, get},
     Router,
 };
 use serde_json::json;
-use tower_http::services::{ServeDir, ServeFile};
+use tower::ServiceBuilder;
+use tower_http::{
+    services::{ServeDir, ServeFile},
+    set_header::SetResponseHeaderLayer,
+};
 
 mod profile;
 
@@ -55,9 +59,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/build"));
 
-    let shell = web_dir.join("index.html");
+    // The launcher, help and settings are prerendered files; this is the fallback the browser gets
+    // for a route whose id is not known at build time, which is every workspace.
+    let shell = web_dir.join("200.html");
     if !shell.is_file() {
-        eprintln!("warning: {} has no index.html — build the cloud app: cd ../web && npm install && npm run build", web_dir.display());
+        eprintln!("warning: {} has no 200.html — build the cloud app: cd ../web && npm install && npm run build", web_dir.display());
     }
 
     let deployment = deployment_or_exit();
@@ -73,14 +79,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // What this deployment can do, which is the whole of how the cloud app tells the two
         // editions apart. See `profile.rs`.
         .route("/api/capabilities", get(capabilities))
+        // Crawlers ask the origin, and the editor has no answer: it is an app shell with nothing to
+        // index. Both files name the request's own host, so a second deployment advertises itself.
+        .route("/robots.txt", get(robots))
+        .route("/sitemap.xml", get(sitemap))
         // `/cloud` without the trailing slash would otherwise 404: point it at the directory.
         .route("/cloud", get(|| async { axum::response::Redirect::permanent("/cloud/") }))
-        // Atelier Cloud is a static SPA (design, The Landing Page and Launcher, Milestones: SSR is off). One `index.html` serves every
-        // route, so a path that is not a file falls back to it, with its own `200` status — that
-        // is `fallback`, not `not_found_service`, which would keep the 404.
-        .nest_service("/cloud/", ServeDir::new(&web_dir).append_index_html_on_directories(true).fallback(ServeFile::new(&shell)))
+        // The prerendered pages are written as `help.html` and `settings.html`, which the directory
+        // service does not look for; the slash form redirects so there is one URL per page.
+        .route("/cloud/help/", get(|| async { axum::response::Redirect::permanent("/cloud/help") }))
+        .route("/cloud/settings/", get(|| async { axum::response::Redirect::permanent("/cloud/settings") }))
+        .route_service("/cloud/help", ServeFile::new(web_dir.join("help.html")))
+        .route_service("/cloud/settings", ServeFile::new(web_dir.join("settings.html")))
+        // The build's file names carry a content hash, so a year is safe for them. Everything else
+        // revalidates, which is what makes a deploy visible on the next request rather than when a
+        // browser decides its copy is old.
+        .nest_service(
+            "/cloud/_app/",
+            ServiceBuilder::new()
+                .layer(SetResponseHeaderLayer::overriding(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("public, max-age=31536000, immutable"),
+                ))
+                .service(ServeDir::new(web_dir.join("_app"))),
+        )
+        // The launcher, help and settings are prerendered (design, The Landing Page and Launcher), so
+        // they are files like any other, and a path that is not a file is a 404. That is what keeps
+        // `/cloud/<anything>` from answering 200 with the app shell, which is a soft 404 for every
+        // URL someone invents.
+        .nest_service("/cloud/", ServeDir::new(&web_dir).append_index_html_on_directories(true))
+        // A workspace id is not known at build time, so the client renders that route: only this
+        // prefix falls back to the shell, and only this prefix loses its 404.
+        .nest_service("/cloud/workspace/", ServeDir::new(&web_dir).fallback(ServeFile::new(&shell)))
         // Everything else is the editor.
         .fallback(any(editor))
+        // `if_not_present` leaves the editor's own cache headers and the hashed assets above alone.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        ))
         .with_state(app);
 
     let addr = SocketAddr::from((bind, port));
@@ -124,6 +169,50 @@ async fn health() -> Json<serde_json::Value> {
 /// What the cloud app reads at boot, so it can hide what this deployment has no one to do.
 async fn capabilities(State(app): State<App>) -> Json<profile::Capabilities> {
     Json(app.deployment.capabilities())
+}
+
+/// A workspace is someone's own, so it is the one path crawlers are asked to leave alone.
+async fn robots(headers: HeaderMap) -> impl IntoResponse {
+    let origin = site(&headers);
+    (
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        format!("User-agent: *\nAllow: /\nDisallow: /cloud/workspace/\n\nSitemap: {origin}/sitemap.xml\n"),
+    )
+}
+
+/// The two public pages. Settings is left out because it reports this browser's storage, which is
+/// nobody else's result to find.
+async fn sitemap(headers: HeaderMap) -> impl IntoResponse {
+    let origin = site(&headers);
+    let urls: String = ["/cloud/", "/cloud/help"]
+        .iter()
+        .map(|path| format!("  <url><loc>{origin}{path}</loc></url>\n"))
+        .collect();
+    (
+        [(header::CONTENT_TYPE, "application/xml; charset=utf-8")],
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n{urls}</urlset>\n"
+        ),
+    )
+}
+
+/// The origin the request arrived on. nginx passes the public name in `Host`, and the characters
+/// kept are the ones a hostname and an optional port need, so a header cannot put markup in either
+/// file.
+fn site(headers: &HeaderMap) -> String {
+    let host: String = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'))
+        .collect();
+    if host.is_empty() {
+        "https://localhost".to_owned()
+    } else {
+        format!("https://{host}")
+    }
 }
 
 /// The editor, proxied so that it shares this origin — and therefore the OPFS — with the cloud app.
@@ -200,4 +289,21 @@ fn editor_unreachable(upstream: &str, target: &str, error: &str) -> Response {
          <details><summary>Proxy error</summary><pre>{error}</pre></details>"
     );
     (StatusCode::SERVICE_UNAVAILABLE, Html(body)).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_host_header_cannot_put_markup_in_the_sitemap() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("example.com</loc><script>"));
+        assert_eq!(site(&headers), "https://example.comlocscript");
+    }
+
+    #[test]
+    fn a_request_without_a_host_names_the_local_origin() {
+        assert_eq!(site(&HeaderMap::new()), "https://localhost");
+    }
 }
