@@ -1,13 +1,13 @@
 diff --git a/apps/photocraft-web/Cargo.toml b/apps/photocraft-web/Cargo.toml
-index a4ded641..7022726b 100644
+index 4ecad80a..a09de39a 100644
 --- a/apps/photocraft-web/Cargo.toml
 +++ b/apps/photocraft-web/Cargo.toml
 @@ -34,7 +34,7 @@ rfd = { workspace = true }
  wasm-bindgen = "0.2"
  wasm-bindgen-futures = "0.4"
  js-sys = "0.3"
--web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Event", "EventTarget", "MouseEvent", "PointerEvent", "BeforeUnloadEvent", "AbortController", "AbortSignal", "DomException", "Response", "IdbFactory", "IdbOpenDbRequest", "IdbDatabase", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbCursor", "IdbCursorWithValue", "RequestInit", "Navigator"] }
-+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "File", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Event", "EventTarget", "MouseEvent", "PointerEvent", "BeforeUnloadEvent", "AbortController", "AbortSignal", "DomException", "Response", "IdbFactory", "IdbOpenDbRequest", "IdbDatabase", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbCursor", "IdbCursorWithValue", "RequestInit", "Navigator", "StorageManager", "FileSystemHandle", "FileSystemDirectoryHandle", "FileSystemFileHandle", "FileSystemWritableFileStream", "FileSystemGetFileOptions", "FileSystemGetDirectoryOptions"] }
+-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "DomRect", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Event", "EventTarget", "MouseEvent", "PointerEvent", "BeforeUnloadEvent", "AbortController", "AbortSignal", "DomException", "Response", "IdbFactory", "IdbOpenDbRequest", "IdbDatabase", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbCursor", "IdbCursorWithValue", "RequestInit", "Navigator"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "DomRect", "HtmlAnchorElement", "File", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Event", "EventTarget", "MouseEvent", "PointerEvent", "BeforeUnloadEvent", "AbortController", "AbortSignal", "DomException", "Response", "IdbFactory", "IdbOpenDbRequest", "IdbDatabase", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbCursor", "IdbCursorWithValue", "RequestInit", "Navigator", "StorageManager", "FileSystemHandle", "FileSystemDirectoryHandle", "FileSystemFileHandle", "FileSystemWritableFileStream", "FileSystemGetFileOptions", "FileSystemGetDirectoryOptions"] }
  
  [dev-dependencies]
  serde_json = { workspace = true }
@@ -649,7 +649,7 @@ index 00000000..ea1105f2
 +    }
 +}
 diff --git a/apps/photocraft-web/src/main.rs b/apps/photocraft-web/src/main.rs
-index 5ba75f52..836bc81c 100644
+index 0802a02e..82963ee3 100644
 --- a/apps/photocraft-web/src/main.rs
 +++ b/apps/photocraft-web/src/main.rs
 @@ -19,6 +19,9 @@
@@ -663,10 +663,10 @@ index 5ba75f52..836bc81c 100644
  mod indexed_presets;
  
 diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
-index a5c9d8a5..e7a736e0 100644
+index 6fd36204..b8eb970b 100644
 --- a/apps/photocraft-web/src/web.rs
 +++ b/apps/photocraft-web/src/web.rs
-@@ -12,7 +12,7 @@ use photocraft_ui_egui::theme::ThemeKind;
+@@ -14,7 +14,7 @@ use photocraft_ui_egui::theme::ThemeKind;
  use photocraft_ui_egui::{FileDialogAnswer, FileDialogRequest, PhotocraftApp, Services};
  use wasm_bindgen::JsCast as _;
  
@@ -675,18 +675,18 @@ index a5c9d8a5..e7a736e0 100644
  
  /// Everything File › Open reads: PhotoCraft, Photoshop, OpenRaster, Krita and Affinity documents, flat images, and
  /// Photoshop brushes (.abr), gradients (.grd) and swatches (.aco, .ase), which go to the preset libraries.
-@@ -292,7 +292,7 @@ impl eframe::App for WebShell {
-                 let name = f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped".into());
-                 match f.bytes_async().await {
-                     Ok(bytes) => {
--                        inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
-+                        inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes, None));
-                         ctx.request_repaint();
-                     }
-                     Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
-@@ -355,48 +355,85 @@ fn services(inbox: Inbox) -> Services {
-             opts.psd_maximize_compatibility = settings.psd_maximize_compatibility;
-             photocraft_io::export(doc, path, &opts).map(|r| (r.bytes, r.warnings)).map_err(|e| e.to_string())
+@@ -339,7 +339,7 @@ impl eframe::App for WebShell {
+                     match f.bytes_async().await {
+                         Ok(bytes) => {
+                             let queue = if place { &place_inbox } else { &inbox };
+-                            queue.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
++                            queue.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes, None));
+                             ctx.request_repaint();
+                         }
+                         Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
+@@ -390,50 +390,87 @@ fn services(inbox: Inbox, place_inbox: Inbox, cursor_pos: photocraft_ui_egui::Cu
+         export: Some(Box::new(|doc: &Document, path: &str, settings: &photocraft_ui_egui::ExportSettings| {
+             photocraft_io::export(doc, path, &settings.io_options()).map(|r| (r.bytes, r.warnings)).map_err(|e| e.to_string())
          })),
 -        file_dialog: Some(Box::new(|request, _parent, reply| match request {
 -            // The browser's file picker hands over the files' contents, not paths. File › Open
@@ -798,16 +798,18 @@ index a5c9d8a5..e7a736e0 100644
 +        // picker. `None` unless this page is bound to a project (design, Open from Workspace).
 +        workspace: crate::atelier_cloud::workspace_open(inbox.clone()),
          inbox: Some(inbox),
+         place_inbox: Some(place_inbox),
+         cursor_pos: Some(cursor_pos),
 +        // The Home screen's way back to the workspace, in the editor's own UI (design, The Hook Point).
 +        home_link: crate::atelier_cloud::home_link(),
          // Preferences live in the browser's localStorage.
          load_prefs: Some(Box::new(|| local_storage()?.get_item(PREFS_KEY).ok().flatten())),
          save_prefs: Some(Box::new(|text: &str| local_storage().ok_or("no localStorage")?.set_item(PREFS_KEY, text).map_err(|e| format!("{e:?}")))),
 diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
-index 38118955..57a0e253 100644
+index 5adfd788..325c48e0 100644
 --- a/crates/ui-egui/src/lib.rs
 +++ b/crates/ui-egui/src/lib.rs
-@@ -343,8 +343,9 @@ pub type EncodePngFn = Box<dyn Fn(u32, u32, &[u8]) -> Result<Vec<u8>, String>>;
+@@ -395,8 +395,9 @@ pub type EncodePngFn = Box<dyn Fn(u32, u32, &[u8]) -> Result<Vec<u8>, String>>;
  pub type ClipboardSetFn = Box<dyn FnMut(u32, u32, &[u8]) -> Result<(), String>>;
  /// Read an RGBA8 image from the OS clipboard.
  pub type ClipboardGetFn = Box<dyn FnMut() -> Option<(u32, u32, Vec<u8>)>>;
@@ -819,7 +821,7 @@ index 38118955..57a0e253 100644
  /// Read the saved preferences text (`None` when there is none yet).
  pub type LoadTextFn = Box<dyn FnMut() -> Option<String>>;
  /// Persist the preferences text.
-@@ -393,6 +394,56 @@ pub type WindowFrameFn = Box<dyn FnMut()>;
+@@ -445,6 +446,56 @@ pub type WindowFrameFn = Box<dyn FnMut()>;
  /// The caption buttons' current style ([`Services::caption_style`]).
  pub type CaptionStyleFn = Box<dyn Fn(&egui::Context) -> CaptionStyle>;
  
@@ -876,7 +878,7 @@ index 38118955..57a0e253 100644
  /// Platform services injected by the app binary (file dialogs, codecs), keeping this crate free of
  /// I/O dependencies.
  #[derive(Default)]
-@@ -427,6 +478,13 @@ pub struct Services {
+@@ -482,6 +533,13 @@ pub struct Services {
      pub encode_png: Option<EncodePngFn>,
      /// Open a URL in the system browser (native). Falls back to `ctx.open_url` (web) when unset.
      pub open_url: Option<OpenUrlFn>,
@@ -890,7 +892,7 @@ index 38118955..57a0e253 100644
      /// Preferences ▸ General ▸ Beep When Done: the platform's default beep, played when a
      /// background job finishes successfully. `None` in the web build (and in tests).
      pub beep: Option<fn()>,
-@@ -536,6 +594,9 @@ pub struct PhotocraftApp {
+@@ -599,6 +657,9 @@ pub struct PhotocraftApp {
      pub(crate) remove_trail: Option<stroke_trail::Trail>,
      /// The open menus' items, reused between frames (`menus::ItemCache`).
      pub(crate) menu_cache: Option<menus::ItemCache>,
@@ -900,7 +902,7 @@ index 38118955..57a0e253 100644
      /// Move tool drag shown live (`move_ui`).
      pub(crate) move_preview: Option<move_ui::MovePreview>,
      /// Move tool › Show Highlight on Rollover: the last hover answer (`move_hover`).
-@@ -786,6 +847,7 @@ impl PhotocraftApp {
+@@ -864,6 +925,7 @@ impl PhotocraftApp {
              remove_pending_doc: None,
              remove_trail: None,
              menu_cache: None,
@@ -908,7 +910,7 @@ index 38118955..57a0e253 100644
              move_preview: None,
              move_hover: None,
              object_finder: None,
-@@ -1731,10 +1793,10 @@ impl eframe::App for PhotocraftApp {
+@@ -1916,17 +1978,17 @@ impl eframe::App for PhotocraftApp {
              filter_preview_worker::discard_closed(self);
              shortcuts::handle(self, ctx);
          }
@@ -922,7 +924,16 @@ index 38118955..57a0e253 100644
                  self.open_failed(&name, &e);
              }
          }
-@@ -1863,6 +1925,7 @@ impl eframe::App for PhotocraftApp {
+         // Web drops onto the canvas, read since the last frame: placed below, one at a time.
+-        let to_place: Vec<(String, Vec<u8>)> =
++        let to_place: Vec<(String, Vec<u8>, Option<String>)> =
+             self.services.place_inbox.as_ref().map(|q| std::mem::take(&mut *q.lock().unwrap_or_else(|e| e.into_inner()))).unwrap_or_default();
+-        self.drop_places.extend(to_place.into_iter().map(|(name, bytes)| file_open::DropPlace::Bytes(name, bytes)));
++        self.drop_places.extend(to_place.into_iter().map(|(name, bytes, _)| file_open::DropPlace::Bytes(name, bytes)));
+         // Finder double-click / Open With / Dock drops (macOS open-documents events).
+         self.drain_os_events(ctx);
+         // While files are dragged over the window it gets no pointer events: keep frames coming so
+@@ -2055,6 +2117,7 @@ impl eframe::App for PhotocraftApp {
          analysis_ui::windows(self, &ctx);
          timeline_ui::windows(self, &ctx);
          workspace_ui::windows(self, &ctx);
@@ -931,10 +942,10 @@ index 38118955..57a0e253 100644
          dialogs::show(self, &ctx);
          rasterize_prompt::run_pending(self, &ctx);
 diff --git a/crates/ui-egui/src/menus.rs b/crates/ui-egui/src/menus.rs
-index 403994ac..42c3eafe 100644
+index 074d87a8..d7e84086 100644
 --- a/crates/ui-egui/src/menus.rs
 +++ b/crates/ui-egui/src/menus.rs
-@@ -305,6 +305,15 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
+@@ -222,6 +222,15 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
          "file.import.videoFramesToLayers" if params.get("path").and_then(Value::as_str).is_none() => {
              app.ask_folder(|app, path| app.run("file.import.videoFramesToLayers", json!({"path": path})).map_err(|e| e.to_string()))
          }
@@ -950,7 +961,7 @@ index 403994ac..42c3eafe 100644
          "file.save" => {
              // Writes back only to a layered file that holds the whole document; anything else
              // goes through Save As, so the original is never overwritten with less (#3806).
-@@ -1129,6 +1138,18 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
+@@ -1084,6 +1093,18 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
          item.label = "Release Clipping Mask".into();
          item.enabled = is_enabled(app, &item.id);
      }
@@ -970,7 +981,7 @@ index 403994ac..42c3eafe 100644
  }
  
 diff --git a/crates/ui-egui/src/panels.rs b/crates/ui-egui/src/panels.rs
-index 733f923c..b9cefe2a 100644
+index 6fc8e2d8..28ad898e 100644
 --- a/crates/ui-egui/src/panels.rs
 +++ b/crates/ui-egui/src/panels.rs
 @@ -8,7 +8,7 @@ use serde_json::{Value, json};
@@ -982,13 +993,13 @@ index 733f923c..b9cefe2a 100644
  
  // ----------------------------------------------------------------------------- toolbar
  
-@@ -699,6 +699,22 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
-                             crate::links::open(app, ui.ctx(), crate::links::DISCORD);
+@@ -686,6 +686,22 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                          }
+                         button.context_menu(|ui| crate::prefs_ui::appearance_context_menu(app, ui));
                      }
-+                    // A shell that launched the editor gets its own way back, to the left of that
-+                    // community link. It is added last, so a narrow bar drops it first (the shell's
-+                    // own Home screen carries nothing extra: this is the editor's only chrome for it).
++                    // A shell that launched the editor gets its own way back, after the theme
++                    // toggle. It is added last, so a narrow bar drops it first (the shell's own Home
++                    // screen carries nothing extra: this is the editor's only chrome for it).
 +                    if let Some((label, url)) = app.services.home_link.clone()
 +                        && ui.available_width() >= BACK_ROOM
 +                    {
@@ -1005,16 +1016,16 @@ index 733f923c..b9cefe2a 100644
                      if rtl { ui.min_rect().right() } else { ui.min_rect().left() }
                  };
                  free = if rtl { (controls_end, menus_end) } else { (menus_end, controls_end) };
-@@ -757,6 +773,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
+@@ -745,6 +761,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
+ 
+ /// Minimum space kept between the window title and the menus or controls beside it.
  const TITLE_GAP: f32 = 16.0;
- /// Free room the title bar needs after its other controls to show the Discord button.
- const DISCORD_ROOM: f32 = 120.0;
-+/// Free room the launcher's own link needs, to the left of it.
++/// Free room the launcher's own link needs, after the other controls.
 +const BACK_ROOM: f32 = 190.0;
  /// The workspace switcher's narrowest width, and one 28 pt title-bar icon with its spacing.
  const WORKSPACE_MIN: f32 = 90.0;
  const ICON_SLOT: f32 = 34.0;
-@@ -6053,6 +6071,103 @@ mod properties_target_regressions {
+@@ -6387,6 +6405,103 @@ mod properties_target_regressions {
      }
  }
  

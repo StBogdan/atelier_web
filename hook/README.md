@@ -19,7 +19,7 @@ apply.sh                   apply / check / revert / build it against any ref
 | `apps/photocraft-web/Cargo.toml` | the `web-sys` features the OPFS bindings need |
 | `crates/ui-egui/src/lib.rs` | the `Services` fields and the store's types, and the `Inbox`'s third element: the path a document was read from |
 | `crates/ui-egui/src/menus.rs` | `File ▸ Open from Workspace…`: the item the shell's store inserts, labelled by that shell, and the command behind it |
-| `crates/ui-egui/src/panels.rs` | the door's window, and the title bar drawing the way back to the left of its Discord link |
+| `crates/ui-egui/src/panels.rs` | the door's window, and the title bar drawing the way back after its other controls |
 
 The `Cargo.toml` hunk has to be there: `FileSystemDirectoryHandle`, `FileSystemFileHandle` and
 `FileSystemWritableFileStream` are the bindings design [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable) names, and none of
@@ -52,6 +52,9 @@ write: Some(Box::new(|path: &str, bytes: &[u8]| match crate::atelier_cloud::targ
 })),
 // The shell's two contributions to the chrome: the store the workspace door lists, and the way back.
 workspace: crate::atelier_cloud::workspace_open(inbox.clone()),
+inbox: Some(inbox),
+place_inbox: Some(place_inbox),
+cursor_pos: Some(cursor_pos),
 home_link: crate::atelier_cloud::home_link(),
 ```
 
@@ -152,7 +155,7 @@ PHOTOCRAFT_DIR=... ./apply.sh check <ref>     # against another checkout or ref
 own `packaging/env.sh` does for a release. Without it the About dialog reports the last *release*
 number and "(dev build)", which is misleading: PhotoCraft's version is bumped only at a release, so a
 build of the commit before v0.8.2 says `0.7.0 (dev build)` even though it is newer than `v0.7.0`.
-Stamped, the same line reads `0.9.0 (c699e3cda, 2026-10-15)` and names what it was built from.
+Stamped, the same line reads `0.10.0 (8407d9ccb, 2026-10-18)` and names what it was built from.
 
 Keep the pinned submodule clean. Use a scratch checkout:
 
@@ -180,20 +183,21 @@ edit is therefore not a way to prove the build did not change; comparing the pat
 
 ## When upstream moves
 
-The patch is written against `c699e3cda69f4852b43c0b191ab0091aaeff9d6a` (`v0.9.0`), the
+The patch is written against `8407d9ccb125af52944fca9d228383459f94aaef` (`v0.10.0`), the
 commit the outer repository pins. Drift shows up as `apply.sh check` failing against a newer ref.
-Checked on 2026-10-15, it applies cleanly to the pin, and it **conflicts** with upstream `main`
-(`4e7a17cd`, 175 commits on) in the `crates/ui-egui/src/panels.rs` hunk — the title-bar link cluster,
-which grew by 544 lines in those 175 commits. That cluster is the patch's only footprint outside the web
-runner, and it is the place upstream churns fastest; the second place to look is the `file_dialog`
-closure in `services()`, where every hunk but `main.rs` lands. Coming off the previous pin
-(`v0.7.0-150-ge2644265`) that closure was the conflict: upstream had added the
-`FileDialogRequest::Folder` arm inside it and made the enum exhaustive, so the module's `answer()` grew
-a wildcard arm to go with `claims()`'s. A 3-way merge needs the pinned ref in the object database, so
-fetch it first when the checkout is a shallow clone of another branch:
+Checked on 2026-10-18, it applies cleanly to the pin and also to upstream `main` (`8d2e615a`, 70
+commits on). Coming off the previous pin (`v0.9.0`) the conflicts were in three files: `Cargo.toml`,
+where upstream added the `DomRect` `web-sys` feature; `web.rs`, where upstream split the shell into
+`logic`/`ui` and routed drops that land on the canvas through a second inbox (`place_inbox`); and
+`panels.rs`, where upstream removed the title bar's Discord button, so the way back now follows the
+theme toggle rather than preceding that link.
+
+The `file_dialog` closure in `services()` is where most hunks land, so it is the second place to look
+after the title bar. A 3-way merge needs the pinned ref in the object database, so fetch it first when
+the checkout is a shallow clone of another branch:
 
 ```sh
-git -C /tmp/photocraft-hook fetch --depth 1 origin c699e3cda69f4852b43c0b191ab0091aaeff9d6a
+git -C /tmp/photocraft-hook fetch --depth 1 origin 8407d9ccb125af52944fca9d228383459f94aaef
 ```
 
 Re-apply by hand when upstream moves inside a hunk. `git diff` skips an untracked file, so `git add -N`

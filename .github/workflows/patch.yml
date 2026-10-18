@@ -14,9 +14,8 @@ on:
   workflow_dispatch:
 
 env:
-  # The pin recorded in the outer repository's .gitmodules (v0.9.0), and the same default
-  # `apply.sh` uses.
-  PINNED_REF: c699e3cda69f4852b43c0b191ab0091aaeff9d6a
+  # The pin recorded in the outer repository (v0.10.0), and the same default `apply.sh` uses.
+  PINNED_REF: 8407d9ccb125af52944fca9d228383459f94aaef
   # Upstream's own CI pin, so this build is the one the release job makes.
   TRUNK_VERSION: 0.21.14
   # Cloudflare rejects a file over 25 MiB, which is the hard gate 12 names.

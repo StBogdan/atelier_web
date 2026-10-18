@@ -9,7 +9,7 @@ browser's own storage, and the documents you care about go to a bucket that is y
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 [![Server: Rust + axum](https://img.shields.io/badge/server-Rust%20%2B%20axum-dea584?logo=rust&logoColor=white)](server)
 [![App: SvelteKit 2](https://img.shields.io/badge/app-SvelteKit%202-ff3e00?logo=svelte&logoColor=white)](web)
-[![Editor: PhotoCraft v0.9.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.9.0-4b5563)](https://github.com/storytold/photocraft)
+[![Editor: PhotoCraft v0.10.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.10.0-4b5563)](https://github.com/storytold/photocraft)
 
 <img src="docs/workspaces.png" alt="The Atelier Cloud workspace grid, with one workspace and its commit state" width="720">
 
@@ -79,7 +79,7 @@ credential is the browser it was given to.
 **The editor, on the same origin**
 
 - *Open* navigates to the patched editor with the workspace loaded; `File ▸ Save` writes back into OPFS.
-- The editor's title bar carries a *Back to Atelier Cloud* link, to the left of Discord.
+- The editor's title bar carries a *Back to Atelier Cloud* link, after its other controls.
 
 **A bucket per workspace, with no secret on the server**
 
@@ -293,7 +293,7 @@ web at it:
 
 ```sh
 cd ../photocraft
-git worktree add --detach /tmp/photocraft-hook c699e3cda69f4852b43c0b191ab0091aaeff9d6a
+git worktree add --detach /tmp/photocraft-hook 8407d9ccb125af52944fca9d228383459f94aaef
 cd ../atelier_web
 CARGO_TARGET_DIR=../photocraft/target PHOTOCRAFT_DIR=/tmp/photocraft-hook ./hook/apply.sh build
 cd /tmp/photocraft-hook/dist/web && python3 -m http.server 8765

@@ -354,9 +354,9 @@ async function main() {
 	check('that workspace holds the imported document', Math.abs(menuImported - 179714) / 179714 < 0.01, `${menuImported} B`);
 
 	step("Back to Atelier Cloud, in the editor's title bar");
-	// To the left of the title bar's Discord link, at this viewport: measured from that row, and the
-	// click is what proves the coordinates, since the destination is checked straight after.
-	const BACK = { x: 890, y: 14 };
+	// After the title bar's other controls, at this viewport: measured from that row, and the click
+	// is what proves the coordinates, since the destination is checked straight after.
+	const BACK = { x: 1000, y: 14 };
 	await menu.page.bringToFront();
 	await menu.page.mouse.click(BACK.x, BACK.y);
 	await menu.page.waitForSelector('h2:has-text("Changes")', { timeout: 20_000 });
