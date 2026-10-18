@@ -33,7 +33,8 @@ back to the workspace is a link floating over the canvas, and opening one of its
 navigation, rather than part of the app. Everything else upstream (engine, format, `crates/io`, the
 `Services` trait) is untouched.
 
-The patch speaks only the contract names in `../contract/protocol.md`, never Atelier web's internals, so
+The patch speaks only the names in [`../../docs/atelier_design.md`](../../docs/atelier_design.md), never
+Atelier web's internals, so
 an Atelier web release cannot force a patch release.
 
 `web.rs` after the patch, in full:

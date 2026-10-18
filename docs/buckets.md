@@ -38,8 +38,8 @@ One upload:
 so it asks first: an editor that has the document open will write its own copy back on its next save. The
 restored bytes arrive uncommitted, exactly as an edit does, so the Changes panel shows them and *Record
 version* is what makes them the revision. That is a provider write to the document slot, which the contract
-otherwise keeps to the editor — [`../contract/protocol.md`](../contract/protocol.md), File Ownership, records
-it next to the other one, *Discard*.
+otherwise keeps to the editor — [`../../docs/atelier_web_design.md`](../../docs/atelier_web_design.md#file-ownership),
+File Ownership, records it next to the other one, *Discard*.
 
 ## Choose from a bucket
 
@@ -60,7 +60,7 @@ the status.
 It is imported as a non-extractable `CryptoKey` and kept in this origin's IndexedDB. The app never writes the
 raw secret down and never sends it anywhere: every request is signed by the browser that holds it. That is
 scope and hygiene rather than a wall — it is the CSP, not the key's non-extractability, that stands between a
-script on this origin and the bucket. [`../contract/protocol.md`](../contract/protocol.md) says what
+script on this origin and the bucket. [`../../docs/atelier_design.md`](../../docs/atelier_design.md) says what
 `bucket.json` does and does not hold.
 
 The signature is SigV4 in query-string form, a hash chain over the request, built on WebCrypto's HMAC. It was

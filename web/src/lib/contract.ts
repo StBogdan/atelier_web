@@ -1,5 +1,5 @@
 /**
- * The OPFS contract of `atelier_web/contract/protocol.md`, protocol 1: Atelier Cloud's side of it.
+ * The OPFS layout of `docs/atelier_design.md`, protocol 1: Atelier Cloud's side of it.
  * The editor's side is `../../hook/atelier_web.patch`.
  *
  * Everything the UI shows is derived here from OPFS: nothing is remembered in memory between visits,

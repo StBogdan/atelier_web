@@ -230,8 +230,8 @@ Requests and responses are forwarded with hop-by-hop headers stripped and `Host`
 `application/wasm` MIME type and its precompressed gzip assets keep working untouched.
 
 The cloud app talks to OPFS, to this origin's own files, and — only when asked — to the bucket.
-[`contract/protocol.md`](contract/protocol.md) is the contract: what lives where, which side writes which
-file, the lock names, and which messages are advisory only. The short version:
+[`../docs/atelier_design.md`](../docs/atelier_design.md) has the detail: what lives where, which side writes
+which file, the lock names, and which messages are advisory only. The short version:
 
 | Side | Owns |
 | --- | --- |
@@ -393,8 +393,6 @@ atelier_web/
 │   ├── src/routes/    /, /workspace/<id>, /settings, /help
 │   ├── static/samples three converted documents to seed a workspace with
 │   └── build/         what Atelier web serves (gitignored)
-├── contract/          the versioned OPFS contract
-│   └── protocol.md
 ├── hook/              the only thing applied to photocraft: the patch, and apply.sh
 ├── test/              the browser walkthroughs, and a local S3 stand-in for the bucket one
 └── file_samples/      the PSD/PSB originals, and to-pcraft.sh
