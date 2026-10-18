@@ -636,6 +636,14 @@
       rel="noopener">github.com/storytold/photocraft</a
     >.
   </p>
+  <p>
+    <a
+      class="button"
+      href="https://github.com/StBogdan/atelier_web/issues/new"
+      target="_blank"
+      rel="noopener">Report an issue</a
+    >
+  </p>
 </footer>
 
 <dialog bind:this={dialog}>
@@ -807,6 +815,10 @@
 
   .notice p:last-child {
     margin-bottom: 0;
+  }
+
+  .notice .button {
+    margin-top: 0.8rem;
   }
 
   .controls {

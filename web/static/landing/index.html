@@ -884,6 +884,18 @@
         color: var(--ink);
       }
 
+      footer nav .report {
+        padding: 0.25rem 0.8rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--ink);
+        background: var(--panel);
+      }
+
+      footer nav .report:hover {
+        border-color: var(--faint);
+      }
+
       @media (max-width: 960px) {
         .hero .wrap {
           grid-template-columns: 1fr;
@@ -1442,6 +1454,12 @@
         <a href="/cloud/help">Help</a>
         <a href="/photocraft/">PhotoCraft</a>
         <a href="https://github.com/StBogdan/atelier_web">Source</a>
+        <a
+          class="report"
+          href="https://github.com/StBogdan/atelier_web/issues/new"
+          target="_blank"
+          rel="noopener">Report an issue</a
+        >
       </nav>
       <span class="copyright">
         Atelier Cloud © 2026 the Atelier authors

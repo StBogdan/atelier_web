@@ -238,7 +238,7 @@ it holds no credential of any kind. It serves:
 - `/photocraft/…` — reverse-proxied to `PHOTOCRAFT_UPSTREAM`, so the editor is on our origin. The prefix is
   stripped before the request goes upstream, so the editor is served from that server's root.
 - `/pdfcraft/…` — the same, to `PDFCRAFT_UPSTREAM`. A deployment without it answers 404 there.
-- `/` — a redirect to `/cloud/`. An old `/?project=` link is redirected to `/photocraft/?project=` for one
+- `/` — the marketing page. An old `/?project=` link is redirected to `/photocraft/?project=` for one
   release.
 
 Requests and responses are forwarded with hop-by-hop headers stripped and `Host` re-derived, so the editor's

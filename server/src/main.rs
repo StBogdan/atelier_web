@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let landing = std::fs::read(&landing_file).ok();
     if landing.is_none() {
         eprintln!(
-            "warning: {} is missing — build the cloud app for the landing page at /; until then / redirects to /cloud/",
+            "warning: {} is missing — build the cloud app for the landing page at /; until then / answers 500",
             landing_file.display()
         );
     }
@@ -264,7 +264,7 @@ fn site(headers: &HeaderMap) -> String {
 
 /// `/` is the marketing page. Before the editors had paths, `/?project=` opened PhotoCraft directly;
 /// keep those links working by sending them to the editor, and send any other root query to the cloud
-/// app. A build with no landing page falls back to the cloud app rather than a 404 at the front door.
+/// app. A build without the landing page is a deployment error, not a reason to send visitors to the app.
 async fn root(State(app): State<App>, req: Request) -> Response {
     if let Some(query) = req.uri().query() {
         let target = root_query_target(query);
@@ -280,7 +280,12 @@ async fn root(State(app): State<App>, req: Request) -> Response {
             page.clone(),
         )
             .into_response(),
-        None => Redirect::permanent("/cloud/").into_response(),
+        None => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            "This build has no landing page. Build the cloud app and upload web/build/landing.\n",
+        )
+            .into_response(),
     }
 }
 
