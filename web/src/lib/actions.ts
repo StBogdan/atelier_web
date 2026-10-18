@@ -11,6 +11,7 @@ import { readAttachment, uploadObject } from "./bucket";
 import {
   commit,
   documentBytes,
+  documentFiles,
   hash,
   objectKey,
   pendingChange,
@@ -20,6 +21,7 @@ import {
   type Meta,
 } from "./contract";
 import type { Directory } from "./opfs";
+import { zip } from "./zip";
 
 export interface CommitResult {
   /** Whether the document became a new revision. */
@@ -93,6 +95,34 @@ export async function downloadWorkspace(
   if (!found) throw new Error("there is nothing to download");
   saveBytes(found.name, found.bytes);
   return found.name;
+}
+
+/**
+ * Save every document in the workspace to this computer, as one zip named after the workspace.
+ *
+ * The documents are stored uncompressed: they are already compressed, so the archive costs one pass
+ * over the bytes and nothing else.
+ */
+export async function downloadWorkspaceFiles(
+  space: Directory,
+  project: string,
+): Promise<string> {
+  const files = await documentFiles(space, project);
+  if (!files.length) throw new Error("there is nothing to download");
+  const meta = await readMeta(space, project);
+  const name = `${archiveName(meta?.name ?? project)}.zip`;
+  saveBytes(name, zip(files));
+  return name;
+}
+
+/** A workspace name as a file name: the separators and reserved characters a download cannot carry. */
+function archiveName(name: string): string {
+  return (
+    name
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .replace(/\s+/g, " ")
+      .trim() || "workspace"
+  );
 }
 
 /** Hand bytes to the browser as a download. */

@@ -33,6 +33,13 @@ import {
   type Difference,
   type ZipEntry,
 } from "./pcraft";
+import {
+  DEFAULT_EDITOR,
+  editorFor,
+  type Editor,
+  type EditorId,
+} from "./editors";
+import { extensionOf } from "./format";
 
 export const PROTOCOL = 1;
 export const PROVIDER_NAME = "Atelier Cloud";
@@ -55,10 +62,10 @@ export const PROJECT_FILES = new Set([
 ]);
 
 /** What an empty project's first save lands under, when nothing suggests a better name. */
-export const DEFAULT_DOCUMENT = "doc.pcraft";
+export const DEFAULT_DOCUMENT = DEFAULT_EDITOR.defaultDocument;
 
 /** The extension the editor saves as, and the only kind of document a revision can describe. */
-export const DOCUMENT_EXTENSION = "pcraft";
+export const DOCUMENT_EXTENSION = DEFAULT_EDITOR.extension;
 
 export type SyncState = "local";
 
@@ -78,13 +85,27 @@ export interface Remote {
   etag: string | null;
 }
 
+/** What a document can record: a `.pcraft` object set, a whole file, or nothing yet. */
+export type DocumentKind = "objects" | "whole" | "none";
+
+/** Whether a name and its bytes are a recordable document, and which kind of revision it makes. */
+export function documentKind(name: string, bytes?: Uint8Array): DocumentKind {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(`.${DOCUMENT_EXTENSION}`))
+    return !bytes || isPcraft(bytes) ? "objects" : "none";
+  if (lower.endsWith(".pdf")) return "whole";
+  return "none";
+}
+
 export interface Revision {
+  /** What this revision records. Absent on revisions written before PDFs were supported. */
+  kind?: DocumentKind;
   /** `sha256:<hex>` of the committed document. */
   hash: string;
   size: number;
   /** The document's `File.lastModified` when it was committed: the cheap "did it change?" check. */
   modified: number;
-  /** Every content-addressed entry of the committed document, name to size. */
+  /** Every content-addressed entry of the committed document, name to size. Empty for a whole file. */
   objects: Record<string, number>;
 }
 
@@ -93,6 +114,8 @@ export interface Meta {
   id: string;
   name: string;
   role: "owner";
+  /** The editor a workspace with no document opens in. Derived when absent. */
+  editor?: EditorId;
   document: string | null;
   createdAt: string;
   updatedAt: string;
@@ -107,6 +130,8 @@ export interface Workspace {
   id: string;
   name: string;
   role: "owner";
+  /** The editor this workspace opens in when its recorded document does not choose one. */
+  editor: EditorId;
   rev: number;
   dirty: boolean;
   /** Every document's bytes as they are on disk now, not as of the revision. */
@@ -128,14 +153,16 @@ export interface WorkspaceDocument {
   size: number;
   /** The file's `File.lastModified`. */
   modified: number;
-  /** Whether this document, in these bytes, is what the project's revision recorded. */
-  dirty: boolean;
+  /** Whether a one-save-back copy sits beside it, which is what a previous download reads. */
+  previous: boolean;
 }
 
 export interface Pending {
   protocol: number;
   project: string;
   document: string;
+  /** What kind of revision this change would record. Absent on older files. */
+  kind?: DocumentKind;
   rev: number;
   hash: string;
   size: number;
@@ -250,6 +277,7 @@ export async function inspect(
   const recorded = meta?.document ?? null;
   const document =
     recorded && names.includes(recorded) ? recorded : (names[0] ?? null);
+  const editor = editorFor(document, meta?.editor).id;
   const revision = meta?.revision ?? null;
   const documents: WorkspaceDocument[] = [];
   for (const name of names) {
@@ -259,13 +287,7 @@ export async function inspect(
       name,
       size,
       modified: info?.modified ?? 0,
-      // Only the document the revision describes can be what it recorded.
-      dirty:
-        name !== document || revision === null
-          ? true
-          : info === null ||
-            info.size !== revision.size ||
-            info.modified !== revision.modified,
+      previous: (await stat(dir, `${name}.prev`)) !== null,
     });
   }
   const size = documents.reduce((total, entry) => total + entry.size, 0);
@@ -275,7 +297,9 @@ export async function inspect(
   const target =
     recorded && names.includes(recorded)
       ? recorded
-      : (names.find((name) => isPcraftName(name)) ?? null);
+      : (names.find((name) => documentKind(name) === "objects") ??
+        names.find((name) => documentKind(name) === "whole") ??
+        null);
   const targetInfo = target ? await stat(dir, target) : null;
   const dirty =
     target === null
@@ -291,6 +315,7 @@ export async function inspect(
       id: project,
       name: project,
       role: "owner",
+      editor,
       rev: 0,
       dirty,
       size,
@@ -310,6 +335,7 @@ export async function inspect(
     id: project,
     name: meta.name,
     role: meta.role ?? "owner",
+    editor,
     rev: meta.rev,
     dirty,
     size,
@@ -337,6 +363,7 @@ export async function scan(space: Directory): Promise<Workspace[]> {
       id: workspace.id,
       name: workspace.name,
       role: workspace.role,
+      editor: workspace.editor,
       rev: workspace.rev,
       dirty: workspace.dirty,
       bytes: workspace.size,
@@ -369,11 +396,14 @@ export function objectKey(
   return `${project}/${document}`;
 }
 
-/** `doc.pcraft` for a suggested display name, keeping the extension the contract requires. */
-export function documentFileName(name: string): string {
+/** A suggested display name, keeping an extension it has and adding the editor's when it has none. */
+export function documentFileName(
+  name: string,
+  editor: Editor = DEFAULT_EDITOR,
+): string {
   const base = sanitiseDocumentName(name);
-  if (!base) return DEFAULT_DOCUMENT;
-  return extensionOf(base) ? base : `${base}.${DOCUMENT_EXTENSION}`;
+  if (!base) return editor.defaultDocument;
+  return extensionOf(base) ? base : `${base}.${editor.extension}`;
 }
 
 /** Drop any path part, leading dots and a trailing dot: a document name is a file name, nothing else. */
@@ -384,22 +414,35 @@ export function sanitiseDocumentName(name: string): string {
     .replace(/\.+$/, "");
 }
 
-/** `.psd`, `.pcraft` — the part of a name the editor picks its reader by. Empty when there is none. */
-export function extensionOf(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return dot > 0 && dot < name.length - 1 ? name.slice(dot) : "";
-}
-
 /** Whether a name is one the editor saves as a `.pcraft` — the only kind a revision can describe. */
 export function isPcraftName(name: string): boolean {
   return name.toLowerCase().endsWith(`.${DOCUMENT_EXTENSION}`);
 }
 
+/**
+ * The document a revision would describe: the recorded one, else the first `.pcraft`, then the first
+ * `.pdf`, then whatever the project holds. A name order alone can put a PNG first.
+ */
+export function preferredDocument(
+  names: string[],
+  recorded: string | null,
+): string | null {
+  if (recorded && names.includes(recorded)) return recorded;
+  return (
+    names.find((name) => documentKind(name) === "objects") ??
+    names.find((name) => documentKind(name) === "whole") ??
+    names[0] ??
+    null
+  );
+}
+
 export interface NewProject {
   name: string;
+  /** Which editor an empty workspace should open in. PhotoCraft unless a caller says otherwise. */
+  editor?: EditorId;
   /**
    * The documents to start from, in the order chosen. The one a revision describes is the first
-   * `.pcraft` among them, because only that format can be recorded.
+   * that can be recorded: a `.pcraft` or a `.pdf`.
    */
   documents?: { name: string; bytes: Uint8Array }[];
 }
@@ -407,7 +450,7 @@ export interface NewProject {
 /** Create a project and commit its first revision. */
 export async function createProject(
   space: Directory,
-  { name, documents = [] }: NewProject,
+  { name, editor = DEFAULT_EDITOR.id, documents = [] }: NewProject,
 ): Promise<Workspace> {
   const id = crypto.randomUUID();
   const dir = await directory(await projectsDir(space), id, true);
@@ -417,6 +460,7 @@ export async function createProject(
     id,
     name: name.trim() || "Untitled workspace",
     role: "owner",
+    editor,
     document: null,
     createdAt: now,
     updatedAt: now,
@@ -430,9 +474,11 @@ export async function createProject(
   if (documents.length) {
     for (const document of documents)
       await writeBytes(dir, document.name, document.bytes);
-    // A revision is a `.pcraft` object set, so a workspace started from a PSD alone is committed
-    // only once the editor saves one.
-    const recordable = documents.find((document) => isPcraft(document.bytes));
+    // A revision is a `.pcraft` object set or a whole file, so a workspace started from a PSD alone
+    // is committed only once an editor saves one.
+    const recordable = documents.find(
+      (document) => documentKind(document.name, document.bytes) !== "none",
+    );
     const recorded = recordable ?? documents[0];
     await writeJson(dir, META_FILE, {
       ...meta,
@@ -448,11 +494,8 @@ export async function createProject(
 export interface ReadDocument {
   name: string;
   bytes: Uint8Array;
-  /**
-   * Whether these bytes are a `.pcraft`: the only kind a revision can describe, because the object
-   * set and the thumbnail both come out of its ZIP.
-   */
-  pcraft: boolean;
+  /** What this document can record: its object set, its whole bytes, or nothing yet. */
+  kind: DocumentKind;
   entries: ZipEntry[];
   objects: Map<string, number>;
 }
@@ -471,13 +514,14 @@ export async function readDocument(
     "shared",
     async () => await readBytes(dir, name),
   );
-  if (!isPcraft(bytes))
-    return { name, bytes, pcraft: false, entries: [], objects: new Map() };
+  const kind = documentKind(name, bytes);
+  if (kind !== "objects")
+    return { name, bytes, kind, entries: [], objects: new Map() };
   const entries = readDirectory(bytes);
   return {
     name,
     bytes,
-    pcraft: true,
+    kind,
     entries,
     objects: objectSet(entries),
   };
@@ -486,6 +530,8 @@ export async function readDocument(
 /** The exact change against the committed revision: what the Changes panel renders. */
 export interface Change {
   document: string;
+  /** `objects` when the difference is exact, `whole` when the file is replaced as one. */
+  kind: "objects" | "whole";
   difference: Difference;
   hash: string;
   size: number;
@@ -498,15 +544,31 @@ export async function pendingChange(
   meta: Meta,
   document?: string,
 ): Promise<Change | null> {
-  const read = await readDocument(space, project, document);
+  const names = await documentNames(await projectDir(space, project));
+  const name =
+    document ??
+    (meta.document && names.includes(meta.document) ? meta.document : null) ??
+    preferredDocument(names, null);
+  if (!name) return null;
+  const read = await readDocument(space, project, name);
   if (!read) return null;
-  // A document that is not a .pcraft has no object set to diff, and no revision can describe it.
-  if (!read.pcraft) return null;
+  if (read.kind === "none") return null;
   const previous = meta.revision?.objects ?? {};
-  const difference_ = difference(previous, read.objects, read.entries);
+  const difference_ =
+    read.kind === "objects"
+      ? difference(previous, read.objects, read.entries)
+      : {
+          added: [],
+          changed: [],
+          removed: 0,
+          unchanged: 0,
+          unchangedBytes: 0,
+          bytes: read.bytes.length,
+        };
   const info = await stat(await projectDir(space, project), read.name);
   const change: Change = {
     document: read.name,
+    kind: read.kind,
     difference: difference_,
     hash: await hash(read.bytes),
     size: read.bytes.length,
@@ -517,6 +579,7 @@ export async function pendingChange(
     protocol: PROTOCOL,
     project,
     document: change.document,
+    kind: change.kind,
     rev: meta.rev,
     hash: change.hash,
     size: change.size,
@@ -544,8 +607,9 @@ async function clearPending(space: Directory, project: string): Promise<void> {
 }
 
 /**
- * Commit the document as a new revision: record its object set, refresh the thumbnail, and clear the
- * pending change. The revision is recorded locally; uploading the same set is the bucket's job.
+ * Commit the document as a new revision: record its object set or its whole bytes, refresh the
+ * thumbnail when it has one, and clear the pending change. The revision is recorded locally;
+ * uploading the same bytes is the bucket's job.
  */
 export async function commit(
   space: Directory,
@@ -556,24 +620,19 @@ export async function commit(
   return await withLock(lockName(project), "exclusive", async () => {
     const meta = (await readJson<Meta>(dir, META_FILE)) ?? null;
     if (!meta) throw new Error("this project has no meta.json");
-    // What to record: the caller's document, else the one the revision describes, else the first
-    // .pcraft, which is what a workspace started from several files has. Bare name order can put a
-    // PNG first, and a revision cannot describe one.
+    // What to record: the caller's document, else the recorded one, else the first `.pcraft`, then
+    // the first `.pdf`. Bare name order can put a PNG first, and no revision can describe one.
     const names = await documentNames(dir);
-    const wanted = document ?? meta.document ?? null;
-    const name =
-      wanted && names.includes(wanted)
-        ? wanted
-        : (names.find((candidate) => isPcraftName(candidate)) ??
-          names[0] ??
-          null);
+    const wanted =
+      document && names.includes(document) ? document : meta.document;
+    const name = preferredDocument(names, wanted);
     if (!name) throw new Error("this project has no document to commit");
-    // A revision is the document's object set, so it can only describe a .pcraft.
-    if (!isPcraft(await readBytes(dir, name)))
-      throw new Error(
-        `${name} is not a .pcraft yet: open it in the editor and save it as one to record a version`,
-      );
     const bytes = await readBytes(dir, name);
+    const kind = documentKind(name, bytes);
+    if (kind === "none")
+      throw new Error(
+        `${name} cannot be recorded yet: open it in an editor that saves a .pcraft or a .pdf`,
+      );
     const info = await stat(dir, name);
     // The same bytes as the current revision would be a revision that says nothing, and `rev` is
     // what a reader counts. The file's own modified time still moves, and `inspect` compares that,
@@ -584,6 +643,7 @@ export async function commit(
         size: bytes.length,
         revision: {
           ...meta.revision,
+          kind,
           size: bytes.length,
           modified: info?.modified ?? meta.revision.modified,
         },
@@ -592,8 +652,8 @@ export async function commit(
       await clearPending(space, project);
       return next;
     }
-    const entries = readDirectory(bytes);
-    const preview = previewEntry(entries);
+    const entries = kind === "objects" ? readDirectory(bytes) : [];
+    const preview = kind === "objects" ? previewEntry(entries) : undefined;
     if (preview)
       await writeBytes(dir, THUMB_FILE, await readEntry(bytes, preview));
     const now = new Date().toISOString();
@@ -606,16 +666,42 @@ export async function commit(
       size: bytes.length,
       sync: { state: "local", at: now },
       revision: {
+        kind,
         hash: await hash(bytes),
         size: bytes.length,
         modified: info?.modified ?? Date.now(),
-        objects: Object.fromEntries(objectSet(entries)),
+        objects:
+          kind === "objects" ? Object.fromEntries(objectSet(entries)) : {},
       },
     };
     await writeJson(dir, META_FILE, next);
     await clearPending(space, project);
     return next;
   });
+}
+
+/**
+ * Write a document an embedded editor sent back, under the project lock. The previous bytes stay
+ * beside it as `<name>.prev`, so discard keeps working. The editor has no filesystem access, so this
+ * is the write for that route.
+ */
+export async function saveFromEditor(
+  space: Directory,
+  project: string,
+  name: string,
+  bytes: Uint8Array,
+): Promise<string> {
+  const safe = sanitiseDocumentName(name);
+  if (!safe) throw new Error("the editor sent a save with no name");
+  if (PROJECT_FILES.has(safe) || safe.endsWith(".prev"))
+    throw new Error(`${safe} is not a document`);
+  const dir = await projectDir(space, project);
+  await withLock(lockName(project), "exclusive", async () => {
+    const previous = await readBytes(dir, safe).catch(() => null);
+    if (previous) await writeBytes(dir, `${safe}.prev`, previous);
+    await writeBytes(dir, safe, bytes);
+  });
+  return safe;
 }
 
 /**
@@ -708,6 +794,32 @@ export async function documentBytes(
   // A previous copy downloads under the name it had, one save back: `photo.psd` is `photo.prev.psd`.
   const oneSaveBack = `${name.slice(0, name.length - extensionOf(name).length)}.prev${extensionOf(name)}`;
   return { name: previous ? oneSaveBack : name, bytes };
+}
+
+/** One document's name, bytes and timestamp, for the whole-workspace download. */
+export interface DocumentFile {
+  name: string;
+  bytes: Uint8Array;
+  modified: number;
+}
+
+/**
+ * Every document the project holds, with its bytes. The one-save-back `.prev` copies and the
+ * project's own files are not documents, so neither is in here: this is what the workspace shows.
+ */
+export async function documentFiles(
+  space: Directory,
+  project: string,
+): Promise<DocumentFile[]> {
+  const dir = await projectDir(space, project);
+  const out: DocumentFile[] = [];
+  for (const name of await documentNames(dir)) {
+    const bytes = await readBytes(dir, name).catch(() => null);
+    if (!bytes) continue;
+    const info = await stat(dir, name);
+    out.push({ name, bytes, modified: info?.modified ?? Date.now() });
+  }
+  return out;
 }
 
 export async function rename(

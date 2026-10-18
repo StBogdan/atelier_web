@@ -4,10 +4,15 @@
   import { base } from "$app/paths";
   import { page } from "$app/state";
   import Thumb from "$lib/Thumb.svelte";
+  import Icon from "$lib/Icon.svelte";
   import BucketFields from "$lib/BucketFields.svelte";
   import Problem from "$lib/Problem.svelte";
   import { bytes, objects, plural, since } from "$lib/format";
-  import { downloadWorkspace, uploadDocument } from "$lib/actions";
+  import {
+    downloadWorkspace,
+    downloadWorkspaceFiles,
+    uploadDocument,
+  } from "$lib/actions";
   import {
     commit,
     discard,
@@ -41,15 +46,10 @@
     type BucketDocument,
   } from "$lib/bucket";
   import { resolveTarget } from "$lib/sigv4";
+  import { editorFor, editorHref, editorsFor } from "$lib/editors";
   import { ensurePersistence, refresh } from "$lib/session";
 
   const id = $derived(page.params.id ?? "");
-
-  /** Where the editor is sent to open one document; the workspace's own when none is named. */
-  const editorUrl = (document?: string) =>
-    `/?project=${encodeURIComponent(id)}${
-      document ? `&document=${encodeURIComponent(document)}` : ""
-    }`;
 
   let meta = $state<Meta | null>(null);
   /** The documents this workspace holds, from `inspect` (design, Documents). */
@@ -95,6 +95,28 @@
       documents[0] ??
       null,
   );
+
+  /** Whether the shown document has a one-save-back copy, which is all a previous download reads. */
+  const previousAvailable = $derived(shown?.previous ?? false);
+
+  /** The editor one document opens in. The workspace's recorded default decides only when none is named. */
+  const editorForDocument = (document?: string) =>
+    editorFor(document ?? shown?.name ?? meta?.document, meta?.editor);
+
+  /** Where one document is opened; the workspace's shown document when none is named. */
+  const editorUrl = (document?: string) =>
+    editorHref(editorForDocument(document), id, document);
+  /** What the header's Open action targets, named under the button so a multi-file workspace is unambiguous. */
+  const openDocumentName = $derived(shown?.name ?? meta?.document ?? null);
+  const primaryEditor = $derived(
+    editorForDocument(openDocumentName ?? undefined),
+  );
+  /** The editors beside the primary one that also claim this document's format. */
+  const otherEditors = $derived(
+    editorsFor(openDocumentName).filter(
+      (editor) => editor.id !== primaryEditor.id,
+    ),
+  );
   /** The bytes on disk right now, as the Changes panel already knows them. */
   const currentHash = $derived(change?.hash ?? meta?.revision?.hash ?? null);
 
@@ -115,7 +137,7 @@
    * no paths: the reader is deciding whether to record, not reading our file layout.
    */
   const diffNote = $derived.by(() => {
-    if (!change) return null;
+    if (!change || change.kind === "whole") return null;
     const parts: string[] = [];
     if (change.difference.unchanged) {
       parts.push(
@@ -216,9 +238,16 @@
       await refresh();
     });
 
-  const save = (previous: boolean) =>
+  /** Save the document one save back: the copy the editor keeps beside it. */
+  const saveCommitted = () =>
     run("download", async () => {
-      await downloadWorkspace(await ensureSpace(), id, previous);
+      await downloadWorkspace(await ensureSpace(), id, true, shown?.name);
+    });
+
+  /** Save every document this workspace holds, as one zip. */
+  const saveAll = () =>
+    run("download", async () => {
+      await downloadWorkspaceFiles(await ensureSpace(), id);
     });
 
   /** Save one document of this workspace to the computer, whichever one it is. */
@@ -509,12 +538,53 @@
       </p>
     </div>
     <div class="row actions">
-      <a
-        class="button primary"
-        href={editorUrl(shown?.name ?? undefined)}
-        target="_blank"
-        rel="noopener">Open in editor</a
-      >
+      <div class="split" class:split-pair={otherEditors.length > 0}>
+        <a
+          class="button primary open-target"
+          href={editorUrl(openDocumentName ?? undefined)}
+          target="_blank"
+          rel="noopener"
+        >
+          <span class="label">
+            <Icon name="edit" />
+            Open in {primaryEditor.title}
+          </span>
+          {#if openDocumentName}
+            <span class="filename" title={openDocumentName}
+              >{openDocumentName}</span
+            >
+          {/if}
+        </a>
+        {#if otherEditors.length}
+          <details class="open-menu split-menu">
+            <summary
+              class="button primary"
+              title="Open in another editor"
+              aria-label="Open in another editor"
+            >
+              <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true">
+                <path
+                  d="M1 1l4 4 4-4"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </summary>
+            <div class="menu">
+              {#each otherEditors as editor (editor.id)}
+                <a
+                  href={editorHref(editor, id, openDocumentName ?? undefined)}
+                  target="_blank"
+                  rel="noopener">{editor.title}</a
+                >
+              {/each}
+            </div>
+          </details>
+        {/if}
+      </div>
     </div>
   </div>
 
@@ -567,14 +637,20 @@
           <tr>
             <td class="mono">{change.document}</td>
             <td
-              >{objects(
-                change.difference.added.length,
-                change.difference.changed.length,
+              >{change.kind === "whole"
+                ? "whole document"
+                : objects(
+                    change.difference.added.length,
+                    change.difference.changed.length,
+                  )}</td
+            >
+            <td class="right"
+              >{bytes(
+                change.kind === "whole" ? change.size : change.difference.bytes,
               )}</td
             >
-            <td class="right">{bytes(change.difference.bytes)}</td>
           </tr>
-          {#if !change.difference.added.length && !change.difference.changed.length}
+          {#if change.kind === "objects" && !change.difference.added.length && !change.difference.changed.length}
             <tr>
               <td class="mono">meta.json</td>
               <td>document renamed or re-saved in place</td>
@@ -592,10 +668,8 @@
         <button class="danger" onclick={discardChanges} disabled={busy !== null}
           >↺ Discard local changes…</button
         >
-        <button
-          class="push"
-          onclick={() => save(false)}
-          disabled={busy !== null}>↓ Download files</button
+        <button class="push" onclick={saveAll} disabled={busy !== null}
+          >↓ Download files</button
         >
       </div>
     {:else}
@@ -605,24 +679,28 @@
           <span class="mono">{meta.document}</span> · Recorded {since(
             meta.sync.at,
             now,
-          )} · {Object.keys(meta.revision.objects).length} objects ·
+          )} ·
+          {meta.revision.kind === "whole"
+            ? "whole document"
+            : `${Object.keys(meta.revision.objects).length} objects`} ·
           {bytes(meta.revision.size)} ·
           <span class="mono">{meta.revision.hash.slice(0, 22)}…</span>
         {:else if documents.length}
-          No <code>.pcraft</code> here yet, so there is nothing to compare: the editor
-          writes one when it saves into this workspace.
+          No recordable document here yet, so there is nothing to compare: an
+          editor writes a <code>.pcraft</code> or a <code>.pdf</code> when it saves
+          into this workspace.
         {/if}
       </p>
       <div class="row">
         {@render commitAction()}
-        <button onclick={() => save(true)} disabled={busy !== null || !meta.rev}
-          >↓ Download previous (…prev)</button
+        <button
+          onclick={saveCommitted}
+          disabled={busy !== null || !previousAvailable}
+          >↓ Download committed</button
         >
         {@render uploadAction()}
-        <button
-          class="push"
-          onclick={() => save(false)}
-          disabled={busy !== null}>↓ Download files</button
+        <button class="push" onclick={saveAll} disabled={busy !== null}
+          >↓ Download files</button
         >
       </div>
     {/if}
@@ -650,12 +728,12 @@
           <tr>
             <th>document</th>
             <th class="right">size</th>
-            <th>state</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {#each documents as document (document.name)}
+            {@const editors = editorsFor(document.name)}
             <tr data-document={document.name}>
               <td class="mono">
                 {#if renamingDocument === document.name}
@@ -687,22 +765,30 @@
                 {/if}
               </td>
               <td class="right">{bytes(document.size)}</td>
-              <td class="muted small">
-                {#if document.name === recordedDocument}
-                  {document.dirty
-                    ? `changed since rev ${meta.rev}`
-                    : `revision ${meta.rev}`}
-                {:else}
-                  not in a revision
-                {/if}
-              </td>
               <td class="right">
-                <a
-                  class="button"
-                  href={editorUrl(document.name)}
-                  target="_blank"
-                  rel="noopener">Open</a
-                >
+                {#if editors.length > 1}
+                  <details class="open-menu">
+                    <summary class="button">Open</summary>
+                    <div class="menu">
+                      {#each editors as editor (editor.id)}
+                        <a
+                          href={editorHref(editor, id, document.name)}
+                          target="_blank"
+                          rel="noopener">{editor.title}</a
+                        >
+                      {/each}
+                    </div>
+                  </details>
+                {:else}
+                  <a
+                    class="button"
+                    href={editorUrl(document.name)}
+                    target="_blank"
+                    rel="noopener"
+                    title="Open in {editorForDocument(document.name).title}"
+                    >Open</a
+                  >
+                {/if}
                 <button
                   onclick={() => saveDocument(document)}
                   disabled={busy !== null}>Download</button
@@ -959,6 +1045,34 @@
     margin-left: auto;
   }
 
+  .open-target {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    line-height: 1.2;
+    text-align: left;
+  }
+
+  /* The glyph of the way into the editor, on the same line as the editor's name, as on the
+	   workspace list's cards. */
+  .open-target .label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .open-target .filename {
+    max-width: 18rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono, monospace);
+    font-size: 0.72rem;
+    font-weight: 400;
+    opacity: 0.85;
+  }
+
   .small {
     font-size: 0.86rem;
     margin: 0.15rem 0;
@@ -1052,5 +1166,70 @@
   dd {
     margin: 0;
     overflow-wrap: anywhere;
+  }
+
+  .open-menu {
+    position: relative;
+    display: inline-block;
+  }
+
+  .split {
+    display: inline-flex;
+    align-items: stretch;
+  }
+
+  .split-pair > .button {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .split-menu {
+    display: flex;
+  }
+
+  .split-menu > summary.button {
+    display: flex;
+    align-items: center;
+    padding: 0 0.55rem;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left-color: color-mix(in srgb, var(--primary-ink) 38%, transparent);
+  }
+
+  .split-menu .menu {
+    top: 100%;
+    margin-top: 0.25rem;
+  }
+
+  .open-menu > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .open-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .open-menu .menu {
+    position: absolute;
+    right: 0;
+    z-index: 20;
+    min-width: 10rem;
+    padding: 0.25rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+  }
+
+  .open-menu .menu a {
+    display: block;
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  .open-menu .menu a:hover {
+    background: color-mix(in srgb, var(--line) 35%, transparent);
   }
 </style>

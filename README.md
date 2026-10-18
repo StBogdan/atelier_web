@@ -2,7 +2,7 @@
 
 # Atelier Cloud
 
-**A cloudspace for the [PhotoCraft](https://github.com/storytold/photocraft) editor. Workspaces live in your
+**A cloudspace for browser apps: PhotoCraft and PdfCraft.** Workspaces live in your
 browser's own storage, and the documents you care about go to a bucket that is yours.**
 
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange)](#status)
@@ -11,11 +11,11 @@ browser's own storage, and the documents you care about go to a bucket that is y
 [![App: SvelteKit 2](https://img.shields.io/badge/app-SvelteKit%202-ff3e00?logo=svelte&logoColor=white)](web)
 [![Editor: PhotoCraft v0.10.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.10.0-4b5563)](https://github.com/storytold/photocraft)
 
-<img src="docs/workspaces.png" alt="The Atelier Cloud workspace grid, with one workspace and its commit state" width="720">
+<img src="docs/workspaces.png" alt="The Atelier Cloud workspace grid, with six workspaces and their document, commit state and actions" width="880">
 
 </div>
 
-Atelier Cloud is the **cloudspace provider** around the PhotoCraft editor. It uses the Origin Private File
+Atelier Cloud is the **cloudspace provider** for the PhotoCraft and PdfCraft editors. It uses the Origin Private File
 System (OPFS) that a workspace lives in, the launcher that makes and opens workspaces, the Changes → commit →
 outbox flow, and the upload and download of a document to an S3-compatible bucket. The editor is upstream
 and unmodified, bar a small patch this repository applies to it from source ([`hook/`](hook)).
@@ -65,16 +65,20 @@ credential is the browser it was given to.
 - Make one from a bundled sample, from a `.pcraft` on your disk, from a document a bucket already holds, or
   empty.
 - Grid and list layouts, thumbnails, sizes, and when each workspace last changed.
-- The landing page reports storage health: what this origin uses, whether it is persistent, and which origin
+- The launcher reports storage health: what this origin uses, whether it is persistent, and which origin
   it is — because one origin is what makes both apps share one OPFS.
+- `/` is a static landing page for the product: what a workspace is, what each editor does, and where the
+  files go. It is one HTML file in [`web/static/landing/`](web/static/landing), needs no JavaScript, and is
+  served from memory by Atelier web.
 
 **An exact diff, not a guess**
 
 - The Changes panel reads the `.pcraft` central directory — a STORE-mode ZIP whose entry names are BLAKE3
   hashes — and reports the delta as a set difference over entry names. Object counts and byte sums are real,
   with no decompression and no upload.
-- *Record version* commits, *Discard* returns the document to the previous bytes, *Download* hands you the
-  raw `.pcraft`.
+- *Record version* commits, *Discard* returns the document to the previous bytes, and *Download files*
+  hands you every document in the workspace as one zip.
+- *Download committed* hands you the copy the editor keeps one save back, greyed out when there is none.
 
 **The editor, on the same origin**
 
@@ -149,11 +153,14 @@ attached with the user's own credential ([Buckets](#buckets)).
 
 | URL | What |
 | --- | --- |
+| <http://127.0.0.1:3000/> | the public landing page: the product in one static page, no workspace needed |
 | <http://127.0.0.1:3000/cloud/> | Atelier Cloud: the workspace grid and storage health |
 | <http://127.0.0.1:3000/cloud/workspace/&lt;id&gt; | one workspace: Changes, commit, download, discard, and the bucket |
 | <http://127.0.0.1:3000/cloud/settings> | storage, persistence, and what the cloudspace holds |
 | <http://127.0.0.1:3000/cloud/help> | where the work lives, then FAQ and troubleshooting: bucket setup, CORS, and the errors that read like credentials |
-| <http://127.0.0.1:3000/> | PhotoCraft; launched into a workspace, its title bar links back to it |
+| <http://127.0.0.1:3000/photocraft/> | PhotoCraft; launched into a workspace, its title bar links back to it |
+| <http://127.0.0.1:3000/pdfcraft/> | PdfCraft; the workspace page frames it through the bridge |
+| <http://127.0.0.1:3000/cloud/workspace/&lt;id&gt;/edit/pdfcraft> | the full-viewport cloud page around PdfCraft: back link, Documents toggle, save state |
 | <http://127.0.0.1:3000/api/health> | `{"service":"atelier-web","status":"ok","hello":"world"}` |
 
 `/cloud/`, `/cloud/settings` and `/cloud/help` are prerendered at build time, so the HTML a client
@@ -168,11 +175,12 @@ is involved either way, which is why all four work with no server behind them.
 > <http://127.0.0.1:8080/> is a different origin with a different, empty OPFS: the two apps cannot see each
 > other's data, and nothing reports an error. Atelier web exists precisely to prevent this.
 
-With no editor at all, `/cloud/` still works, and `/` returns a 503 page that says how to start one.
+With no editor at all, `/cloud/` still works, and `/photocraft/` or `/pdfcraft/` returns a 503 page that
+says how to start one.
 
 ## Workspaces
 
-**Making one.** The landing page offers a bundled document, an empty workspace, a `.pcraft` from your
+**Making one.** The launcher offers a bundled document, an empty workspace, a `.pcraft` from your
 computer, or — with a bucket's fields filled in — a document that bucket already holds. A first workspace
 needs a document and a browser cannot convert a PSD, so three `.pcraft` documents are committed under
 [`web/static/samples/`](web/static/samples); they are generated from [`file_samples/`](file_samples) with the
@@ -182,17 +190,20 @@ editor's own headless CLI ([Samples](#samples)):
 cd file_samples && ./to-pcraft.sh          # needs ../photocraft/target/release/photocraft-cli
 ```
 
-**Opening one.** *Open* navigates to `/?project=<id>`. The patched editor reads `provider.json`, finds the
-project's single `*.pcraft`, takes the shared Web Lock, and hands the bytes to its own import path. Saving in
-that session writes back to `atelier-cloud://<id>/<name>.pcraft`, which the patch turns into a write into
-OPFS, keeping the previous bytes beside the document.
+**Opening one.** *Open* navigates to `/photocraft/?project=<id>`. The patched editor reads `provider.json`,
+finds the project's single `*.pcraft`, takes the shared Web Lock, and hands the bytes to its own import path.
+Saving in that session writes back to `atelier-cloud://<id>/<name>.pcraft`, which the patch turns into a write
+into OPFS, keeping the previous bytes beside the document.
 
-The nav's *Open editor* action carries the same `?project=<id>`, for the workspace that changed most
-recently, so it lands in the editor with something to show. It opens a new tab, like the card's *Editor* and
-the workspace page's *Open in editor*: the launcher survives the trip, and the provider's unload guard is
-never asked to warn about a navigation that puts nothing at risk. With no workspace yet the action reads *In
-new workspace* and opens the new-workspace dialog instead. Opening `:3000/` without a project is the bare
-editor: no document, no link.
+The nav's *Open in PhotoCraft* action carries the same `?project=<id>`, for the workspace that changed most
+recently, so it lands in the editor with something to show. It opens a new tab, like the card's *Open in
+PhotoCraft* and the workspace page's *Open in PhotoCraft*: the launcher survives the trip, and the provider's
+unload guard is never asked to warn about a navigation that puts nothing at risk. With no workspace yet the
+action reads *In new workspace* and opens the new-workspace dialog instead. Opening
+`:3000/photocraft/` without a project is the bare editor: no document, no link. A PDF opens in PdfCraft
+through `/cloud/workspace/<id>/edit/pdfcraft`, a cloud page that frames `/pdfcraft/` and speaks its
+`postMessage` bridge. That page fills the viewport; its *Documents* toggle lists the workspace's other
+files, and choosing one opens it.
 
 ## Buckets
 
@@ -224,7 +235,11 @@ it holds no credential of any kind. It serves:
   Hashed files under `_app/` are cached for a year; everything else revalidates.
 - `/robots.txt` and `/sitemap.xml` — built from the request's own `Host`, so a second deployment advertises
   itself. Workspaces are disallowed and settings is left out of the sitemap.
-- everything else, reverse-proxied to `PHOTOCRAFT_UPSTREAM`, so the editor is on our origin.
+- `/photocraft/…` — reverse-proxied to `PHOTOCRAFT_UPSTREAM`, so the editor is on our origin. The prefix is
+  stripped before the request goes upstream, so the editor is served from that server's root.
+- `/pdfcraft/…` — the same, to `PDFCRAFT_UPSTREAM`. A deployment without it answers 404 there.
+- `/` — a redirect to `/cloud/`. An old `/?project=` link is redirected to `/photocraft/?project=` for one
+  release.
 
 Requests and responses are forwarded with hop-by-hop headers stripped and `Host` re-derived, so the editor's
 `application/wasm` MIME type and its precompressed gzip assets keep working untouched.
@@ -248,7 +263,8 @@ the Changes panel exact.
 | --- | --- | --- |
 | `ATELIER_PORT` | `3000` | Port Atelier web listens on. |
 | `ATELIER_BIND` | `127.0.0.1` | Address to bind. Loopback by default; a container sets `0.0.0.0`. |
-| `PHOTOCRAFT_UPSTREAM` | `http://127.0.0.1:8080` | Where the editor is served from. |
+| `PHOTOCRAFT_UPSTREAM` | `http://127.0.0.1:8080` | Where PhotoCraft is served from. |
+| `PDFCRAFT_UPSTREAM` | unset | Where PdfCraft is served from. Unset means `/pdfcraft/` answers 404. |
 | `ATELIER_WEB_DIR` | `web/build` | Directory served at `/cloud/`. |
 | `ATELIER_PROFILE` | `standalone` | `standalone`, or `hosted` to put a service behind identity and storage. `self-hosted` is accepted for the first. |
 | `ATELIER_CENTRAL_URL` | — | That service's public base URL. Required by `hosted`, ignored otherwise. |

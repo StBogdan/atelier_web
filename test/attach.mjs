@@ -154,7 +154,7 @@ async function main() {
 	await page.fill('input[type=text]', 'Attached bucket');
 	await page.click('button:has-text("Create")');
 	await page.waitForSelector('article h2:has-text("Attached bucket")');
-	const href = await page.getAttribute('article a:has-text("Editor")', 'href');
+	const href = await page.getAttribute('article a:has-text("Open in PhotoCraft")', 'href');
 	const project = new URL(href, ORIGIN).searchParams.get('project');
 	check('a workspace exists with a uuid project id', Boolean(project), project ?? 'none');
 
@@ -536,7 +536,7 @@ async function main() {
 	await page.fill('input[type=text]', 'Attached later');
 	await page.click('button:has-text("Create")');
 	await page.waitForSelector('article h2:has-text("Attached later")');
-	const laterHref = await page.getAttribute('article:has(h2:has-text("Attached later")) a:has-text("Editor")', 'href');
+	const laterHref = await page.getAttribute('article:has(h2:has-text("Attached later")) a:has-text("Open in PhotoCraft")', 'href');
 	const later = new URL(laterHref, ORIGIN).searchParams.get('project');
 	await page.goto(`${ORIGIN}/cloud/workspace/${later}`, { waitUntil: 'networkidle' });
 	await page.waitForSelector('h2:text-is("Bucket")');
@@ -649,7 +649,7 @@ async function main() {
 	await page.click('button:has-text("Create")');
 	await page.waitForSelector('article h2:has-text("Started from the bucket")');
 	const startedHref = await page.getAttribute(
-		'article:has(h2:has-text("Started from the bucket")) a:has-text("Editor")',
+		'article:has(h2:has-text("Started from the bucket")) a:has-text("Open in PhotoCraft")',
 		'href'
 	);
 	const started = new URL(startedHref, ORIGIN).searchParams.get('project');

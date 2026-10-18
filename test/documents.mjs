@@ -174,14 +174,14 @@ async function main() {
 	const log = watch(editor);
 
 	step('seed a workspace holding two documents');
-	await editor.goto(`${ORIGIN}/`, { waitUntil: 'domcontentloaded' });
+	await editor.goto(`${ORIGIN}/photocraft/`, { waitUntil: 'domcontentloaded' });
 	await editor.waitForFunction(() => document.getElementById('photocraft_loading') === null, null, { timeout: 120_000 });
 	await seed(editor, { name: ORIGINAL, base64: original.bytes.toString('base64'), bytes: original.bytes.length }, { name: OPENED, base64: opened.bytes.toString('base64') });
 	const seeded = await project(editor);
 	check('the workspace holds both', documents(seeded).join() === [ORIGINAL, OPENED].sort().join(), documents(seeded).join());
 
 	step(`open the second one by name, not the workspace's own (${OPENED})`);
-	await editor.goto(`${ORIGIN}/?project=${PROJECT}&document=${OPENED}`, { waitUntil: 'domcontentloaded' });
+	await editor.goto(`${ORIGIN}/photocraft/?project=${PROJECT}&document=${OPENED}`, { waitUntil: 'domcontentloaded' });
 	await editor.waitForFunction(() => document.getElementById('photocraft_loading') === null, null, { timeout: 120_000 });
 	await editor.waitForTimeout(2500);
 	check('the patch opened the document it was told to', log.some((line) => line.includes(`opening ${OPENED}`)), words(log));
@@ -237,7 +237,7 @@ async function main() {
 	check('and the first two are still untouched', unchanged(seeded, again, ORIGINAL) && unchanged(saved, again, OPENED));
 
 	step('clean up the seeded workspace');
-	await editor.goto(`${ORIGIN}/`, { waitUntil: 'domcontentloaded' });
+	await editor.goto(`${ORIGIN}/photocraft/`, { waitUntil: 'domcontentloaded' });
 	await editor.evaluate(async () => {
 		const root = await navigator.storage.getDirectory();
 		await root.removeEntry('atelier-cloud', { recursive: true }).catch(() => {});

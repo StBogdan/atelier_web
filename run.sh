@@ -66,12 +66,15 @@ while [ "$i" -lt 20 ]; do
 done
 if [ "$healthy" = 0 ]; then
   say "editor: $UPSTREAM is not answering; starting Atelier web anyway"
-  say "        /cloud/ works regardless; / shows how to start the editor."
+  say "        /cloud/ works regardless; /photocraft/ shows how to start the editor."
 fi
 
 say ""
 say "Atelier Cloud  →  http://127.0.0.1:$PORT/cloud/"
-say "Editor         →  http://127.0.0.1:$PORT/"
+say "PhotoCraft     →  http://127.0.0.1:$PORT/photocraft/"
+if [ -n "${PDFCRAFT_UPSTREAM:-}" ]; then
+  say "PdfCraft       →  http://127.0.0.1:$PORT/pdfcraft/"
+fi
 say ""
 
 exec cargo run --release --manifest-path server/Cargo.toml

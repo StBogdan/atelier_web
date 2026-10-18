@@ -2,8 +2,8 @@
 //
 // What the editor-only harness (`documents.mjs`) cannot reach, because it needs the cloud app too:
 //
-//  - the Documents panel lists every document in a workspace, and says which one a revision describes;
-//  - "Open in editor" on a row links to *that* document (`&document=`), not to the workspace's first;
+//  - the Documents panel lists every document in a workspace as a plain file list;
+//  - "Open" on a row links to *that* document (`&document=`), not to the workspace's first;
 //  - the editor opens it and saves back to it, leaving the workspace's other documents untouched;
 //  - "Delete" removes a document and its one-save-back copy from OPFS, and nothing else.
 //
@@ -48,7 +48,7 @@ await cloud.click('button:has-text("New workspace")');
 await cloud.fill('input[type=text]', NAME);
 await cloud.click('button:has-text("Create")');
 await cloud.waitForSelector(`article h2:has-text("${NAME}")`);
-const editorHref = await cloud.getAttribute(`article:has-text("${NAME}") a:has-text("Editor")`, 'href');
+const editorHref = await cloud.getAttribute(`article:has-text("${NAME}") a:has-text("Open in PhotoCraft")`, 'href');
 const project = new URL(editorHref, ORIGIN).searchParams.get('project');
 // The card's name is the way into the workspace, so reach the page the way a reader would: click it.
 const nameHref = await cloud.getAttribute(`article h2 a:has-text("${NAME}")`, 'href');
@@ -72,9 +72,12 @@ await cloud.reload({ waitUntil: 'networkidle' });
 await cloud.waitForSelector('.documents tbody tr', { timeout: 15_000 });
 const listed = await cloud.$$eval('.documents tbody tr td.mono:first-child', (cells) => cells.map((c) => c.textContent.trim()));
 check('the Documents panel lists both', listed.length === 2, listed.join());
-check('one is marked as recorded, the other is not', (await cloud.textContent('.documents')).includes('not in a revision'));
+check(
+	'and says nothing about revisions beside a file',
+	!/revision|rev \d/i.test(await cloud.textContent('.documents'))
+);
 
-step('"Open in editor" carries the document it names');
+step('"Open" on a row carries the document it names');
 const first = listed[0];
 const href = await cloud.getAttribute('.documents tbody tr:first-child a:has-text("Open")', 'href');
 check('the row links to that document', href.includes(`document=${encodeURIComponent(first)}`), href);
@@ -196,12 +199,12 @@ step('Several documents at once, in several formats');
 	const card = await cloud.textContent(`article:has-text("${many}")`);
 	check('the card says how many it holds', /3 documents/.test(card ?? ''), card?.trim().slice(0, 80));
 
-	const manyHref = await cloud.getAttribute(`article:has-text("${many}") a:has-text("Editor")`, 'href');
+	const manyHref = await cloud.getAttribute(`article:has-text("${many}") a:has-text("Open in PhotoCraft")`, 'href');
 	const manyProject = new URL(manyHref, ORIGIN).searchParams.get('project');
 	await cloud.goto(`${ORIGIN}/cloud/workspace/${manyProject}`, { waitUntil: 'networkidle' });
 	await cloud.waitForSelector('.documents tbody tr');
 	const rows = await cloud.$$eval('.documents tbody tr', (list) =>
-		list.map((row) => ({ name: row.getAttribute('data-document'), open: Boolean(row.querySelector('a.button')) })),
+		list.map((row) => ({ name: row.getAttribute('data-document'), open: Boolean(row.querySelector('a.button, details.open-menu summary.button')) })),
 	);
 	check('all three are listed', rows.length === 3, rows.map((r) => r.name).join());
 	check('every document offers Open, whatever its format', rows.every((r) => r.open), JSON.stringify(rows));
@@ -215,7 +218,9 @@ step('Several documents at once, in several formats');
 	const downloads = [];
 	editor.on('console', (message) => editorLog.push(message.text()));
 	editor.on('download', (download) => downloads.push(download.suggestedFilename()));
-	const pngHref = await cloud.getAttribute(`.documents tbody tr[data-document="atelier-test.png"] a.button`, 'href');
+	const pngEditors = await cloud.$$eval('.documents tbody tr[data-document="atelier-test.png"] .open-menu .menu a', (links) => links.map((a) => a.textContent?.trim()));
+	check('a PNG offers both editors', pngEditors.includes('PhotoCraft') && pngEditors.includes('PdfCraft'), pngEditors.join());
+	const pngHref = await cloud.getAttribute(`.documents tbody tr[data-document="atelier-test.png"] .open-menu .menu a:has-text("PhotoCraft")`, 'href');
 	await editor.goto(new URL(pngHref, ORIGIN).toString(), { waitUntil: 'networkidle' });
 	await editor.waitForFunction(() => document.querySelector('#photocraft_canvas') !== null, null, { timeout: 30_000 });
 	await editor.waitForTimeout(8_000);

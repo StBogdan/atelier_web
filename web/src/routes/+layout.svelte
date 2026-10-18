@@ -10,6 +10,7 @@
     loadCapabilities,
   } from "$lib/capabilities";
   import { bytes } from "$lib/format";
+  import { editorFor, editorHref } from "$lib/editors";
   import { failure, refresh, storage, watch, workspaces } from "$lib/session";
 
   let { children } = $props();
@@ -24,6 +25,11 @@
   });
 
   const here = $derived(page.url.pathname);
+  // An embedded editor owns the whole viewport: the cloud app's bar and storage strip would only take
+  // height from it. Its own page carries the way back and the save state.
+  const embedded = $derived(
+    here.startsWith(`${base}/workspace/`) && here.endsWith("/edit/pdfcraft"),
+  );
   const origin = browser ? location.origin : "";
   const share = $derived(
     $storage.quota ? Math.min(1, $storage.usage / $storage.quota) : 0,
@@ -31,6 +37,9 @@
   // The editor needs a workspace to be useful: launched bare it can see no document and offers no way
   // back, so the link goes into the one that changed last (the store is newest first).
   const latest = $derived($workspaces[0]);
+  const latestEditor = $derived(
+    latest ? editorFor(latest.document, latest.editor) : null,
+  );
 
   /**
    * What the warning beside "Local storage" says on hover. "Best-effort" is the storage spec's word for it
@@ -42,117 +51,140 @@
     "A workspace you have not downloaded is a workspace you can lose.";
 </script>
 
-<header class="appbar">
-  <a class="brand" href="{base}/">
-    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <rect width="32" height="32" rx="7" fill="currentColor" />
-      <path
-        d="M9 23 16 9l7 14"
-        fill="none"
-        stroke="#fff"
-        stroke-width="2.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-      <path
-        d="M12.2 18.6h7.6"
-        stroke="#fff"
-        stroke-width="2.2"
-        stroke-linecap="round"
-      />
-    </svg>
-    <span class="names">
-      <strong>Atelier Cloud</strong>
-      <small>cloudspace for PhotoCraft</small>
-    </span>
-  </a>
-  <nav class="chrome" aria-label="Sections">
-    <span class="links">
-      <a
-        href="{base}/"
-        aria-current={here === base || here === `${base}/` ? "page" : undefined}
-        >Workspaces</a
+{#if !embedded}
+  <header class="appbar">
+    <a class="brand" href="{base}/">
+      <svg
+        class="mark"
+        viewBox="0 0 32 32"
+        aria-hidden="true"
+        focusable="false"
       >
-      <a
-        href="{base}/settings"
-        aria-current={here.startsWith(`${base}/settings`) ? "page" : undefined}
-        >Settings</a
-      >
-      <a
-        href="{base}/help"
-        aria-current={here.startsWith(`${base}/help`) ? "page" : undefined}
-        >Help</a
-      >
-      {#if $capabilitiesReady && $capabilities.central}
+        <rect width="32" height="32" rx="7" fill="#2f6feb" />
+        <g transform="translate(1.69 1.38) scale(0.78)">
+          <path
+            d="M10.7 8 2 32M10.7 8 34.7 32M5.3 22.9H25.6"
+            fill="none"
+            stroke="#fff"
+            stroke-width="3.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <g
+            transform="translate(20.55 7.43) scale(0.72) rotate(45 10 5.5)"
+            fill="none"
+            stroke="#fff"
+            stroke-width="2.8"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M4.5 11A4.5 4.5 0 0 1 4.5 2A5.6 5.6 0 0 1 15.2 1.2A4.6 4.6 0 0 1 19.6 8.6A3.1 3.1 0 0 1 16.9 11Z"
+            />
+          </g>
+        </g>
+      </svg>
+      <span class="names">
+        <strong>Atelier Cloud</strong>
+        <small>cloudspace for browser apps</small>
+      </span>
+    </a>
+    <nav class="chrome" aria-label="Sections">
+      <span class="links">
         <a
-          href={$capabilities.central.login}
-          title="Sign in through {$capabilities.central.url}">Sign in</a
+          href="{base}/"
+          aria-current={here === base || here === `${base}/`
+            ? "page"
+            : undefined}>Workspaces</a
+        >
+        <a
+          href="{base}/settings"
+          aria-current={here.startsWith(`${base}/settings`)
+            ? "page"
+            : undefined}>Settings</a
+        >
+        <a
+          href="{base}/help"
+          aria-current={here.startsWith(`${base}/help`) ? "page" : undefined}
+          >Help</a
+        >
+        {#if $capabilitiesReady && $capabilities.central}
+          <a
+            href={$capabilities.central.login}
+            title="Sign in through {$capabilities.central.url}">Sign in</a
+          >
+        {/if}
+      </span>
+      {#if latest && latestEditor}
+        <a
+          class="action"
+          href={editorHref(
+            latestEditor,
+            latest.id,
+            latest.document ?? undefined,
+          )}
+          target="_blank"
+          rel="noopener"
+          title="Open {latest.name} in {latestEditor.title}"
+        >
+          Open in {latestEditor.title}
+          <span class="where">{latest.name}</span>
+        </a>
+      {:else}
+        <a
+          class="action"
+          href="{base}/?new=1"
+          title="Start a new workspace to open the editor in"
+          >In new workspace</a
         >
       {/if}
-    </span>
-    {#if latest}
-      <a
-        class="action"
-        href="/?project={latest.id}"
-        target="_blank"
-        rel="noopener"
-        title="Open {latest.name} in the editor"
-      >
-        Open editor
-        <span class="where">{latest.name}</span>
-      </a>
-    {:else}
-      <a
-        class="action"
-        href="{base}/?new=1"
-        title="Start a new workspace to open the editor in">In new workspace</a
-      >
-    {/if}
-  </nav>
-</header>
+    </nav>
+  </header>
 
-{#if $storage.supported === true}
-  <div class="strip health">
-    <span>Local storage</span>
-    {#if $storage.persisted}
-      <span
-        class="chip ok"
-        title="Granted: this origin is not evicted under storage pressure."
-        >persistent</span
+  {#if $storage.supported === true}
+    <div class="strip health">
+      <span>Local storage</span>
+      {#if $storage.persisted}
+        <span
+          class="chip ok"
+          title="Granted: this origin is not evicted under storage pressure."
+          >persistent</span
+        >
+      {:else}
+        <span class="warn-icon" title={browserOnly}>⚠</span>
+      {/if}
+      <span class="meter"
+        ><span style="width: {(share * 100).toFixed(1)}%"></span></span
       >
-    {:else}
-      <span class="warn-icon" title={browserOnly}>⚠</span>
-    {/if}
-    <span class="meter"
-      ><span style="width: {(share * 100).toFixed(1)}%"></span></span
-    >
-    <span class="amount">
-      {bytes($storage.usage)} used of {bytes($storage.quota)}{$storage.quota
-        ? ` (${(share * 100).toFixed(1)}%)`
-        : ""}
-    </span>
-    {#if origin}
-      <span
-        class="chip mono origin"
-        title="One origin is what makes both apps share this OPFS"
-        >{origin}</span
-      >
-    {/if}
-  </div>
-{/if}
-
-<main class="shell">
-  {#if $storage.supported === false}
-    <p class="banner bad">
-      This browser has no Origin Private File System, or storage is blocked (a
-      private window, or storage disabled by policy). Atelier Cloud keeps the
-      cloudspace there, so it cannot work without it.
-    </p>
+      <span class="amount">
+        {bytes($storage.usage)} used of {bytes($storage.quota)}{$storage.quota
+          ? ` (${(share * 100).toFixed(1)}%)`
+          : ""}
+      </span>
+      {#if origin}
+        <span
+          class="chip mono origin"
+          title="One origin is what makes both apps share this OPFS"
+          >{origin}</span
+        >
+      {/if}
+    </div>
   {/if}
 
-  {#if $failure}
-    <p class="banner bad">Could not read the cloudspace: {$failure}</p>
-  {/if}
+  <main class="shell">
+    {#if $storage.supported === false}
+      <p class="banner bad">
+        This browser has no Origin Private File System, or storage is blocked (a
+        private window, or storage disabled by policy). Atelier Cloud keeps the
+        cloudspace there, so it cannot work without it.
+      </p>
+    {/if}
 
+    {#if $failure}
+      <p class="banner bad">Could not read the cloudspace: {$failure}</p>
+    {/if}
+
+    {@render children()}
+  </main>
+{:else}
   {@render children()}
-</main>
+{/if}

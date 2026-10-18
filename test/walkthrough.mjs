@@ -12,6 +12,7 @@
 // `ATELIER_ORIGIN` overrides http://127.0.0.1:3000. It opens its own browser profile, so it creates
 // its own OPFS and never touches yours.
 
+import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 
 const ORIGIN = process.env.ATELIER_ORIGIN || 'http://127.0.0.1:3000';
@@ -55,12 +56,27 @@ const find = (entries, path) => entries?.find((entry) => entry.path === path);
 /** Everything under `atelier-cloud/tmp/`: the write staging the patch cleans up after itself. */
 const staging = (entries) => (entries ?? []).filter((entry) => entry.path.startsWith('tmp/') && entry.kind === 'file').map((entry) => entry.path);
 
+/** The entry names in a zip, read from its central directory: enough to say what a download holds. */
+async function zipNames(download) {
+	const bytes = await readFile(await download.path());
+	const end = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+	const count = bytes.readUInt16LE(end + 10);
+	let at = bytes.readUInt32LE(end + 16);
+	const names = [];
+	for (let i = 0; i < count; i++) {
+		const length = bytes.readUInt16LE(at + 28);
+		names.push(bytes.subarray(at + 46, at + 46 + length).toString('utf8'));
+		at += 46 + length + bytes.readUInt16LE(at + 30) + bytes.readUInt16LE(at + 32);
+	}
+	return names;
+}
+
 async function main() {
 	const browser = await chromium.launch({ channel: 'chrome', headless: true });
 	const context = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1, acceptDownloads: true });
 	const provider = await context.newPage();
 	const downloads = [];
-	context.on('download', (download) => downloads.push(download.suggestedFilename()));
+	context.on('download', (download) => downloads.push(download));
 	const console_ = [];
 	provider.on('console', (message) => console_.push(`[provider] ${message.text()}`));
 	provider.on('pageerror', (error) => console_.push(`[provider:error] ${error.message}`));
@@ -73,7 +89,7 @@ async function main() {
 	await provider.click('button:has-text("Create")');
 	await provider.waitForSelector('article h2:has-text("Walkthrough workspace")');
 
-	const openHref = await provider.getAttribute('article a:has-text("Editor")', 'href');
+	const openHref = await provider.getAttribute('article a:has-text("Open in PhotoCraft")', 'href');
 	const project = new URL(openHref, ORIGIN).searchParams.get('project');
 	check('a workspace exists with a uuid project id', Boolean(project), project ?? 'none');
 
@@ -87,12 +103,24 @@ async function main() {
 	check('index/workspaces.json', find(before, 'index/workspaces.json')?.size > 0);
 	check('nothing in tmp/', staging(before).length === 0, staging(before).join(', '));
 
+	step('Atelier Cloud: nothing one save back to download yet');
+	await provider.goto(`${ORIGIN}/cloud/workspace/${project}`, { waitUntil: 'networkidle' });
+	await provider.waitForSelector('h2:has-text("Changes")');
+	check(
+		'"Download committed" is greyed out until the editor has kept a save back',
+		await provider.isDisabled('section.panel.changes button:has-text("Download committed")')
+	);
+	check(
+		'and "Download files" is still offered',
+		!(await provider.isDisabled('section.panel.changes button:has-text("Download files")'))
+	);
+
 	step('Editor: launch into the project and open the document from OPFS');
 	const editor = await context.newPage();
 	const editorLog = [];
 	editor.on('console', (message) => editorLog.push(message.text()));
 	editor.on('pageerror', (error) => editorLog.push(`error: ${error.message}`));
-	await editor.goto(`${ORIGIN}/?project=${project}&cpu`, { waitUntil: 'domcontentloaded' });
+	await editor.goto(`${ORIGIN}/photocraft/?project=${project}&cpu`, { waitUntil: 'domcontentloaded' });
 	await editor.waitForFunction(() => document.getElementById('photocraft_loading') === null, null, { timeout: 120_000 });
 	await editor.waitForTimeout(1500);
 
@@ -174,12 +202,24 @@ async function main() {
 		card.replace(/\n/g, ' · ')
 	);
 
-	step('Atelier Cloud: download the committed document (the exit ramp)');
+	step('Atelier Cloud: download every file in the workspace (the exit ramp)');
 	await provider.goto(`${ORIGIN}/cloud/workspace/${project}`, { waitUntil: 'networkidle' });
 	await provider.waitForSelector('h2:has-text("Changes")');
 	await provider.click('button:has-text("Download files")');
 	await provider.waitForTimeout(2500);
-	check('the download is the document', downloads.includes('01-rgb-layered.pcraft'), downloads.join(', ') || 'none');
+	const named = () => downloads.map((download) => download.suggestedFilename()).join(', ') || 'none';
+	const archive = downloads.find((download) => download.suggestedFilename().endsWith('.zip'));
+	check('the download is one zip, named after the workspace', archive?.suggestedFilename() === 'Walkthrough workspace.zip', named());
+	const zipped = archive ? await zipNames(archive) : [];
+	check('and the zip holds the workspace\'s document', zipped.includes('01-rgb-layered.pcraft'), zipped.join(', ') || 'none');
+
+	await provider.click('button:has-text("Download committed")');
+	await provider.waitForTimeout(1500);
+	check(
+		'"Download committed" hands back the copy the editor kept',
+		downloads.some((download) => download.suggestedFilename() === '01-rgb-layered.prev.pcraft'),
+		named()
+	);
 
 	step('Atelier Cloud: discard puts the committed bytes back');
 	const committedBytes = (await opfs(provider)).find((entry) => entry.path === `projects/${project}/01-rgb-layered.pcraft`);
@@ -226,7 +266,7 @@ async function main() {
 	const again = await context.newPage();
 	const againLog = [];
 	again.on('console', (message) => againLog.push(message.text()));
-	await again.goto(`${ORIGIN}/?project=${project}&cpu`, { waitUntil: 'domcontentloaded' });
+	await again.goto(`${ORIGIN}/photocraft/?project=${project}&cpu`, { waitUntil: 'domcontentloaded' });
 	await again.waitForFunction(() => document.getElementById('photocraft_loading') === null, null, { timeout: 120_000 });
 	await again.waitForTimeout(1500);
 	const reopened = againLog.find((line) => line.includes('atelier-cloud: opening'));
@@ -250,7 +290,7 @@ async function main() {
 		await provider.click('label:has-text("An empty workspace")');
 		await provider.click('button:has-text("Create")');
 		await provider.waitForSelector(`article h2:has-text("${name}")`);
-		const href = await provider.getAttribute(`article:has-text("${name}") a:has-text("Editor")`, 'href');
+		const href = await provider.getAttribute(`article:has-text("${name}") a:has-text("Open in PhotoCraft")`, 'href');
 		return new URL(href, ORIGIN).searchParams.get('project');
 	}
 
@@ -263,7 +303,7 @@ async function main() {
 		freshLogs.push(lines);
 		page.on('console', (message) => lines.push(message.text()));
 		page.on('pageerror', (error) => lines.push(`error: ${error.message}`));
-		await page.goto(`${ORIGIN}/?project=${project}&cpu`, { waitUntil: 'domcontentloaded' });
+		await page.goto(`${ORIGIN}/photocraft/?project=${project}&cpu`, { waitUntil: 'domcontentloaded' });
 		await page.waitForFunction(() => document.getElementById('photocraft_loading') === null, null, { timeout: 120_000 });
 		await page.waitForTimeout(1500);
 		return { page, lines };
@@ -335,7 +375,7 @@ async function main() {
 	const menu = await editorOn(menuProject);
 
 	step('Empty workspaces: the File menu Open… reaches the picker too');
-	await menu.page.goto(`${ORIGIN}/?project=${menuProject}&cpu`, { waitUntil: 'domcontentloaded' });
+	await menu.page.goto(`${ORIGIN}/photocraft/?project=${menuProject}&cpu`, { waitUntil: 'domcontentloaded' });
 	await menu.page.waitForFunction(() => document.getElementById('photocraft_loading') === null, null, { timeout: 120_000 });
 	await menu.page.waitForTimeout(1500);
 	await menu.page.bringToFront();
@@ -361,14 +401,14 @@ async function main() {
 	await menu.page.mouse.click(BACK.x, BACK.y);
 	await menu.page.waitForSelector('h2:has-text("Changes")', { timeout: 20_000 });
 	check('clicking it lands on the workspace page', menu.page.url().includes(`/cloud/workspace/${menuProject}`), menu.page.url());
-	const navEditor = await menu.page.getAttribute('nav a:has-text("Editor")', 'href');
-	check('the nav Editor link opens the workspace that changed last', navEditor === `/?project=${menuProject}`, navEditor ?? 'none');
+	const navEditor = await menu.page.getAttribute('nav a:has-text("Open in PhotoCraft")', 'href');
+	check("the nav's Open in PhotoCraft link opens the workspace that changed last", navEditor === `/photocraft/?project=${menuProject}`, navEditor ?? 'none');
 
 	// Nothing is injected on the way through: the link is the editor's own, and the page the front
 	// door serves is the byte-for-byte one the editor server has.
 	const upstream = process.env.PHOTOCRAFT_UPSTREAM || 'http://127.0.0.1:8765';
 	const [proxied, direct] = await Promise.all([
-		fetch(`${ORIGIN}/`).then((response) => response.text()),
+		fetch(`${ORIGIN}/photocraft/`).then((response) => response.text()),
 		fetch(upstream).then((response) => response.text()).catch(() => null)
 	]);
 	if (direct === null) log(`    (the editor's own port is not up: ${upstream})`);

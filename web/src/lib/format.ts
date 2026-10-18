@@ -25,6 +25,12 @@ export function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
+/** `.psd`, `.pcraft` — the part of a name an editor picks its reader by. Empty when there is none. */
+export function extensionOf(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && dot < name.length - 1 ? name.slice(dot) : "";
+}
+
 export function objects(added: number, changed: number): string {
   const parts: string[] = [];
   if (added) parts.push(`${plural(added, "new object")}`);

@@ -1,0 +1,1452 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Photo and PDF editor in your browser | Atelier Cloud</title>
+    <meta
+      name="description"
+      content="Open PSD, PSB and PDF in the open-source PhotoCraft and PdfCraft editors. Every project gets a workspace in your browser, with storage you own. Start free."
+    />
+    <link rel="canonical" href="https://ateliercloud.tech/" />
+    <link rel="icon" href="/landing/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#2f6feb" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Atelier Cloud" />
+    <meta property="og:locale" content="en" />
+    <meta property="og:url" content="https://ateliercloud.tech/" />
+    <meta
+      property="og:title"
+      content="Photo and PDF editor in your browser | Atelier Cloud"
+    />
+    <meta
+      property="og:description"
+      content="Open PSD, PSB and PDF files in open-source PhotoCraft and PdfCraft. Each project keeps a workspace in your browser."
+    />
+    <meta
+      property="og:image"
+      content="https://ateliercloud.tech/landing/og.png"
+    />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="The Atelier Cloud workspace grid, with six projects and their actions"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Photo and PDF editor in your browser | Atelier Cloud"
+    />
+    <meta
+      name="twitter:description"
+      content="Open PSD, PSB and PDF files in open-source PhotoCraft and PdfCraft. Each project keeps a workspace in your browser."
+    />
+    <meta
+      name="twitter:image"
+      content="https://ateliercloud.tech/landing/og.png"
+    />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://ateliercloud.tech/#organization",
+            "name": "Atelier Cloud",
+            "url": "https://ateliercloud.tech/"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://ateliercloud.tech/#website",
+            "name": "Atelier Cloud",
+            "url": "https://ateliercloud.tech/",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://ateliercloud.tech/#organization" }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://ateliercloud.tech/#app",
+            "name": "Atelier Cloud",
+            "url": "https://ateliercloud.tech/cloud/",
+            "applicationCategory": "MultimediaApplication",
+            "operatingSystem": "Any",
+            "browserRequirements": "The Origin Private File System and WebAssembly",
+            "description": "A photo editor and a PDF workbench in the browser with a project library: open PSD, PSB and .pcraft documents in PhotoCraft, work on PDFs in PdfCraft, keep your work in the browser, and send a document to your own S3-compatible bucket.",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "screenshot": "https://ateliercloud.tech/landing/workspaces.png",
+            "featureList": [
+              "Open PSD, PSB and .pcraft documents in PhotoCraft",
+              "Read, organise, combine and split PDFs in PdfCraft",
+              "One workspace per project, kept in the browser",
+              "See a diff against the last saved copy",
+              "Send a document to your own S3-compatible bucket"
+            ],
+            "publisher": { "@id": "https://ateliercloud.tech/#organization" }
+          }
+        ]
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --font:
+          Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+          sans-serif;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+        --bg: #fbfbfd;
+        --panel: #ffffff;
+        --ink: #131318;
+        --dim: #54545f;
+        --faint: #898994;
+        --line: #e5e5ec;
+        --rule: #ededf2;
+        --soft: #f3f6fd;
+        --accent: #2f6feb;
+        --accent-ink: #ffffff;
+        --accent-soft: rgba(47, 111, 235, 0.1);
+        --ok: #3f7a2a;
+        --warn: #a86a08;
+        --warn-soft: #fdf6e7;
+        --warn-line: #f0e0b8;
+        --shadow-sm: 0 1px 2px rgba(16, 18, 22, 0.05);
+        --shadow:
+          0 2px 4px rgba(16, 18, 22, 0.04), 0 18px 40px rgba(16, 18, 22, 0.09);
+        --radius-sm: 8px;
+        --radius: 12px;
+        --radius-lg: 18px;
+        --max: 1120px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #141417;
+          --panel: #1d1d21;
+          --ink: #edeef2;
+          --dim: #a5a5b1;
+          --faint: #7a7a86;
+          --line: #2b2b31;
+          --rule: #242429;
+          --soft: #1a2233;
+          --accent: #5b8ff5;
+          --accent-ink: #0d0d10;
+          --accent-soft: rgba(91, 143, 245, 0.14);
+          --ok: #85dc6a;
+          --warn: #e8b046;
+          --warn-soft: #241f13;
+          --warn-line: #453917;
+          --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+          --shadow:
+            0 2px 4px rgba(0, 0, 0, 0.4), 0 18px 44px rgba(0, 0, 0, 0.5);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 5rem;
+        -webkit-text-size-adjust: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px / 1.6 var(--font);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: 4px;
+      }
+
+      .wrap {
+        width: 100%;
+        max-width: var(--max);
+        margin: 0 auto;
+        padding: 0 1.5rem;
+      }
+
+      .skip {
+        position: absolute;
+        left: -9999px;
+      }
+
+      .skip:focus {
+        left: 1rem;
+        top: 1rem;
+        z-index: 20;
+        padding: 0.6rem 1rem;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+      }
+
+      /* Top bar */
+      .bar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        border-bottom: 1px solid var(--rule);
+        backdrop-filter: blur(10px);
+      }
+
+      .bar .wrap {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        min-height: 4rem;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        text-decoration: none;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+        font-size: 0.98rem;
+      }
+
+      .mark {
+        width: 1.75rem;
+        height: 1.75rem;
+        color: var(--accent);
+        flex: 0 0 auto;
+      }
+
+      .bar nav {
+        display: flex;
+        align-items: center;
+        gap: 1.4rem;
+        margin-left: auto;
+        font-size: 0.92rem;
+      }
+
+      .bar nav a {
+        text-decoration: none;
+        color: var(--dim);
+      }
+
+      .bar nav a:hover {
+        color: var(--ink);
+      }
+
+      .bar nav .gh {
+        display: inline-flex;
+        align-items: center;
+      }
+
+      .bar .cta {
+        color: var(--accent-ink);
+        background: var(--accent);
+        padding: 0.45rem 0.9rem;
+        border-radius: 999px;
+        font-weight: 550;
+      }
+
+      .bar .cta:hover {
+        color: var(--accent-ink);
+        filter: brightness(1.08);
+      }
+
+      /* Hero */
+      .hero {
+        position: relative;
+        overflow: clip;
+        padding: 4.5rem 0 5rem;
+      }
+
+      .hero::before {
+        content: "";
+        position: absolute;
+        inset: -20% -10% auto;
+        height: 34rem;
+        background:
+          radial-gradient(
+            42rem 20rem at 18% 20%,
+            var(--accent-soft),
+            transparent 70%
+          ),
+          radial-gradient(
+            30rem 18rem at 78% 0%,
+            color-mix(in srgb, var(--accent) 8%, transparent),
+            transparent 70%
+          );
+        pointer-events: none;
+      }
+
+      .hero .wrap {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1.02fr 0.98fr;
+        gap: 3.5rem;
+        align-items: center;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0 0 1.1rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+
+      .eyebrow::before {
+        content: "";
+        width: 0.45rem;
+        height: 0.45rem;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2.35rem, 5.2vw, 3.6rem);
+        line-height: 1.06;
+        letter-spacing: -0.035em;
+        font-weight: 640;
+        text-wrap: balance;
+      }
+
+      .lede {
+        margin: 1.4rem 0 0;
+        max-width: 34rem;
+        font-size: 1.12rem;
+        line-height: 1.62;
+        color: var(--dim);
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem 1.35rem;
+        margin-top: 2rem;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.72rem 1.25rem;
+        border-radius: 999px;
+        font-size: 0.98rem;
+        font-weight: 560;
+        text-decoration: none;
+        border: 1px solid transparent;
+      }
+
+      .button.primary {
+        background: var(--accent);
+        color: var(--accent-ink);
+        box-shadow: 0 6px 18px
+          color-mix(in srgb, var(--accent) 28%, transparent);
+      }
+
+      .button.primary:hover {
+        filter: brightness(1.07);
+      }
+
+      .button.ghost {
+        color: var(--ink);
+        border-color: var(--line);
+        background: var(--panel);
+      }
+
+      .button.ghost:hover {
+        border-color: var(--faint);
+      }
+
+      .fineprint {
+        margin: 1.15rem 0 0;
+        font-size: 0.86rem;
+        color: var(--faint);
+      }
+
+      .fineprint a {
+        color: var(--accent);
+        text-underline-offset: 2px;
+      }
+
+      /* The framed screenshot */
+      .shot {
+        margin: 0;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .shot .chrome {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.6rem 0.85rem;
+        background: var(--soft);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .shot .dots {
+        display: flex;
+        gap: 0.3rem;
+      }
+
+      .shot .dots span {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+        background: var(--line);
+      }
+
+      .shot .url {
+        margin-left: 0.4rem;
+        padding: 0.15rem 0.7rem;
+        border-radius: 999px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        font: 0.72rem / 1.5 var(--mono);
+        color: var(--dim);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .shot picture {
+        display: block;
+      }
+
+      .shot img {
+        width: 100%;
+        max-height: 40rem;
+        object-fit: cover;
+        object-position: top center;
+      }
+
+      .shot figcaption {
+        padding: 0.7rem 1rem 0.85rem;
+        border-top: 1px solid var(--rule);
+        font-size: 0.8rem;
+        color: var(--faint);
+      }
+
+      /* Sections */
+      section {
+        padding: 4.5rem 0;
+      }
+
+      section.tinted {
+        background: color-mix(in srgb, var(--panel) 55%, var(--bg));
+        border-block: 1px solid var(--rule);
+      }
+
+      .section-head {
+        max-width: 40rem;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: clamp(1.65rem, 3.1vw, 2.2rem);
+        line-height: 1.15;
+        letter-spacing: -0.025em;
+        font-weight: 620;
+        text-wrap: balance;
+      }
+
+      .section-head p {
+        margin: 1rem 0 0;
+        color: var(--dim);
+        font-size: 1.02rem;
+      }
+
+      /* Cards */
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 2.6rem;
+      }
+
+      .card {
+        padding: 1.5rem 1.5rem 1.6rem;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .card svg {
+        width: 1.5rem;
+        height: 1.5rem;
+        color: var(--accent);
+      }
+
+      .card h3 {
+        margin: 0.9rem 0 0;
+        font-size: 1.04rem;
+        font-weight: 600;
+        letter-spacing: -0.012em;
+      }
+
+      .card p {
+        margin: 0.5rem 0 0;
+        color: var(--dim);
+        font-size: 0.94rem;
+        line-height: 1.62;
+      }
+
+      .card code {
+        font-family: var(--mono);
+        font-size: 0.86em;
+        padding: 0.1rem 0.3rem;
+        border-radius: 4px;
+        background: var(--accent-soft);
+      }
+
+      /* The two editors */
+      .editors {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 2.6rem;
+      }
+
+      .editor {
+        padding: 1.6rem 1.6rem 1.7rem;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .editor header {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+      }
+
+      .editor h3 {
+        margin: 0;
+        font-size: 1.14rem;
+        font-weight: 620;
+        letter-spacing: -0.015em;
+      }
+
+      .chip {
+        padding: 0.1rem 0.55rem;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 0.7rem;
+        font-weight: 650;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+
+      .editor .what {
+        margin: 0.7rem 0 0;
+        color: var(--dim);
+        font-size: 0.95rem;
+      }
+
+      .editor ul {
+        display: grid;
+        gap: 0.55rem;
+        margin: 1.1rem 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .editor li {
+        position: relative;
+        padding-left: 1.35rem;
+        font-size: 0.92rem;
+      }
+
+      .editor li::before {
+        content: "";
+        position: absolute;
+        left: 0.05rem;
+        top: 0.58em;
+        width: 0.42rem;
+        height: 0.42rem;
+        border-radius: 50%;
+        border: 1.5px solid var(--accent);
+      }
+
+      /* Steps */
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1.5rem;
+        margin: 2.8rem 0 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
+      }
+
+      .steps li {
+        position: relative;
+        padding-top: 2.9rem;
+        counter-increment: step;
+      }
+
+      .steps li::before {
+        content: counter(step);
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: grid;
+        place-items: center;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--accent);
+        font-size: 0.86rem;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .steps li::after {
+        content: "";
+        position: absolute;
+        top: 1rem;
+        left: 2.6rem;
+        right: -0.5rem;
+        height: 1px;
+        background: var(--line);
+      }
+
+      .steps li:last-child::after {
+        display: none;
+      }
+
+      .steps h3 {
+        margin: 0;
+        font-size: 0.98rem;
+        font-weight: 600;
+      }
+
+      .steps p {
+        margin: 0.35rem 0 0;
+        font-size: 0.9rem;
+        color: var(--dim);
+      }
+
+      /* Where files go */
+      .places {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 2.6rem;
+      }
+
+      .place {
+        padding: 1.4rem 1.4rem 1.5rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+      }
+
+      .place h3 {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+
+      .place h3 svg {
+        width: 1.15rem;
+        height: 1.15rem;
+        color: var(--dim);
+      }
+
+      .place p {
+        margin: 0.55rem 0 0;
+        font-size: 0.9rem;
+        color: var(--dim);
+      }
+
+      .place.mine h3 svg {
+        color: var(--accent);
+      }
+
+      .places + p {
+        margin-top: 1.4rem;
+        font-size: 0.88rem;
+        color: var(--faint);
+      }
+
+      /* Note */
+      .note {
+        display: flex;
+        gap: 1rem;
+        align-items: flex-start;
+        margin-top: 2.4rem;
+        padding: 1.2rem 1.35rem;
+        border: 1px solid var(--warn-line);
+        border-radius: var(--radius);
+        background: var(--warn-soft);
+      }
+
+      .note .tag {
+        flex: 0 0 auto;
+        padding: 0.1rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--warn-line);
+        color: var(--warn);
+        font-size: 0.72rem;
+        font-weight: 650;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        line-height: 1.6;
+      }
+
+      .note p {
+        margin: 0;
+        font-size: 0.92rem;
+        color: var(--ink);
+      }
+
+      /* Closing */
+      .closing {
+        padding: 4.5rem 0 5.5rem;
+      }
+
+      .panel-dark {
+        position: relative;
+        overflow: hidden;
+        padding: 3.2rem clamp(1.5rem, 5vw, 3.5rem);
+        border-radius: 22px;
+        background: #15161b;
+        color: #f4f5f8;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .panel-dark {
+          background: #1f2026;
+          border: 1px solid #303039;
+        }
+      }
+
+      .panel-dark::before {
+        content: "";
+        position: absolute;
+        inset: auto -10% -60% 40%;
+        height: 26rem;
+        background: radial-gradient(
+          24rem 14rem at 60% 40%,
+          rgba(91, 143, 245, 0.28),
+          transparent 70%
+        );
+        pointer-events: none;
+      }
+
+      .panel-dark > * {
+        position: relative;
+      }
+
+      .panel-dark h2 {
+        color: #f4f5f8;
+        max-width: 26ch;
+      }
+
+      .panel-dark p {
+        margin: 1rem 0 0;
+        max-width: 40rem;
+        color: #b9bcc7;
+      }
+
+      .panel-dark .actions {
+        margin-top: 1.9rem;
+      }
+
+      .panel-dark .button.primary {
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      }
+
+      .panel-dark .button.ghost {
+        background: transparent;
+        color: #f4f5f8;
+        border-color: #3a3b45;
+      }
+
+      .panel-dark .button.ghost:hover {
+        border-color: #6a6c7a;
+      }
+
+      /* Footer */
+      footer {
+        padding: 2.2rem 0 3rem;
+        border-top: 1px solid var(--rule);
+        font-size: 0.84rem;
+        color: var(--faint);
+      }
+
+      footer .wrap {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: 1.8rem 2.5rem;
+      }
+
+      .credits {
+        display: grid;
+        gap: 0.85rem;
+        max-width: 46rem;
+      }
+
+      .disclaimer {
+        margin: 0.2rem 0 0;
+        font-size: 0.76rem;
+        line-height: 1.55;
+        color: var(--faint);
+      }
+
+      .copyright {
+        grid-column: 1 / -1;
+        padding-top: 1rem;
+        border-top: 1px solid var(--rule);
+        font-size: 0.76rem;
+      }
+
+      .credit {
+        margin: 0;
+        display: grid;
+        grid-template-columns: 7.5rem 1fr;
+        gap: 0.2rem 1rem;
+        font-size: 0.8rem;
+        line-height: 1.55;
+      }
+
+      .credit strong {
+        color: var(--dim);
+        font-weight: 600;
+      }
+
+      .credit strong a {
+        text-decoration: none;
+      }
+
+      .credit strong a:hover {
+        color: var(--ink);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      .credit span {
+        color: var(--faint);
+      }
+
+      footer nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem 1.4rem;
+      }
+
+      footer a {
+        text-decoration: none;
+        color: var(--dim);
+      }
+
+      footer a:hover {
+        color: var(--ink);
+      }
+
+      @media (max-width: 960px) {
+        .hero .wrap {
+          grid-template-columns: 1fr;
+          gap: 2.6rem;
+        }
+
+        .hero {
+          padding-top: 3rem;
+        }
+
+        .shot img {
+          max-height: 30rem;
+        }
+
+        .steps {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 1.6rem 1.5rem;
+        }
+
+        .steps li::after {
+          display: none;
+        }
+
+        .places {
+          grid-template-columns: 1fr;
+        }
+
+        .cards,
+        .editors {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 700px) {
+        .bar nav a:not(.cta) {
+          display: none;
+        }
+
+        .cards {
+          grid-template-columns: 1fr;
+        }
+
+        section {
+          padding: 3.25rem 0;
+        }
+
+        .note {
+          flex-direction: column;
+          gap: 0.6rem;
+        }
+
+        .credit {
+          grid-template-columns: 1fr;
+        }
+
+        footer .wrap {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 460px) {
+        .steps {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        * {
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="bar">
+      <div class="wrap">
+        <a class="brand" href="/" aria-label="Atelier Cloud, home">
+          <svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+            <rect width="32" height="32" rx="7" fill="#2f6feb" />
+            <g transform="translate(1.69 1.38) scale(0.78)">
+              <path
+                d="M10.7 8 2 32M10.7 8 34.7 32M5.3 22.9H25.6"
+                fill="none"
+                stroke="#fff"
+                stroke-width="3.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <g
+                transform="translate(20.55 7.43) scale(0.72) rotate(45 10 5.5)"
+                fill="none"
+                stroke="#fff"
+                stroke-width="2.8"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M4.5 11A4.5 4.5 0 0 1 4.5 2A5.6 5.6 0 0 1 15.2 1.2A4.6 4.6 0 0 1 19.6 8.6A3.1 3.1 0 0 1 16.9 11Z"
+                />
+              </g>
+            </g>
+          </svg>
+          <span>Atelier Cloud</span>
+        </a>
+        <nav aria-label="Sections">
+          <a href="#editors">Editors</a>
+          <a href="#how">How it works</a>
+          <a href="#files">Where files go</a>
+          <a
+            class="gh"
+            href="https://github.com/StBogdan/atelier_web"
+            aria-label="Atelier Cloud source on GitHub"
+            title="Source on GitHub"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+              />
+            </svg>
+          </a>
+          <a class="cta" href="/cloud/">Your workspaces</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero">
+        <div class="wrap">
+          <div>
+            <p class="eyebrow">PhotoCraft and PdfCraft in the browser</p>
+            <h1>A local workspace, with powerful open-source photo and PDF editors.</h1>
+            <p class="lede">
+              Atelier Cloud runs both editors at a web address and gives every
+              project a workspace of its own. The workspace lives in this
+              browser, with your saved work and the bucket you send it to.
+            </p>
+            <div class="actions">
+              <a class="button primary" href="/cloud/">
+                To your workspaces
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 8h10M9 4l4 4-4 4" />
+                </svg>
+              </a>
+              <a class="button ghost" href="#how">See how it works</a>
+            </div>
+            <p class="fineprint">
+              Nothing to install and no account to make. Free while it is alpha.
+            </p>
+          </div>
+
+          <figure class="shot">
+            <div class="chrome" aria-hidden="true">
+              <span class="dots"><span></span><span></span><span></span></span>
+              <span class="url">ateliercloud.tech/cloud/</span>
+            </div>
+            <picture>
+              <source
+                type="image/webp"
+                srcset="
+                  /landing/workspaces-560.webp   560w,
+                  /landing/workspaces-1120.webp 1120w
+                "
+                sizes="(max-width: 960px) 92vw, 500px"
+              />
+              <img
+                src="/landing/workspaces.png?v=2"
+                width="1840"
+                height="2200"
+                alt="The Atelier Cloud workspace grid, with six projects showing their document, state and actions."
+                loading="eager"
+                decoding="async"
+                fetchpriority="high"
+              />
+            </picture>
+            <figcaption>
+              Six workspaces, each with its document, its state and the actions that keep it.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="library" class="tinted">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>Browser editors usually forget the project.</h2>
+            <p>
+              Open a file, edit it, save it back to disk. The tab holds your work
+              while it is open, and after that the project is whichever download
+              you kept. A workspace is a place the project lives between
+              sessions, with the copies you kept beside it.
+            </p>
+          </div>
+
+          <div class="cards">
+            <article class="card">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="7.5" height="7.5" rx="1.6" />
+                <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6" />
+                <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6" />
+                <path d="M13.5 17.5h7M17 14v7" />
+              </svg>
+              <h3>A library, not a file picker</h3>
+              <p>
+                Every project gets a workspace in the browser's own storage,
+                under <code>atelier-cloud/</code>. Reload the page, close the
+                tab, open a second one: the grid still lists it with its
+                document, size and last change.
+              </p>
+            </article>
+
+            <article class="card">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 6h16M4 12h10M4 18h6" />
+                <path d="M16 15l2 2 4-4" />
+              </svg>
+              <h3>See what changed before you save</h3>
+              <p>
+                The Changes panel compares the document with the last copy you
+                kept and lists what changed, with real counts and sizes. No upload,
+                and no guessing.
+              </p>
+            </article>
+
+            <article class="card">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M7 18a4.5 4.5 0 1 1 .6-8.96A6 6 0 0 1 19 9.5a4.25 4.25 0 0 1-.9 8.5" />
+                <path d="M12 12v7M9.5 16.5 12 19l2.5-2.5" />
+              </svg>
+              <h3>Your bucket, your keys</h3>
+              <p>
+                Attach an S3-compatible bucket to one workspace. This browser
+                signs each request with the key you entered and sends the bytes
+                itself, so no document and no credential passes through the
+                server.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="editors">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>Two editors, one workspace.</h2>
+            <p>
+              A workspace holds the documents for a project, whichever editor
+              they belong to. The document's extension decides which one opens
+              it, and both save straight back into the workspace.
+            </p>
+          </div>
+
+          <div class="editors">
+            <article class="editor">
+              <header>
+                <span class="chip">Photos</span>
+                <h3>PhotoCraft</h3>
+              </header>
+              <p class="what">
+                Layered photo editing in its own tab, on PSD, PSB and .pcraft.
+              </p>
+              <ul>
+                <li>Layers, groups and masks, read and written in place.</li>
+                <li>
+                  Also opens PNG, JPEG, TIFF, WebP, EXR, HDR, SVG and Krita
+                  files.
+                </li>
+                <li>
+                  Saves straight back into the workspace, with no download in between.
+                </li>
+              </ul>
+            </article>
+
+            <article class="editor">
+              <header>
+                <span class="chip">PDF</span>
+                <h3>PdfCraft</h3>
+              </header>
+              <p class="what">
+                A PDF workbench inside the workspace page, for the jobs you
+                would otherwise open a desktop application for.
+              </p>
+              <ul>
+                <li>Read, search and copy text from any PDF.</li>
+                <li>Organize pages, then combine, extract or split documents.</li>
+                <li>
+                  Comment, fill interactive forms, and protect a file with a
+                  password.
+                </li>
+                <li>Saves straight back into the workspace, from the same page.</li>
+              </ul>
+            </article>
+          </div>
+
+          <p class="fineprint">
+            PhotoCraft and PdfCraft are separate open-source projects by the
+            ArtCraft Team. See <a href="#credits">credits</a>.
+          </p>
+        </div>
+      </section>
+
+      <section id="how">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>From an empty workspace to work you can keep.</h2>
+            <p>
+              Four steps, all inside the browser. Nothing is uploaded until you
+              attach a bucket and ask for it.
+            </p>
+          </div>
+
+          <ol class="steps">
+            <li>
+              <h3>Open a workspace</h3>
+              <p>
+                Start empty, from a bundled sample, or from a .pcraft or PDF on
+                disk.
+              </p>
+            </li>
+            <li>
+              <h3>Edit in PhotoCraft or PdfCraft</h3>
+              <p>
+                PhotoCraft takes the document in its own tab. PdfCraft opens
+                inside the workspace page.
+              </p>
+            </li>
+            <li>
+              <h3>Save and review</h3>
+              <p>
+                File ▸ Save writes back here. The Changes panel shows what moved.
+              </p>
+            </li>
+            <li>
+              <h3>Save a copy</h3>
+              <p>
+                Download the file, or upload it to your bucket.
+              </p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="files" class="tinted">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>Where your files go.</h2>
+            <p>
+              Three places, and only one of them is ours. You can read the whole
+              path in the browser's network tab.
+            </p>
+          </div>
+
+          <div class="places">
+            <article class="place mine">
+              <h3>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="4" width="18" height="14" rx="2" />
+                  <path d="M8 21h8M12 18v3" />
+                </svg>
+                This browser
+              </h3>
+              <p>
+                The workspace, its document and the copies you saved. They
+                survive a reload and a second tab, and they are cleared when the
+                browser clears site data.
+              </p>
+            </article>
+
+            <article class="place">
+              <h3>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M7 18a4.5 4.5 0 1 1 .6-8.96A6 6 0 0 1 19 9.5a4.25 4.25 0 0 1-.9 8.5H7Z" />
+                </svg>
+                Your bucket
+              </h3>
+              <p>
+                Documents you upload, in S3-compatible storage you control.
+                Access keys stay in this browser's storage and sign each request
+                locally.
+              </p>
+            </article>
+
+            <article class="place">
+              <h3>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="4" y="4" width="16" height="6" rx="1.8" />
+                  <rect x="4" y="14" width="16" height="6" rx="1.8" />
+                  <path d="M7 7h.01M7 17h.01" />
+                </svg>
+                Our server
+              </h3>
+              <p>
+                Serves this page and the editor. It never receives a document and
+                never stores a bucket key.
+              </p>
+            </article>
+          </div>
+
+          <p>
+            Without a bucket attached, a workspace exists in one browser and
+            nowhere else. Download the .pcraft to keep a copy outside it.
+          </p>
+
+          <div class="note">
+            <span class="tag">Alpha</span>
+            <p>
+              Atelier Cloud is early, unfinished work, offered as is and with no
+              warranty. There is no server-side backup, and clearing this
+              browser's site data deletes every workspace it holds.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing">
+        <div class="wrap">
+          <div class="panel-dark">
+            <h2>Your workspaces are in this browser.</h2>
+            <p>
+              The grid lists every project this browser holds. Make a new one
+              from a sample or a file, open it in PhotoCraft or PdfCraft, and
+              save a copy when you are happy with it.
+            </p>
+            <div class="actions">
+              <a class="button primary" href="/cloud/">
+                To your workspaces
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 8h10M9 4l4 4-4 4" />
+                </svg>
+              </a>
+              <a class="button ghost" href="/cloud/help">Read the help page</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer id="credits">
+      <div class="wrap">
+        <div class="credits">
+        <p class="credit">
+          <strong>
+            <a href="https://github.com/StBogdan/atelier_web">Atelier Cloud</a>
+          </strong>
+          <span>
+            The workspace library, launcher and server. © 2026 the Atelier
+            authors, MIT licensed.
+          </span>
+        </p>
+        <p class="credit">
+          <strong>
+            <a href="https://github.com/storytold/photocraft">PhotoCraft</a>
+          </strong>
+          <span>
+            The photo editor, a separate open-source project. © 2026 the
+            ArtCraft Team and the PhotoCraft contributors, MIT or Apache-2.0 at
+            your option.
+          </span>
+        </p>
+        <p class="credit">
+          <strong>
+            <a href="https://github.com/storytold/pdfcraft">PdfCraft</a>
+          </strong>
+          <span>
+            The PDF workbench, a separate open-source project. © 2026 the
+            ArtCraft Team and the PdfCraft contributors, MIT or Apache-2.0 at
+            your option.
+          </span>
+        </p>
+        <p class="disclaimer">
+          Atelier Cloud is independent of the ArtCraft Team and is not endorsed
+          by it or affiliated with it. The PhotoCraft and PdfCraft names and
+          wordmarks belong to the ArtCraft Team.
+        </p>
+      </div>
+      <nav aria-label="Elsewhere">
+        <a href="/cloud/">Workspaces</a>
+        <a href="/cloud/help">Help</a>
+        <a href="/photocraft/">PhotoCraft</a>
+        <a href="https://github.com/StBogdan/atelier_web">Source</a>
+      </nav>
+      <span class="copyright">
+        Atelier Cloud © 2026 the Atelier authors
+      </span>
+      </div>
+    </footer>
+  </body>
+</html>

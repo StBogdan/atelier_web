@@ -33,6 +33,13 @@
     removeProject,
     type Workspace,
   } from "$lib/contract";
+  import {
+    DEFAULT_EDITOR,
+    EDITORS,
+    editorById,
+    editorFor,
+    editorHref,
+  } from "$lib/editors";
   import { resolveTarget } from "$lib/sigv4";
   import type { Directory } from "$lib/opfs";
   import {
@@ -57,48 +64,22 @@
   }
 
   /**
-   * What the picker offers: the formats the editor's own importer reads, which is the only thing that
-   * decides whether a document can be opened. The picker's filter is a convenience — a document the
-   * editor cannot read is still accepted, and it reports that itself when it is opened.
+   * What the picker offers: the formats the chosen editor's own importer reads, which is the only
+   * thing that decides whether a document can be opened. The picker's filter is a convenience; a
+   * document the editor cannot read is still accepted, and it reports that itself when it is opened.
    */
-  const DOCUMENT_EXTENSIONS = [
-    ".pcraft",
-    ".psd",
-    ".psb",
-    ".psdt",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".tif",
-    ".tiff",
-    ".webp",
-    ".gif",
-    ".bmp",
-    ".tga",
-    ".ico",
-    ".qoi",
-    ".exr",
-    ".hdr",
-    ".svg",
-    ".svgz",
-    ".ora",
-    ".kra",
-    ".krz",
-    ".pdn",
-    ".dng",
-    ".cr2",
-    ".cr3",
-    ".nef",
-    ".arw",
-    ".raf",
-  ].join(",");
-
   let dialog = $state<HTMLDialogElement | null>(null);
   let name = $state("");
   let busy = $state(false);
   let problem = $state<unknown>(null);
   let samples = $state<Sample[]>([]);
   let source = $state<"empty" | "sample" | "file" | "bucket">("empty");
+  let editorId = $state<string>(DEFAULT_EDITOR.id);
+  const selectedEditor = $derived(editorById(editorId) ?? DEFAULT_EDITOR);
+  const documentAccept = $derived(selectedEditor.starts.join(","));
+  const canUseSample = $derived(
+    selectedEditor.id === DEFAULT_EDITOR.id && samples.length > 0,
+  );
   let sample = $state("");
   /** The documents chosen from this computer, in the order they were picked. */
   let files = $state<File[]>([]);
@@ -302,7 +283,7 @@
   function open() {
     problem = null;
     name = `Workspace ${$workspaces.length + 1}`;
-    source = samples.length ? "sample" : "empty";
+    source = canUseSample ? "sample" : "empty";
     sample = samples[0]?.file ?? "";
     files = [];
     if (fileInput) fileInput.value = "";
@@ -330,6 +311,11 @@
   function chooseFile(event: Event & { currentTarget: HTMLInputElement }) {
     source = "file";
     files = [...(event.currentTarget.files ?? [])];
+  }
+
+  /** A PdfCraft workspace starts empty or from a PDF, so the bundled PhotoCraft documents do not apply. */
+  function chooseEditor() {
+    if (editorId !== DEFAULT_EDITOR.id) source = "empty";
   }
 
   /**
@@ -361,13 +347,13 @@
       await ensurePersistence();
       const space = await ensureSpace();
       let documents: { name: string; bytes: Uint8Array }[] = [];
-      if (source === "sample" && sample) {
+      if (source === "sample" && sample && canUseSample) {
         const response = await fetch(`${base}/samples/${sample}`);
         if (!response.ok)
           throw new Error(`could not fetch ${sample}: ${response.status}`);
         documents = [
           {
-            name: documentFileName(sample),
+            name: documentFileName(sample, selectedEditor),
             bytes: new Uint8Array(await response.arrayBuffer()),
           },
         ];
@@ -377,7 +363,7 @@
         // half-made workspace behind.
         documents = await Promise.all(
           files.map(async (chosen) => ({
-            name: documentFileName(chosen.name),
+            name: documentFileName(chosen.name, selectedEditor),
             bytes: new Uint8Array(await chosen.arrayBuffer()),
           })),
         );
@@ -389,14 +375,18 @@
         const attachment = await signingFor(bucketForm);
         documents = [
           {
-            name: documentFileName(chosen.name),
+            name: documentFileName(chosen.name, selectedEditor),
             bytes: await downloadObject(attachment, chosen.logical),
           },
         ];
       }
       // The bucket is read before anything is written, so a bucket that cannot be reached leaves no
       // half-made workspace behind to explain.
-      const created = await createProject(space, { name, documents });
+      const created = await createProject(space, {
+        name,
+        editor: selectedEditor.id,
+        documents,
+      });
       const bucket = attaching ? await attachOrUndo(space, created.id) : null;
       dialog?.close();
       await refresh();
@@ -520,6 +510,7 @@
 {#if $workspaces.length}
   <div class={view === "grid" ? "grid" : "list"}>
     {#each $workspaces as workspace (workspace.id)}
+      {@const editor = editorFor(workspace.document, workspace.editor)}
       <article class="panel card">
         {#if thumbs}
           <Thumb
@@ -566,12 +557,17 @@
             <div class="row">
               <a
                 class="button primary"
-                href="/?project={workspace.id}"
+                href={editorHref(
+                  editor,
+                  workspace.id,
+                  workspace.document ?? undefined,
+                )}
                 target="_blank"
                 rel="noopener"
+                title="Open {workspace.name} in {editor.title}"
               >
                 <Icon name="edit" />
-                Editor
+                Open in {editor.title}
               </a>
               <a class="button" href="{base}/workspace/{workspace.id}"
                 >Details</a
@@ -646,6 +642,14 @@
   <form class="stack" onsubmit={(event) => event.preventDefault()}>
     <h2>New workspace</h2>
     <label>
+      Editor
+      <select bind:value={editorId} onchange={chooseEditor}>
+        {#each EDITORS as editor (editor.id)}
+          <option value={editor.id}>{editor.title}</option>
+        {/each}
+      </select>
+    </label>
+    <label>
       Name
       <input type="text" bind:value={name} />
     </label>
@@ -660,7 +664,7 @@
           type="radio"
           value="sample"
           bind:group={source}
-          disabled={samples.length === 0}
+          disabled={!canUseSample}
         />
         A bundled document
         <select bind:value={sample} disabled={source !== "sample"}>
@@ -679,15 +683,16 @@
         <input
           type="file"
           multiple
-          accept={DOCUMENT_EXTENSIONS}
+          accept={documentAccept}
           bind:this={fileInput}
           onchange={chooseFile}
         />
         {#if files.length}
           <span class="muted small"
-            >{files.map((chosen) => chosen.name).join(", ")}{files.some(
-              (chosen) => !isPcraftName(chosen.name),
-            )
+            >{files
+              .map((chosen) => chosen.name)
+              .join(", ")}{selectedEditor.id === DEFAULT_EDITOR.id &&
+            files.some((chosen) => !isPcraftName(chosen.name))
               ? " — saved as it is"
               : ""}</span
           >
@@ -721,9 +726,7 @@
             {#if listProblem}
               <Problem problem={listProblem} small />
             {:else if documents?.length === 0}
-              <p class="muted small">
-                The bucket holds no <code>.pcraft</code> documents.
-              </p>
+              <p class="muted small">The bucket holds no documents.</p>
             {:else if documents}
               <label>
                 Start from

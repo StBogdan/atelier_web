@@ -175,6 +175,9 @@ cd ../photocraft/dist/web && python3 -m http.server 8765
 PHOTOCRAFT_UPSTREAM=http://127.0.0.1:8765 ../atelier_web/run.sh
 ```
 
+Open `http://127.0.0.1:3000/cloud/`; the editor is at `http://127.0.0.1:3000/photocraft/`, on the same
+origin, so the two share one OPFS.
+
 `trunk build --release` needs the `wasm32-unknown-unknown` target and downloads the matching
 `wasm-bindgen-cli` and `wasm-opt` by itself.
 
