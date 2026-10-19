@@ -84,14 +84,13 @@ export async function commitAndUpload(
   return { committed, rev: after.rev, uploaded };
 }
 
-/** Save the workspace's document to this computer, one save back with `previous`. */
+/** Save one document of the workspace to this computer, the recorded one when none is named. */
 export async function downloadWorkspace(
   space: Directory,
   project: string,
-  previous = false,
   document?: string,
 ): Promise<string> {
-  const found = await documentBytes(space, project, previous, document);
+  const found = await documentBytes(space, project, document);
   if (!found) throw new Error("there is nothing to download");
   saveBytes(found.name, found.bytes);
   return found.name;

@@ -88,22 +88,25 @@
     href="https://developers.cloudflare.com/r2/api/tokens/"
     target="_blank"
     rel="noopener">Create an R2 API token ↗</a
-  >
-  — Object Read &amp; Write, limited to this bucket.
+  >, with Object Read &amp; Write, limited to this bucket.
 </p>
 
 <style>
   label {
     display: grid;
     gap: 0.15rem;
-    font-size: 0.86rem;
+    font-size: 0.875rem;
     color: var(--dim);
+  }
+
+  p.small {
+    font-size: 0.875rem;
   }
 
   .opt {
     color: var(--dim);
     font-weight: 400;
-    font-size: 0.78rem;
+    font-size: 0.75rem;
   }
 
   hr {

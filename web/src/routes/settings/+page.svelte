@@ -73,10 +73,10 @@
 </script>
 
 <svelte:head>
-  <title>Settings — Atelier Cloud</title>
+  <title>Settings | Atelier Cloud</title>
   <meta
     name="description"
-    content="What this browser's cloudspace uses, whether the origin's storage is persistent, and how to clear what is cached here."
+    content="What the cloudspace in this browser uses, whether its storage is persistent, and what the files under it are."
   />
 </svelte:head>
 
@@ -111,8 +111,8 @@
           with a credential minted for the session. A workspace shows the bucket
           its copy goes to.
         {:else}
-          A bucket is attached per workspace, and signed for in this browser —
-          open a workspace to attach one, or read <a href="{base}/help#setup"
+          A bucket is attached per workspace and signed for in this browser.
+          Open a workspace to attach one, or read <a href="{base}/help#setup"
             >Help</a
           >.
         {/if}
@@ -126,9 +126,9 @@
       <p class="bad small">{problem}</p>
     {:else}
       <p class="muted small">
-        Everything Atelier Cloud owns is under <code>{SPACE}/</code>. The only
-        thing here that is not regenerable is <code>outbox/</code>: work saved
-        to <a href="{base}/help#storage">OPFS</a> and not committed yet.
+        Everything Atelier Cloud owns is under <code>{SPACE}/</code>. Only
+        <code>outbox/</code> cannot be regenerated: it holds work saved to
+        <a href="{base}/help#storage">OPFS</a> and not committed yet.
       </p>
       <table>
         <tbody>
@@ -187,5 +187,20 @@
 
   .right {
     text-align: right;
+  }
+
+  @media (max-width: 30rem) {
+    dl {
+      grid-template-columns: 1fr;
+      gap: 0.1rem;
+    }
+
+    dt {
+      margin-top: 0.55rem;
+    }
+
+    dt:first-of-type {
+      margin-top: 0;
+    }
   }
 </style>

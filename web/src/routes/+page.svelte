@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { base } from "$app/paths";
   import { page } from "$app/state";
   import { replaceState } from "$app/navigation";
@@ -22,7 +22,7 @@
   } from "$lib/bucket";
   import {
     commitAndUpload,
-    downloadWorkspace,
+    downloadWorkspaceFiles,
     type CommitResult,
   } from "$lib/actions";
   import {
@@ -164,7 +164,7 @@
     browser ? localStorage.getItem(key) : null;
 
   let view = $state<"grid" | "list">(
-    remembered(VIEW_KEY) === "list" ? "list" : "grid",
+    remembered(VIEW_KEY) === "grid" ? "grid" : "list",
   );
   let thumbs = $state(remembered(THUMBS_KEY) !== "0");
 
@@ -241,7 +241,7 @@
     try {
       const space = await ensureSpace();
       if (what === "take") {
-        status = `Downloaded ${await downloadWorkspace(space, workspace.id)}.`;
+        status = `Downloaded ${await downloadWorkspaceFiles(space, workspace.id)}.`;
         return;
       }
       const result = await commitAndUpload(space, workspace.id);
@@ -427,20 +427,23 @@
   /**
    * The header's *In new workspace* action links here with `?new`, because the editor cannot be
    * opened until a workspace exists to open it into: bring up the dialog that creates one, then drop
-   * the flag so a reload does not reopen it.
+   * the flag so a reload does not reopen it. This runs after mount because `replaceState` needs the
+   * router, which is not ready while effects first flush.
    */
-  $effect(() => {
+  onMount(() => {
     if (!page.url.searchParams.has("new")) return;
     open();
-    void replaceState(`${base}/`, {});
+    // The router owns Kit's page store only once the root is mounted and started; `tick` waits for
+    // that flush, so `replaceState` has something to update.
+    void tick().then(() => replaceState(`${base}/`, {}));
   });
 </script>
 
 <svelte:head>
-  <title>Workspaces — Atelier Cloud</title>
+  <title>Workspaces | Atelier Cloud</title>
   <meta
     name="description"
-    content="Open PSD, PSB and .pcraft files in PhotoCraft, a full photo editor in your browser. Workspaces, revisions, and connect your own storage. Nothing to install."
+    content="Open PSD, PSB and .pcraft files in PhotoCraft, an open-source photo editor that runs in the browser. Each workspace keeps its own document and revisions, and can upload to a bucket you own."
   />
 </svelte:head>
 
@@ -450,14 +453,14 @@
     <div class="controls">
       <div class="segmented" role="group" aria-label="Workspace layout">
         <button
-          aria-pressed={view === "grid"}
-          title="One card per workspace"
-          onclick={() => setView("grid")}>Grid</button
-        >
-        <button
           aria-pressed={view === "list"}
           title="One row per workspace"
           onclick={() => setView("list")}>List</button
+        >
+        <button
+          aria-pressed={view === "grid"}
+          title="One card per workspace"
+          onclick={() => setView("grid")}>Grid</button
         >
       </div>
       <button
@@ -466,7 +469,7 @@
         title={thumbs ? "Hide the preview images" : "Show the preview images"}
         onclick={toggleThumbs}>Thumbnails</button
       >
-      <button class="primary" onclick={open}>New workspace</button>
+      <button class="cta" onclick={open}>New workspace</button>
     </div>
   {/if}
 </div>
@@ -488,16 +491,13 @@
 
 {#if $workspaces.length === 0}
   <div class="panel empty">
-    <p class="muted small">No workspaces yet</p>
-    <h2 class="hero">
-      A photo editor in your browser, with a project library.
-    </h2>
+    <h2 class="hero">No workspaces yet</h2>
     <p class="muted">
       Open a PSD, PSB or .pcraft document, record a version when you want one,
-      and copy it to storage you control. Nothing to install.
+      and copy it to storage you control. There is nothing to install.
     </p>
     <div class="row">
-      <button class="primary" onclick={open}>New workspace</button>
+      <button class="cta" onclick={open}>New workspace</button>
       <a class="button" href="{base}/settings">Local storage</a>
     </div>
     <p class="muted small">
@@ -511,102 +511,101 @@
   <div class={view === "grid" ? "grid" : "list"}>
     {#each $workspaces as workspace (workspace.id)}
       {@const editor = editorFor(workspace.document, workspace.editor)}
-      <article class="panel card">
+      <article class="panel card" class:no-thumb={!thumbs}>
         {#if thumbs}
-          <Thumb
-            id={workspace.id}
-            available={workspace.thumb}
-            size={view === "grid" ? 88 : 44}
-          />
-        {/if}
-        <div class="body">
-          <h2 title={workspace.name}>
-            <a class="name" href="{base}/workspace/{workspace.id}"
-              >{workspace.name}</a
-            >
-          </h2>
-          <div class="facts">
-            <p class="muted small">
-              {workspaceDocumentLabel(workspace)} · {bytes(workspace.size)} local
-            </p>
-            <p class="small">
-              {#if workspace.dirty}
-                <span class="warn">◐ uncommitted changes</span>
-              {:else}
-                <span class="ok">● committed</span>
-                <span class="muted">· {since(workspace.updatedAt, now)}</span>
-              {/if}
-              {#if buckets[workspace.id]}
-                <span
-                  class="bucket"
-                  role="img"
-                  aria-label="A bucket is attached: {buckets[workspace.id]
-                    .bucket}"
-                  title="A bucket is attached ({buckets[workspace.id]
-                    .bucket}), so a commit can also be copied off this machine."
-                >
-                  <Icon name="bucket" size={16} />
-                </span>
-              {/if}
-            </p>
-            {#if workspace.broken}
-              <p class="bad small">{workspace.broken}</p>
-            {/if}
+          <div class="ident-thumb">
+            <Thumb
+              id={workspace.id}
+              available={workspace.thumb}
+              size={view === "grid" ? 88 : 44}
+            />
           </div>
-          <div class="actions">
-            <div class="row">
-              <a
-                class="button primary"
-                href={editorHref(
-                  editor,
-                  workspace.id,
-                  workspace.document ?? undefined,
-                )}
-                target="_blank"
-                rel="noopener"
-                title="Open {workspace.name} in {editor.title}"
+        {/if}
+        <h2 class="ident" title={workspace.name}>
+          <a class="name" href="{base}/workspace/{workspace.id}"
+            >{workspace.name}</a
+          >
+        </h2>
+        <div class="facts">
+          <p class="muted small">
+            {workspaceDocumentLabel(workspace)} ·
+            <span class="nowrap">{bytes(workspace.size)} local</span>
+          </p>
+          <p class="small">
+            {#if workspace.dirty}
+              <span class="warn">uncommitted changes</span>
+            {:else}
+              <span class="ok">committed</span>
+              <span class="muted">· {since(workspace.updatedAt, now)}</span>
+            {/if}
+            {#if buckets[workspace.id]}
+              <span
+                class="bucket"
+                role="img"
+                aria-label="A bucket is attached: {buckets[workspace.id]
+                  .bucket}"
+                title="A bucket is attached ({buckets[workspace.id]
+                  .bucket}), so a commit can also be copied off this machine."
               >
-                <Icon name="edit" />
-                Open in {editor.title}
-              </a>
-              <a class="button" href="{base}/workspace/{workspace.id}"
-                >Details</a
-              >
-            </div>
-            <div class="row">
-              {#if buckets[workspace.id]}
-                <button
-                  class="action-button"
-                  class:primary={workspace.dirty}
-                  title={keepTip(workspace)}
-                  disabled={working !== null || !workspace.dirty}
-                  onclick={() => act(workspace, "keep")}
-                >
-                  <Icon name="upload" />
-                  Commit &amp; upload
-                </button>
-              {:else}
-                <button
-                  class="action-button"
-                  class:primary={workspace.dirty}
-                  title={keepTip(workspace)}
-                  disabled={working !== null || !workspace.dirty}
-                  onclick={() => act(workspace, "keep")}
-                >
-                  <Icon name="commit" />
-                  Commit
-                </button>
-              {/if}
+                <Icon name="bucket" size={16} />
+              </span>
+            {/if}
+          </p>
+          {#if workspace.broken}
+            <p class="bad small">{workspace.broken}</p>
+          {/if}
+        </div>
+        <div class="actions">
+          <div class="row">
+            <a
+              class="button primary"
+              href={editorHref(
+                editor,
+                workspace.id,
+                workspace.document ?? undefined,
+              )}
+              target="_blank"
+              rel="noopener"
+              title="Open {workspace.name} in {editor.title}"
+            >
+              <Icon name="edit" />
+              Open in {editor.title}
+            </a>
+            <a class="button" href="{base}/workspace/{workspace.id}">Details</a>
+          </div>
+          <div class="row">
+            {#if buckets[workspace.id]}
               <button
                 class="action-button"
-                title="Download {workspace.name} to this computer"
-                disabled={working !== null}
-                onclick={() => act(workspace, "take")}
+                class:primary={workspace.dirty}
+                title={keepTip(workspace)}
+                disabled={working !== null || !workspace.dirty}
+                onclick={() => act(workspace, "keep")}
               >
-                <Icon name="download" />
-                Download
+                <Icon name="upload" />
+                Commit &amp; upload
               </button>
-            </div>
+            {:else}
+              <button
+                class="action-button"
+                class:primary={workspace.dirty}
+                title={keepTip(workspace)}
+                disabled={working !== null || !workspace.dirty}
+                onclick={() => act(workspace, "keep")}
+              >
+                <Icon name="commit" />
+                Commit
+              </button>
+            {/if}
+            <button
+              class="action-button icon-only"
+              aria-label="Download every file in {workspace.name} as a zip"
+              title="Download every file in {workspace.name} as a zip"
+              disabled={working !== null}
+              onclick={() => act(workspace, "take")}
+            >
+              <Icon name="download" />
+            </button>
           </div>
         </div>
       </article>
@@ -620,14 +619,13 @@
     <strong>Atelier Cloud is alpha software</strong>
   </p>
   <p class="small muted">
-    It is early, unfinished work, offered as is and with <b
-      >no warranty of any kind</b
-    >, express or implied — including merchantability and fitness for a
-    particular purpose. A workspace lives in this browser and can be cleared at
-    any time, so keep your own copies of anything that matters.
+    It is early work, offered as is and with <b>no warranty of any kind</b>,
+    express or implied, including merchantability and fitness for a particular
+    purpose. A workspace lives in this browser and can be cleared at any time,
+    so keep your own copies of anything that matters.
   </p>
   <p class="small muted">
-    The editor is <b>PhotoCraft</b>, the ArtCraft Team's editor — copyright ©
+    The editor is <b>PhotoCraft</b>, the ArtCraft Team's editor. Copyright ©
     2026 ArtCraft Team and the PhotoCraft contributors. Source code, licence
     texts and the full attribution list:
     <a
@@ -701,7 +699,7 @@
               .map((chosen) => chosen.name)
               .join(", ")}{selectedEditor.id === DEFAULT_EDITOR.id &&
             files.some((chosen) => !isPcraftName(chosen.name))
-              ? " — saved as it is"
+              ? " (saved as it is)"
               : ""}</span
           >
         {/if}
@@ -770,7 +768,7 @@
     {/if}
     <div class="row">
       <button
-        class="primary"
+        class="cta"
         onclick={create}
         disabled={busy || (source === "bucket" && !chosen)}
       >
@@ -790,8 +788,19 @@
     margin-bottom: 1.25rem;
   }
 
+  /* The alpha notice reads as the end of the page, not as another card competing with the work. */
   .notice {
-    margin-top: 1.5rem;
+    margin-top: 2.5rem;
+    padding: 1.25rem 0 0;
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .notice p {
+    max-width: 72ch;
   }
 
   .notice .lead {
@@ -810,7 +819,7 @@
   }
 
   .notice a {
-    color: var(--accent);
+    color: var(--link);
   }
 
   .notice p:last-child {
@@ -866,7 +875,8 @@
     color: var(--ink);
   }
 
-  /* List: the same card, laid out as one row per workspace, the details against the right edge. */
+  /* List: one row per workspace, in three columns: the thumbnail and name, the details, then the
+     actions. The same grid areas as the card view, so the markup does not change between them. */
   .list {
     display: flex;
     flex-direction: column;
@@ -874,18 +884,20 @@
   }
 
   .list .card {
+    grid-template-columns:
+      auto minmax(10rem, 0.9fr) minmax(12rem, 1.3fr)
+      auto;
+    grid-template-areas: "thumb name facts actions";
     align-items: center;
-    padding: 0.5rem 0.9rem;
+    padding: 0.6rem 0.9rem;
+    column-gap: 1.25rem;
   }
 
-  .list .body {
-    display: flex;
-    align-items: baseline;
-    gap: 1rem;
-    min-width: 0;
+  .list .card.no-thumb {
+    grid-template-columns: minmax(10rem, 0.9fr) minmax(12rem, 1.3fr) auto;
+    grid-template-areas: "name facts actions";
   }
 
-  /* The name keeps the left edge, and gives way (ellipsis) before the details do. */
   /* A workspace that can send a copy off this machine says so: the cloud is drawn only when a bucket is
 	   attached, so a card without one is not marked by the absence of anything. The bucket is named on
 	   hover. */
@@ -909,6 +921,20 @@
     color: var(--ink);
   }
 
+  /* An action whose glyph says it already: a square target, with the name in its label and tooltip. */
+  .icon-only {
+    min-width: 2rem;
+    padding: 0.25rem;
+    justify-content: center;
+    color: var(--dim);
+  }
+
+  @media (pointer: coarse) {
+    .icon-only {
+      min-width: 2.75rem;
+    }
+  }
+
   /* The one action that protects work: solid, so it reads as the thing to press when the badge
      beside it says there is something to commit. */
   .action-button.primary {
@@ -926,75 +952,115 @@
   /* What a row action did is information, not a warning: blue. */
   .banner.info {
     border-left-color: var(--accent);
-    color: var(--accent);
+    color: var(--link);
   }
 
   /* The name keeps the left edge and gives way before the details do. It wraps rather than being cut
-	   off, up to the four lines the base rule allows, so a long name can be read. */
-  .list .body h2 {
+	   off, up to the four lines the grid view allows, so a long name can be read. */
+  .list .ident {
     font-size: 0.98rem;
     margin: 0;
-    min-width: 8rem;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
 
-  /* The facts and the actions hold the right edge, in that order. */
+  /* The details sit in their own column, and align with the name rather than the row's other edges. */
   .list .facts {
-    margin-left: auto;
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: flex-end;
-    gap: 0.1rem 0.85rem;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
   }
 
-  .list .facts p,
-  .list .body .actions {
+  .list .facts p {
     margin: 0;
   }
 
-  /* The actions never shrink — the facts give way instead — and they stay a tidy 2 by 2. */
-  .list .body .actions {
-    flex: 0 0 auto;
+  /* The actions are the row's last column, so they line up down the page. */
+  .list .actions {
+    margin-top: 0;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
   }
 
-  /* Narrow: the details drop under the name rather than squeezing it to nothing. */
-  @media (max-width: 46rem) {
-    .list .body {
-      flex-wrap: wrap;
+  .list .actions .row {
+    display: contents;
+  }
+
+  /* Narrower than three comfortable columns: the details drop under the name and the actions take
+     their own line, so nothing is squeezed to a few characters. */
+  @media (max-width: 62rem) {
+    .list .card {
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-areas:
+        "thumb name"
+        "facts facts"
+        "actions actions";
+      align-items: start;
+      row-gap: 0.35rem;
     }
 
-    .list .facts {
-      margin-left: 0;
-      justify-content: flex-start;
+    .list .card.no-thumb {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        "name"
+        "facts"
+        "actions";
+    }
+
+    .list .actions {
+      flex-wrap: wrap;
     }
   }
 
   /* The first line a visitor reads. It sits under the state, not instead of it, and below the page
      title in the hierarchy so the screen still reads as a place rather than an advert. */
   .hero {
-    font-size: 1.25rem;
+    font-size: 1.5rem;
     line-height: 1.3;
     margin: 0.2rem 0 0.6rem;
   }
 
   .small {
-    font-size: 0.86rem;
+    font-size: 0.875rem;
     margin: 0.15rem 0;
+    font-variant-numeric: tabular-nums;
   }
 
+  .nowrap {
+    white-space: nowrap;
+  }
+
+  /* One grid in both views: thumbnail, name, facts and actions each own an area, so the list is a
+     row and the grid is a column. */
   .card {
-    display: flex;
-    gap: 0.9rem;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "thumb name"
+      "thumb facts"
+      "thumb actions";
+    align-items: start;
+    column-gap: 0.9rem;
     padding: 0.9rem;
   }
 
-  .body {
-    min-width: 0;
-    flex: 1;
+  .card.no-thumb {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "name"
+      "facts"
+      "actions";
+  }
+
+  .ident-thumb {
+    grid-area: thumb;
   }
 
   /* A long name wraps, up to four lines, and stops there; the full text stays in the tooltip. */
-  .body h2 {
+  .ident {
+    grid-area: name;
     margin: 0 0 0.2rem;
     overflow-wrap: anywhere;
     display: -webkit-box;
@@ -1002,6 +1068,11 @@
     -webkit-line-clamp: 4;
     line-clamp: 4;
     overflow: hidden;
+  }
+
+  .facts {
+    grid-area: facts;
+    min-width: 0;
   }
 
   /* The name is the way into the workspace, so it reads as a link without turning into a button:
@@ -1013,20 +1084,22 @@
 
   .name:hover,
   .name:focus-visible {
-    color: var(--accent);
+    color: var(--link);
     text-decoration: underline;
     text-underline-offset: 2px;
   }
 
-  /* Editor and Details over Commit and Download: two rows, so the card's actions are not one long
-	   ribbon of buttons, and the card's own line-up does not become a grid of columns. The rows are
-	   independent — each is only as wide as its own buttons — so a longer row below cannot open a blank
-	   gap in the short row above it. */
+  /* In the grid view the two pairs stack: Editor and Details over Commit and Download. The rows are
+     independent, so a longer row below cannot open a blank gap in the short row above it. */
   .actions {
+    grid-area: actions;
+    margin-top: 0.6rem;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
     align-items: flex-start;
+    /* The row's actions read one step quieter than body text, so the workspace name keeps the eye. */
+    font-size: 0.875rem;
   }
 
   /* The way into the editor carries the glyph of what it does, like the two actions beside and below
@@ -1035,10 +1108,6 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-  }
-
-  .body .actions {
-    margin-top: 0.6rem;
   }
 
   fieldset {

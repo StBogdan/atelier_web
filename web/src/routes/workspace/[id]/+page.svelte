@@ -16,6 +16,7 @@
   import {
     commit,
     discard,
+    documentKind,
     ensureSpace,
     hash,
     inspect,
@@ -95,9 +96,6 @@
       documents[0] ??
       null,
   );
-
-  /** Whether the shown document has a one-save-back copy, which is all a previous download reads. */
-  const previousAvailable = $derived(shown?.previous ?? false);
 
   /** The editor one document opens in. The workspace's recorded default decides only when none is named. */
   const editorForDocument = (document?: string) =>
@@ -238,22 +236,28 @@
       await refresh();
     });
 
-  /** Save the document one save back: the copy the editor keeps beside it. */
-  const saveCommitted = () =>
-    run("download", async () => {
-      await downloadWorkspace(await ensureSpace(), id, true, shown?.name);
-    });
-
   /** Save every document this workspace holds, as one zip. */
   const saveAll = () =>
     run("download", async () => {
       await downloadWorkspaceFiles(await ensureSpace(), id);
     });
 
+  /**
+   * Record a document as this workspace's revision. A workspace may hold several files and its
+   * revision describes one of them, so the row is how a document other than the recorded one is
+   * kept. `commit` moves the revision and the card's status onto the document it records.
+   */
+  const recordDocument = (document: WorkspaceDocument) =>
+    run("commit", async () => {
+      await commit(await ensureSpace(), id, document.name);
+      await load();
+      await refresh();
+    });
+
   /** Save one document of this workspace to the computer, whichever one it is. */
   const saveDocument = (document: WorkspaceDocument) =>
     run("download", async () => {
-      await downloadWorkspace(await ensureSpace(), id, false, document.name);
+      await downloadWorkspace(await ensureSpace(), id, document.name);
     });
 
   /** Open a row's name for editing, starting from the name it has. */
@@ -503,7 +507,7 @@
 </script>
 
 <svelte:head
-  ><title>{meta?.name ?? "Workspace"} — Atelier Cloud</title></svelte:head
+  ><title>{meta?.name ?? "Workspace"} | Atelier Cloud</title></svelte:head
 >
 
 <p class="muted small"><a href="{base}/">← All workspaces</a></p>
@@ -601,11 +605,12 @@
       onclick={commitRevision}
       disabled={busy !== null || !change}
     >
+      <Icon name="commit" />
       {busy === "commit"
         ? "Recording…"
         : change
-          ? "✓ Record version"
-          : "✓ Up to date"}
+          ? "Record version"
+          : "Up to date"}
     </button>
   {/snippet}
 
@@ -615,21 +620,19 @@
       onclick={uploadToBucket}
       disabled={busy !== null || !bucket || !meta?.document}
     >
-      {busy === "upload" ? "Uploading…" : "↑ Upload to bucket"}
+      <Icon name="upload" />
+      {busy === "upload" ? "Uploading…" : "Upload to bucket"}
     </button>
     {#if !bucket}
-      <span
-        class="info"
-        title="No bucket is attached, so there is nowhere to upload to. Attach your own — Cloudflare R2, or any S3-compatible store — in the Bucket panel below."
-        >ⓘ</span
-      >
+      <span class="muted small">No bucket attached</span>
     {/if}
   {/snippet}
 
   <section class="panel changes">
     {#if change}
       <h2>
-        Changes — uncommitted since rev {meta.rev}
+        Changes
+        <span class="chip status">uncommitted since rev {meta.rev}</span>
         <span class="muted">({since(meta.updatedAt, now)})</span>
       </h2>
       <table>
@@ -666,14 +669,17 @@
         {@render commitAction()}
         {@render uploadAction()}
         <button class="danger" onclick={discardChanges} disabled={busy !== null}
-          >↺ Discard local changes…</button
+          ><Icon name="discard" /> Discard local changes…</button
         >
         <button class="push" onclick={saveAll} disabled={busy !== null}
-          >↓ Download files</button
+          ><Icon name="download" /> Download files</button
         >
       </div>
     {:else}
-      <h2>Changes — Version up to date</h2>
+      <h2>
+        Changes
+        <span class="chip status ok">Version up to date</span>
+      </h2>
       <p class="muted small">
         {#if meta.revision}
           <span class="mono">{meta.document}</span> · Recorded {since(
@@ -693,22 +699,12 @@
       </p>
       <div class="row">
         {@render commitAction()}
-        <button
-          onclick={saveCommitted}
-          disabled={busy !== null || !previousAvailable}
-          >↓ Download committed</button
-        >
         {@render uploadAction()}
         <button class="push" onclick={saveAll} disabled={busy !== null}
-          >↓ Download files</button
+          ><Icon name="download" /> Download files</button
         >
       </div>
     {/if}
-
-    <p class="muted small">
-      Recording a version marks the current state as the one later changes are
-      compared against. Nothing leaves this machine.
-    </p>
   </section>
   <section class="panel documents">
     <h2>
@@ -793,6 +789,14 @@
                   onclick={() => saveDocument(document)}
                   disabled={busy !== null}>Download</button
                 >
+                {#if document.name !== recordedDocument && documentKind(document.name) !== "none"}
+                  <button
+                    onclick={() => recordDocument(document)}
+                    disabled={busy !== null}
+                    title="Record {document.name} as this workspace's revision"
+                    ><Icon name="commit" /> Record</button
+                  >
+                {/if}
                 <button
                   onclick={() => startRenamingDocument(document)}
                   disabled={busy !== null || renamingDocument !== null}
@@ -880,7 +884,7 @@
         <span class="muted small">
           {bucket.bucket}{bucket.prefix ? ` / ${bucket.prefix}` : ""}
           {#if !remote}· nothing uploaded yet{:else if remote.hash === currentHash}·
-            ● holds this document{:else}· the bucket copy is behind{/if}
+            holds this document{:else}· the bucket copy is behind{/if}
         </span>
       {:else}
         <span class="muted small">none attached</span>
@@ -927,10 +931,12 @@
             onclick={uploadToBucket}
             disabled={busy !== null || !meta.document}
           >
-            {busy === "upload" ? "Uploading…" : "↑ Upload document to bucket"}
+            <Icon name="upload" />
+            {busy === "upload" ? "Uploading…" : "Upload document to bucket"}
           </button>
           <button onclick={downloadFromBucket} disabled={busy !== null}>
-            {busy === "fetch" ? "Downloading…" : "↓ Download from bucket"}
+            <Icon name="download" />
+            {busy === "fetch" ? "Downloading…" : "Download from bucket"}
           </button>
           <button onclick={openChooser} disabled={busy !== null}>
             {busy === "list" ? "Listing…" : "Choose from bucket…"}
@@ -1025,6 +1031,13 @@
 {/if}
 
 <style>
+  /* The same compact size as the workspace cards' actions, so a button reads the same wherever it
+     is pressed. `rename` keeps its own quieter treatment below. */
+  button,
+  .button {
+    font-size: 0.875rem;
+  }
+
   .top {
     display: flex;
     gap: 1.1rem;
@@ -1043,6 +1056,27 @@
 
   .actions {
     margin-left: auto;
+  }
+
+  /* A phone puts the way into the editor under the title instead of squeezing the title to a
+     column of single characters. */
+  @media (max-width: 46rem) {
+    .top {
+      flex-wrap: wrap;
+    }
+
+    .titles {
+      flex: 1 1 12rem;
+    }
+
+    .actions {
+      width: 100%;
+      margin-left: 0;
+    }
+
+    .open-target .filename {
+      max-width: 60vw;
+    }
   }
 
   .open-target {
@@ -1068,20 +1102,20 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--mono, monospace);
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 400;
     opacity: 0.85;
   }
 
   .small {
-    font-size: 0.86rem;
+    font-size: 0.875rem;
     margin: 0.15rem 0;
   }
 
   button.link {
     border: none;
     padding: 0;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--dim);
     text-decoration: underline;
     vertical-align: middle;
@@ -1089,6 +1123,18 @@
 
   .changes table {
     margin-bottom: 0.5rem;
+  }
+
+  .changes h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .chip.status {
+    font-size: 0.75rem;
+    padding: 0.05em 0.55em;
   }
 
   .changes .right {
@@ -1111,12 +1157,6 @@
     margin-left: auto;
   }
 
-  .info {
-    color: var(--dim);
-    cursor: help;
-    font-size: 0.95rem;
-  }
-
   details.panel > summary {
     display: flex;
     align-items: baseline;
@@ -1129,13 +1169,18 @@
   }
 
   details.panel > summary::before {
-    content: "▸";
-    color: var(--dim);
-    font-size: 0.8rem;
+    content: "";
+    width: 0.45rem;
+    height: 0.45rem;
+    margin-right: 0.15rem;
+    border-right: 1.5px solid var(--dim);
+    border-bottom: 1.5px solid var(--dim);
+    transform: rotate(-45deg);
+    transition: transform 150ms ease;
   }
 
   details.panel[open] > summary::before {
-    content: "▾";
+    transform: rotate(45deg);
   }
 
   details.panel > summary h2 {
@@ -1150,6 +1195,11 @@
 
   .choose .right {
     text-align: right;
+  }
+
+  table,
+  dl {
+    font-size: 0.875rem;
   }
 
   dl {

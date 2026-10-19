@@ -7,9 +7,15 @@
     <title>Photo and PDF editor in your browser | Atelier Cloud</title>
     <meta
       name="description"
-      content="Open PSD, PSB and PDF in the open-source PhotoCraft and PdfCraft editors. Every project gets a workspace in your browser, with storage you own. Start free."
+      content="Open PSD, PSB and PDF files in the open-source PhotoCraft and PdfCraft editors. Every project gets a workspace in your browser, with storage you own. Free while in alpha."
     />
     <link rel="canonical" href="https://ateliercloud.tech/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="icon" href="/landing/favicon.svg" type="image/svg+xml" />
     <meta name="theme-color" content="#2f6feb" />
     <meta property="og:type" content="website" />
@@ -33,7 +39,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="The Atelier Cloud workspace grid, with six projects and their actions"
+      content="The Atelier Cloud workspace list, with six projects and their actions"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta
@@ -97,22 +103,25 @@
       :root {
         color-scheme: light dark;
         --font:
-          Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
-          sans-serif;
+          "Plus Jakarta Sans", Inter, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", system-ui, sans-serif;
         --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
         --bg: #fbfbfd;
         --panel: #ffffff;
         --ink: #131318;
         --dim: #54545f;
-        --faint: #898994;
+        --faint: #63636d;
         --line: #e5e5ec;
         --rule: #ededf2;
         --soft: #f3f6fd;
         --accent: #2f6feb;
         --accent-ink: #ffffff;
         --accent-soft: rgba(47, 111, 235, 0.1);
+        --link: #1d4ed8;
+        --cta: #2f6feb;
+        --cta-ink: #ffffff;
         --ok: #3f7a2a;
-        --warn: #a86a08;
+        --warn: #8a5f0a;
         --warn-soft: #fdf6e7;
         --warn-line: #f0e0b8;
         --shadow-sm: 0 1px 2px rgba(16, 18, 22, 0.05);
@@ -130,13 +139,16 @@
           --panel: #1d1d21;
           --ink: #edeef2;
           --dim: #a5a5b1;
-          --faint: #7a7a86;
+          --faint: #8a8a96;
           --line: #2b2b31;
           --rule: #242429;
           --soft: #1a2233;
           --accent: #5b8ff5;
           --accent-ink: #0d0d10;
           --accent-soft: rgba(91, 143, 245, 0.14);
+          --link: #8ab4f8;
+          --cta: #5b8ff5;
+          --cta-ink: #0d0d10;
           --ok: #85dc6a;
           --warn: #e8b046;
           --warn-soft: #241f13;
@@ -260,16 +272,16 @@
       }
 
       .bar .cta {
-        color: var(--accent-ink);
-        background: var(--accent);
+        color: var(--cta-ink);
+        background: var(--cta);
         padding: 0.45rem 0.9rem;
         border-radius: 999px;
-        font-weight: 550;
+        font-weight: 600;
       }
 
       .bar .cta:hover {
-        color: var(--accent-ink);
-        filter: brightness(1.08);
+        color: var(--cta-ink);
+        filter: brightness(1.06);
       }
 
       /* Hero */
@@ -301,8 +313,8 @@
       .hero .wrap {
         position: relative;
         display: grid;
-        grid-template-columns: 1.02fr 0.98fr;
-        gap: 3.5rem;
+        grid-template-columns: 0.86fr 1.14fr;
+        gap: 2.75rem;
         align-items: center;
       }
 
@@ -364,14 +376,13 @@
       }
 
       .button.primary {
-        background: var(--accent);
-        color: var(--accent-ink);
-        box-shadow: 0 6px 18px
-          color-mix(in srgb, var(--accent) 28%, transparent);
+        background: var(--cta);
+        color: var(--cta-ink);
+        box-shadow: 0 6px 18px color-mix(in srgb, var(--cta) 28%, transparent);
       }
 
       .button.primary:hover {
-        filter: brightness(1.07);
+        filter: brightness(1.06);
       }
 
       .button.ghost {
@@ -391,7 +402,7 @@
       }
 
       .fineprint a {
-        color: var(--accent);
+        color: var(--link);
         text-underline-offset: 2px;
       }
 
@@ -563,7 +574,7 @@
         padding: 0.1rem 0.55rem;
         border-radius: 999px;
         background: var(--accent-soft);
-        color: var(--accent);
+        color: var(--link);
         font-size: 0.7rem;
         font-weight: 650;
         letter-spacing: 0.07em;
@@ -630,7 +641,7 @@
         border-radius: 50%;
         border: 1px solid var(--line);
         background: var(--panel);
-        color: var(--accent);
+        color: var(--link);
         font-size: 0.86rem;
         font-weight: 600;
         font-variant-numeric: tabular-nums;
@@ -1037,15 +1048,15 @@
         <div class="wrap">
           <div>
             <p class="eyebrow">PhotoCraft and PdfCraft in the browser</p>
-            <h1>A local workspace, with powerful open-source photo and PDF editors.</h1>
+            <h1>Open-source photo and PDF editors, with a workspace in your browser.</h1>
             <p class="lede">
-              Atelier Cloud runs both editors at a web address and gives every
-              project a workspace of its own. The workspace lives in this
-              browser, with your saved work and the bucket you send it to.
+              Atelier Cloud serves both editors from one web address. Each
+              project gets a workspace that lives in this browser, next to the
+              copies you saved and the bucket you send documents to.
             </p>
             <div class="actions">
               <a class="button primary" href="/cloud/">
-                To your workspaces
+                Open your workspaces
                 <svg
                   width="15"
                   height="15"
@@ -1063,7 +1074,7 @@
               <a class="button ghost" href="#how">See how it works</a>
             </div>
             <p class="fineprint">
-              Nothing to install and no account to make. Free while it is alpha.
+              Nothing to install and no account to create. Free while it is alpha.
             </p>
           </div>
 
@@ -1076,23 +1087,23 @@
               <source
                 type="image/webp"
                 srcset="
-                  /landing/workspaces-560.webp   560w,
-                  /landing/workspaces-1120.webp 1120w
+                  /landing/workspaces-560.webp?v=3   560w,
+                  /landing/workspaces-1120.webp?v=3 1120w
                 "
-                sizes="(max-width: 960px) 92vw, 500px"
+                sizes="(max-width: 960px) 92vw, 590px"
               />
               <img
-                src="/landing/workspaces.png?v=2"
-                width="1840"
-                height="2200"
-                alt="The Atelier Cloud workspace grid, with six projects showing their document, state and actions."
+                src="/landing/workspaces.png?v=3"
+                width="2000"
+                height="1800"
+                alt="The Atelier Cloud workspace list, with six projects showing their document, state and actions."
                 loading="eager"
                 decoding="async"
                 fetchpriority="high"
               />
             </picture>
             <figcaption>
-              Six workspaces, each with its document, its state and the actions that keep it.
+              Six workspaces, each with its document, its state and the actions you can run on it.
             </figcaption>
           </figure>
         </div>
@@ -1101,12 +1112,12 @@
       <section id="library" class="tinted">
         <div class="wrap">
           <div class="section-head">
-            <h2>Browser editors usually forget the project.</h2>
+            <h2>The workspace between sessions</h2>
             <p>
-              Open a file, edit it, save it back to disk. The tab holds your work
-              while it is open, and after that the project is whichever download
-              you kept. A workspace is a place the project lives between
-              sessions, with the copies you kept beside it.
+              A browser editor usually opens a file, edits it and saves it back
+              to disk. The tab holds the work while it is open; after that, the
+              project is whichever download you kept. A workspace keeps the
+              project between sessions, beside the copies you saved.
             </p>
           </div>
 
@@ -1126,11 +1137,11 @@
                 <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6" />
                 <path d="M13.5 17.5h7M17 14v7" />
               </svg>
-              <h3>A library, not a file picker</h3>
+              <h3>A project library</h3>
               <p>
                 Every project gets a workspace in the browser's own storage,
                 under <code>atelier-cloud/</code>. Reload the page, close the
-                tab, open a second one: the grid still lists it with its
+                tab or open a second tab: the grid still lists it with its
                 document, size and last change.
               </p>
             </article>
@@ -1151,8 +1162,8 @@
               <h3>See what changed before you save</h3>
               <p>
                 The Changes panel compares the document with the last copy you
-                kept and lists what changed, with real counts and sizes. No upload,
-                and no guessing.
+                kept and lists what changed, with counts and sizes. It runs in
+                the browser, so nothing is uploaded first.
               </p>
             </article>
 
@@ -1169,11 +1180,11 @@
                 <path d="M7 18a4.5 4.5 0 1 1 .6-8.96A6 6 0 0 1 19 9.5a4.25 4.25 0 0 1-.9 8.5" />
                 <path d="M12 12v7M9.5 16.5 12 19l2.5-2.5" />
               </svg>
-              <h3>Your bucket, your keys</h3>
+              <h3>A bucket you control</h3>
               <p>
                 Attach an S3-compatible bucket to one workspace. This browser
                 signs each request with the key you entered and sends the bytes
-                itself, so no document and no credential passes through the
+                itself, so no document and no credential pass through the
                 server.
               </p>
             </article>
@@ -1184,11 +1195,11 @@
       <section id="editors">
         <div class="wrap">
           <div class="section-head">
-            <h2>Two editors, one workspace.</h2>
+            <h2>PhotoCraft and PdfCraft</h2>
             <p>
               A workspace holds the documents for a project, whichever editor
-              they belong to. The document's extension decides which one opens
-              it, and both save straight back into the workspace.
+              they belong to. The file extension decides which editor opens a
+              document, and both editors save into the workspace.
             </p>
           </div>
 
@@ -1199,7 +1210,8 @@
                 <h3>PhotoCraft</h3>
               </header>
               <p class="what">
-                Layered photo editing in its own tab, on PSD, PSB and .pcraft.
+                Layered photo editing in its own tab, for PSD, PSB and .pcraft
+                files.
               </p>
               <ul>
                 <li>Layers, groups and masks, read and written in place.</li>
@@ -1208,7 +1220,7 @@
                   files.
                 </li>
                 <li>
-                  Saves straight back into the workspace, with no download in between.
+                  Saves into the workspace without a download step.
                 </li>
               </ul>
             </article>
@@ -1219,8 +1231,8 @@
                 <h3>PdfCraft</h3>
               </header>
               <p class="what">
-                A PDF workbench inside the workspace page, for the jobs you
-                would otherwise open a desktop application for.
+                A PDF workbench inside the workspace page, for PDF jobs you
+                would otherwise do in a desktop application.
               </p>
               <ul>
                 <li>Read, search and copy text from any PDF.</li>
@@ -1229,7 +1241,7 @@
                   Comment, fill interactive forms, and protect a file with a
                   password.
                 </li>
-                <li>Saves straight back into the workspace, from the same page.</li>
+                <li>Saves into the workspace from the same page.</li>
               </ul>
             </article>
           </div>
@@ -1244,10 +1256,10 @@
       <section id="how">
         <div class="wrap">
           <div class="section-head">
-            <h2>From an empty workspace to work you can keep.</h2>
+            <h2>How it works</h2>
             <p>
-              Four steps, all inside the browser. Nothing is uploaded until you
-              attach a bucket and ask for it.
+              Four steps, all inside the browser. Documents stay in this browser
+              until you attach a bucket and upload one.
             </p>
           </div>
 
@@ -1262,14 +1274,15 @@
             <li>
               <h3>Edit in PhotoCraft or PdfCraft</h3>
               <p>
-                PhotoCraft takes the document in its own tab. PdfCraft opens
+                PhotoCraft opens the document in its own tab. PdfCraft opens
                 inside the workspace page.
               </p>
             </li>
             <li>
               <h3>Save and review</h3>
               <p>
-                File ▸ Save writes back here. The Changes panel shows what moved.
+                File ▸ Save writes the document back to the workspace. The
+                Changes panel shows what changed.
               </p>
             </li>
             <li>
@@ -1285,10 +1298,10 @@
       <section id="files" class="tinted">
         <div class="wrap">
           <div class="section-head">
-            <h2>Where your files go.</h2>
+            <h2>Where your files go</h2>
             <p>
-              Three places, and only one of them is ours. You can read the whole
-              path in the browser's network tab.
+              A document can sit in three places, and only one of them is ours.
+              The browser's network tab shows the whole path.
             </p>
           </div>
 
@@ -1311,8 +1324,8 @@
               </h3>
               <p>
                 The workspace, its document and the copies you saved. They
-                survive a reload and a second tab, and they are cleared when the
-                browser clears site data.
+                survive a reload and a second tab, and the browser deletes them
+                when it clears site data.
               </p>
             </article>
 
@@ -1356,8 +1369,8 @@
                 Our server
               </h3>
               <p>
-                Serves this page and the editor. It never receives a document and
-                never stores a bucket key.
+                It serves this page and the editor. It never receives a document
+                and never stores a bucket key.
               </p>
             </article>
           </div>
@@ -1370,9 +1383,9 @@
           <div class="note">
             <span class="tag">Alpha</span>
             <p>
-              Atelier Cloud is early, unfinished work, offered as is and with no
-              warranty. There is no server-side backup, and clearing this
-              browser's site data deletes every workspace it holds.
+              Atelier Cloud is early work, offered as is and with no warranty.
+              There is no server-side backup, and clearing this browser's site
+              data deletes every workspace it holds.
             </p>
           </div>
         </div>
@@ -1381,15 +1394,15 @@
       <section class="closing">
         <div class="wrap">
           <div class="panel-dark">
-            <h2>Your workspaces are in this browser.</h2>
+            <h2>Your workspaces</h2>
             <p>
-              The grid lists every project this browser holds. Make a new one
+              The grid lists every project this browser holds. You can start one
               from a sample or a file, open it in PhotoCraft or PdfCraft, and
-              save a copy when you are happy with it.
+              save a copy when you are done.
             </p>
             <div class="actions">
               <a class="button primary" href="/cloud/">
-                To your workspaces
+                Open your workspaces
                 <svg
                   width="15"
                   height="15"
@@ -1429,8 +1442,8 @@
           </strong>
           <span>
             The photo editor, a separate open-source project. © 2026 the
-            ArtCraft Team and the PhotoCraft contributors, MIT or Apache-2.0 at
-            your option.
+            ArtCraft Team and the PhotoCraft contributors. Its authors license
+            it under MIT or Apache-2.0.
           </span>
         </p>
         <p class="credit">
@@ -1439,8 +1452,8 @@
           </strong>
           <span>
             The PDF workbench, a separate open-source project. © 2026 the
-            ArtCraft Team and the PdfCraft contributors, MIT or Apache-2.0 at
-            your option.
+            ArtCraft Team and the PdfCraft contributors. Its authors license it
+            under MIT or Apache-2.0.
           </span>
         </p>
         <p class="disclaimer">

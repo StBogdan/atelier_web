@@ -103,16 +103,16 @@ async function main() {
 	check('index/workspaces.json', find(before, 'index/workspaces.json')?.size > 0);
 	check('nothing in tmp/', staging(before).length === 0, staging(before).join(', '));
 
-	step('Atelier Cloud: nothing one save back to download yet');
+	step('Atelier Cloud: the whole workspace can be downloaded, and only that');
 	await provider.goto(`${ORIGIN}/cloud/workspace/${project}`, { waitUntil: 'networkidle' });
 	await provider.waitForSelector('h2:has-text("Changes")');
 	check(
-		'"Download committed" is greyed out until the editor has kept a save back',
-		await provider.isDisabled('section.panel.changes button:has-text("Download committed")')
+		'"Download files" is offered',
+		!(await provider.isDisabled('section.panel.changes button:has-text("Download files")'))
 	);
 	check(
-		'and "Download files" is still offered',
-		!(await provider.isDisabled('section.panel.changes button:has-text("Download files")'))
+		'and there is no separate one-save-back download',
+		(await provider.locator('button:has-text("Download committed")').count()) === 0
 	);
 
 	step('Editor: launch into the project and open the document from OPFS');
@@ -212,14 +212,6 @@ async function main() {
 	check('the download is one zip, named after the workspace', archive?.suggestedFilename() === 'Walkthrough workspace.zip', named());
 	const zipped = archive ? await zipNames(archive) : [];
 	check('and the zip holds the workspace\'s document', zipped.includes('01-rgb-layered.pcraft'), zipped.join(', ') || 'none');
-
-	await provider.click('button:has-text("Download committed")');
-	await provider.waitForTimeout(1500);
-	check(
-		'"Download committed" hands back the copy the editor kept',
-		downloads.some((download) => download.suggestedFilename() === '01-rgb-layered.prev.pcraft'),
-		named()
-	);
 
 	step('Atelier Cloud: discard puts the committed bytes back');
 	const committedBytes = (await opfs(provider)).find((entry) => entry.path === `projects/${project}/01-rgb-layered.pcraft`);

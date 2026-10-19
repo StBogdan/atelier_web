@@ -1,14 +1,15 @@
-/* Atelier Cloud. Plain CSS, no framework: the landing page around an editor that already owns the
-   canvas. The palette is the editor's own, token for token
-   (photocraft/crates/ui-egui/src/theme.rs), so the shell reads as the same application: dark is
-   PhotoCraft's *Pro* theme and light is *Studio Light*, the pair named by the editor's
-   `interface.darkTheme` / `interface.lightTheme` settings. */
+/* Atelier Cloud. Plain CSS, no framework, around an editor that already owns the canvas. The shell
+   uses the editor's own palette (photocraft/crates/ui-egui/src/theme.rs), so both read as one
+   product: dark is PhotoCraft's *Pro* theme and light is *Studio Light*. The muted greys, control
+   borders and status colours sit a step darker than the editor's so they clear 4.5:1 on these
+   surfaces. */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   --font:
-    Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    "Plus Jakarta Sans", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
   /* Studio Light: canvas, card, field, text and radii. */
@@ -17,18 +18,21 @@
   --line: #dedee4;
   --rule: #e2e2e8;
   --ink: #18181c;
-  --dim: #60606a;
-  --faint: #9696a0;
+  --dim: #5f5f6a;
+  --faint: #64646f;
   --accent: #6c5ce7;
   --primary: #141418;
   --primary-ink: #fafafc;
+  --cta: #6c5ce7;
+  --cta-ink: #ffffff;
+  --link: #5b4bd6;
   --hover: #e8e8ed;
   --pressed: #dcdce2;
   --field: #f2f2f5;
-  --field-line: #d6d6dc;
+  --field-line: #8a8a96;
   --ok: #4e712e;
-  --warn: #be8214;
-  --bad: #d23c3c;
+  --warn: #8a5f0a;
+  --bad: #c62828;
   --chrome: #f6f6f8;
   --strip: #f0f0f3;
   --shadow: 0 1px 2px rgba(16, 18, 22, 0.06), 0 8px 24px rgba(16, 18, 22, 0.08);
@@ -38,34 +42,33 @@
   --radius-lg: 12px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Pro: the flat, near-black chrome the editor ships with, and its square chips. */
-    --bg: #282828;
-    --panel: #323232;
-    --line: #1e1e1e;
-    --rule: #1e1e1e;
-    --ink: #dedede;
-    --dim: #b2b2b2;
-    --faint: #808080;
-    --accent: #378ef0;
-    --primary: #378ef0;
-    --primary-ink: #ffffff;
-    --hover: #424242;
-    --pressed: #4e4e4e;
-    --field: #242424;
-    --field-line: #4a4a4a;
-    --ok: #85dc6a;
-    --warn: #e8b046;
-    --bad: #ec5b62;
-    --chrome: #323232;
-    --strip: #262626;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 28px rgba(0, 0, 0, 0.35);
-    --chip-radius: var(--radius-sm);
-    --radius-sm: 3px;
-    --radius: 4px;
-    --radius-lg: 6px;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Pro: the flat, near-black chrome the editor ships with. */
+  --bg: #282828;
+  --panel: #323232;
+  --line: #1e1e1e;
+  --rule: #1e1e1e;
+  --ink: #dedede;
+  --dim: #b2b2b2;
+  --faint: #9a9aa6;
+  --accent: #5aa9f7;
+  --primary: #2a72cc;
+  --primary-ink: #ffffff;
+  --cta: #378ef0;
+  --cta-ink: #0d0d10;
+  --link: #7ab6f8;
+  --hover: #424242;
+  --pressed: #4e4e4e;
+  --field: #242424;
+  --field-line: #7a7a86;
+  --ok: #85dc6a;
+  --warn: #e8b046;
+  --bad: #f08a8f;
+  --chrome: #323232;
+  --strip: #262626;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 28px rgba(0, 0, 0, 0.35);
 }
 
 * {
@@ -76,7 +79,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 15px / 1.55 var(--font);
+  font: 16px / 1.6 var(--font);
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -86,6 +90,45 @@ a {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+button,
+.button,
+input,
+select,
+summary,
+nav.chrome a,
+.name {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 200ms ease;
+}
+
+button:active:not(:disabled),
+.button:active {
+  background: var(--pressed);
+}
+
+/* Touch targets grow without changing the visual weight of the controls. */
+@media (pointer: coarse) {
+  button,
+  .button,
+  input[type="text"],
+  select {
+    min-height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* The chrome: a title bar over a status strip, the two rows the editor's own window has. Full
@@ -173,6 +216,34 @@ nav.chrome a[aria-current="page"] {
   color: var(--ink);
 }
 
+/* The theme switch sits beside the navigation, the same size and weight as its links. */
+nav.chrome .theme-toggle {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--dim);
+}
+
+nav.chrome .theme-toggle:hover {
+  background: var(--hover);
+  border-color: transparent;
+  color: var(--ink);
+}
+
+@media (pointer: coarse) {
+  nav.chrome .theme-toggle {
+    width: 2.75rem;
+  }
+}
+
 /* The editor is the one thing to do here, so it is the bar's primary action, not another link. */
 nav.chrome a.action {
   flex: 0 0 auto;
@@ -209,6 +280,11 @@ nav.chrome a.action .where {
   nav.chrome a.action .where {
     max-width: 5rem;
   }
+
+  /* The bar has no room for the meter beside the numbers it stands for. */
+  .strip .meter {
+    display: none;
+  }
 }
 
 @media (max-width: 34rem) {
@@ -220,10 +296,26 @@ nav.chrome a.action .where {
 
   nav.chrome {
     flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+
+  /* The links take the whole row, so none of them is cut off by the action beside them. */
+  nav.chrome .links {
+    flex-basis: 100%;
+    overflow: visible;
+  }
+
+  nav.chrome a.action {
+    margin-left: 0;
   }
 
   /* The label alone still says where it goes, and the tooltip has the name. */
   nav.chrome a.action .where {
+    display: none;
+  }
+
+  /* Local storage keeps its state and its number; the origin chip is the first thing to go. */
+  .strip .origin {
     display: none;
   }
 }
@@ -261,13 +353,33 @@ nav.chrome a.action .where {
   padding: 1.5rem 1.25rem 4rem;
 }
 
+/* Out of the way until it is the first thing the keyboard reaches. */
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+
+.skip:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 20;
+  padding: 0.5rem 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius);
+}
+
 h1 {
-  font-size: 1.35rem;
+  font-size: 1.75rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
   margin: 0;
 }
 
 h2 {
-  font-size: 1.05rem;
+  font-size: 1.2rem;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
   margin: 0 0 0.6rem;
 }
 
@@ -310,16 +422,21 @@ button,
   background: transparent;
   border: 1px solid var(--field-line);
   border-radius: var(--radius);
-  padding: 0.32em 0.85em;
+  padding: 0.32em 0.75em;
+  min-height: 2rem;
+  line-height: 1.25;
   cursor: pointer;
   text-decoration: none;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
 }
 
 button:hover,
 .button:hover {
   background: var(--hover);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--field-line));
+  border-color: var(--accent);
 }
 
 button.primary,
@@ -332,6 +449,7 @@ button.primary,
 button.primary:hover,
 .button.primary:hover {
   background: var(--primary);
+  border-color: var(--primary);
   filter: brightness(1.08);
 }
 
@@ -343,6 +461,22 @@ button:disabled {
 button.danger {
   color: var(--bad);
   border-color: color-mix(in srgb, var(--bad) 40%, var(--field-line));
+}
+
+/* The one action that starts something new on a page: orange, and never more than one per view. */
+button.cta,
+.button.cta {
+  background: var(--cta);
+  border-color: var(--cta);
+  color: var(--cta-ink);
+  font-weight: 600;
+}
+
+button.cta:hover,
+.button.cta:hover {
+  background: var(--cta);
+  border-color: var(--cta);
+  filter: brightness(1.06);
 }
 
 .row {
@@ -393,7 +527,45 @@ input[type="text"] {
   background: var(--field);
   border: 1px solid var(--field-line);
   border-radius: var(--radius);
-  padding: 0.3em 0.5em;
+  padding: 0.4em 0.55em;
+  min-height: 2.25rem;
+}
+
+/* A select is drawn here rather than by the operating system, so it carries the same border, fill
+   and radius as the fields beside it. The chevron is an inline SVG, recoloured for dark mode. */
+select {
+  font: inherit;
+  color: inherit;
+  background-color: var(--field);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%235f5f6a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6em center;
+  background-size: 0.7em 0.5em;
+  border: 1px solid var(--field-line);
+  border-radius: var(--radius);
+  padding: 0.32em 1.9em 0.32em 0.55em;
+  min-height: 2rem;
+  line-height: 1.25;
+  appearance: none;
+  cursor: pointer;
+}
+
+select:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+option {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%23b2b2b2' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 dialog {
@@ -458,12 +630,14 @@ dialog::backdrop {
   cursor: help;
 }
 
-/* A warning that carries its explanation on hover rather than in the page. */
-.warn-icon {
+/* The storage state the page can promise is the persistent one; anything else says so in words,
+   with the full consequence on hover. */
+.strip .warn-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   color: var(--warn);
   cursor: help;
-  font-size: 0.95rem;
-  line-height: 1;
 }
 
 .banner {

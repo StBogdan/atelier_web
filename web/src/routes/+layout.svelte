@@ -4,6 +4,7 @@
   import { base } from "$app/paths";
   import { browser } from "$app/environment";
   import "../app.css";
+  import Icon from "$lib/Icon.svelte";
   import {
     capabilities,
     capabilitiesReady,
@@ -12,10 +13,12 @@
   import { bytes } from "$lib/format";
   import { editorFor, editorHref } from "$lib/editors";
   import { failure, refresh, storage, watch, workspaces } from "$lib/session";
+  import { startTheme, theme, toggleTheme } from "$lib/theme.svelte";
 
   let { children } = $props();
 
   onMount(() => {
+    startTheme();
     void loadCapabilities();
     void refresh();
     const stopWatching = watch();
@@ -48,10 +51,11 @@
   const browserOnly =
     "Stored in this browser: it may be cleared at any time, and nothing is copied off this machine unless you " +
     "put it in a bucket.\n" +
-    "A workspace you have not downloaded is a workspace you can lose.";
+    "If it is cleared, a workspace you never downloaded or uploaded is gone.";
 </script>
 
 {#if !embedded}
+  <a class="skip" href="#main">Skip to content</a>
   <header class="appbar">
     <a class="brand" href="{base}/">
       <svg
@@ -114,6 +118,16 @@
           >
         {/if}
       </span>
+      <button
+        class="theme-toggle"
+        onclick={toggleTheme}
+        aria-label="Switch to {theme.current === 'dark'
+          ? 'light'
+          : 'dark'} theme"
+        title="Switch to {theme.current === 'dark' ? 'light' : 'dark'} theme"
+      >
+        <Icon name={theme.current === "dark" ? "sun" : "moon"} size={16} />
+      </button>
       {#if latest && latestEditor}
         <a
           class="action"
@@ -134,7 +148,7 @@
           class="action"
           href="{base}/?new=1"
           title="Start a new workspace to open the editor in"
-          >In new workspace</a
+          >In a new workspace</a
         >
       {/if}
     </nav>
@@ -150,7 +164,9 @@
           >persistent</span
         >
       {:else}
-        <span class="warn-icon" title={browserOnly}>⚠</span>
+        <span class="warn-note" title={browserOnly}
+          ><Icon name="warn" size={13} /> may be cleared</span
+        >
       {/if}
       <span class="meter"
         ><span style="width: {(share * 100).toFixed(1)}%"></span></span
@@ -170,12 +186,12 @@
     </div>
   {/if}
 
-  <main class="shell">
+  <main class="shell" id="main">
     {#if $storage.supported === false}
       <p class="banner bad">
         This browser has no Origin Private File System, or storage is blocked (a
         private window, or storage disabled by policy). Atelier Cloud keeps the
-        cloudspace there, so it cannot work without it.
+        cloudspace in OPFS, so it cannot work without it.
       </p>
     {/if}
 

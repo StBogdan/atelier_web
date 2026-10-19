@@ -8,7 +8,17 @@
     name,
     size = 15,
   }: {
-    name: "upload" | "download" | "commit" | "edit" | "bucket";
+    name:
+      | "upload"
+      | "download"
+      | "commit"
+      | "edit"
+      | "bucket"
+      | "info"
+      | "warn"
+      | "discard"
+      | "moon"
+      | "sun";
     size?: number;
   } = $props();
 
@@ -33,6 +43,22 @@
     // status line, where a pail read as a bin.
     bucket: [
       "M6.8 18.8H18A4.4 4.4 0 0 0 17.4 10.4A6.2 6.2 0 0 0 6.9 9.6A4.5 4.5 0 0 0 6.8 18.8Z",
+    ],
+    info: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18", "M12 11v5", "M12 8h.01"],
+    warn: ["M12 4 2.8 20h18.4L12 4Z", "M12 10v4", "M12 17h.01"],
+    discard: ["M4 10a8 8 0 1 1 2 5.3", "M4 4v6h6"],
+    // The theme switch: the moon to go dark, the sun to come back.
+    moon: ["M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"],
+    sun: [
+      "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10",
+      "M12 2v2",
+      "M12 20v2",
+      "M4.9 4.9l1.4 1.4",
+      "M17.7 17.7l1.4 1.4",
+      "M2 12h2",
+      "M20 12h2",
+      "M4.9 19.1l1.4-1.4",
+      "M17.7 6.3l1.4-1.4",
     ],
   };
 </script>

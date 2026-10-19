@@ -500,14 +500,25 @@ export interface ReadDocument {
   objects: Map<string, number>;
 }
 
-/** The document plus its parsed object set, under the shared lock the editor's save respects. */
+/**
+ * The document plus its parsed object set, under the shared lock the editor's save respects.
+ *
+ * With none named, this is the workspace's recorded document, else the first one that can be
+ * recorded. A workspace may hold several files, and name order can put a PNG first; the recorded
+ * document is the one a commit and an upload both mean.
+ */
 export async function readDocument(
   space: Directory,
   project: string,
   document?: string,
 ): Promise<ReadDocument | null> {
   const dir = await projectDir(space, project);
-  const name = document ?? (await documentName(dir));
+  const name =
+    document ??
+    preferredDocument(
+      await documentNames(dir),
+      (await readJson<Meta>(dir, META_FILE))?.document ?? null,
+    );
   if (!name) return null;
   const bytes = await withLock(
     lockName(project),
@@ -718,7 +729,9 @@ export async function discard(
   const dir = await projectDir(space, project);
   const meta = await readJson<Meta>(dir, META_FILE);
   const outcome = await withLock(lockName(project), "exclusive", async () => {
-    const name = document ?? (await documentName(dir));
+    const name =
+      document ??
+      preferredDocument(await documentNames(dir), meta?.document ?? null);
     if (!name) throw new Error("this project has no document");
     const previous = await readBytes(dir, `${name}.prev`).catch(() => null);
     if (!previous) throw new Error("there are no previous bytes to restore");
@@ -763,9 +776,12 @@ export async function restoreDocument(
 ): Promise<void> {
   const dir = await projectDir(space, project);
   await withLock(lockName(project), "exclusive", async () => {
-    const name = document ?? (await documentName(dir)) ?? DEFAULT_DOCUMENT;
-    await writeBytes(dir, name, bytes);
     const meta = await readJson<Meta>(dir, META_FILE);
+    const name =
+      document ??
+      preferredDocument(await documentNames(dir), meta?.document ?? null) ??
+      DEFAULT_DOCUMENT;
+    await writeBytes(dir, name, bytes);
     // `document` and `size` are the provider's record of the slot; the editor only ever writes
     // the file. `dirty` is left to `inspect`, which derives it.
     if (meta)
@@ -778,22 +794,23 @@ export async function restoreDocument(
   await inspect(space, project);
 }
 
-/** The committed document's bytes, and the previous ones when there are any: the export path. */
+/** One document's bytes for the export path: the named one, or the workspace's recorded document. */
 export async function documentBytes(
   space: Directory,
   project: string,
-  previous = false,
   document?: string,
 ): Promise<{ name: string; bytes: Uint8Array } | null> {
   const dir = await projectDir(space, project);
-  const name = document ?? (await documentName(dir));
+  const name =
+    document ??
+    preferredDocument(
+      await documentNames(dir),
+      (await readJson<Meta>(dir, META_FILE))?.document ?? null,
+    );
   if (!name) return null;
-  const file = previous ? `${name}.prev` : name;
-  const bytes = await readBytes(dir, file).catch(() => null);
+  const bytes = await readBytes(dir, name).catch(() => null);
   if (!bytes) return null;
-  // A previous copy downloads under the name it had, one save back: `photo.psd` is `photo.prev.psd`.
-  const oneSaveBack = `${name.slice(0, name.length - extensionOf(name).length)}.prev${extensionOf(name)}`;
-  return { name: previous ? oneSaveBack : name, bytes };
+  return { name, bytes };
 }
 
 /** One document's name, bytes and timestamp, for the whole-workspace download. */

@@ -3,8 +3,35 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#2f6feb" />
+    <!-- The theme is settled before the first paint, from the stored choice or the system, so a dark
+         preference never flashes light on the way in. `lib/theme.svelte.ts` takes over from here. -->
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("atelier-cloud:theme");
+          const dark = stored
+            ? stored === "dark"
+            : matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+          if (dark) {
+            document
+              .querySelector('meta[name="theme-color"]')
+              .setAttribute("content", "#282828");
+          }
+        } catch {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
     <!-- Who publishes the app and which origin is canonical. It lives in the template so every
          generated page, including the client-rendered shell, carries it. Change the host here if the
          deployment moves. -->
