@@ -33,8 +33,9 @@
       })();
     </script>
     <!-- Who publishes the app and which origin is canonical. It lives in the template so every
-         generated page, including the client-rendered shell, carries it. Change the host here if the
-         deployment moves. -->
+         generated page, including the client-rendered shell, carries it. The landing page under
+         static/landing carries the same graph, and `lib/site.ts` names the origin for the canonical
+         links. Change the host in all three if the deployment moves. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -43,32 +44,43 @@
             "@type": "Organization",
             "@id": "https://ateliercloud.tech/#organization",
             "name": "Atelier Cloud",
-            "url": "https://ateliercloud.tech/"
+            "url": "https://ateliercloud.tech/",
+            "logo": "https://ateliercloud.tech/landing/favicon.svg",
+            "sameAs": ["https://github.com/StBogdan/atelier_web"]
           },
           {
             "@type": "WebSite",
             "@id": "https://ateliercloud.tech/#website",
             "name": "Atelier Cloud",
-            "url": "https://ateliercloud.tech/cloud/",
+            "url": "https://ateliercloud.tech/",
             "inLanguage": "en",
             "publisher": { "@id": "https://ateliercloud.tech/#organization" }
           },
           {
             "@type": "SoftwareApplication",
-            "@id": "https://ateliercloud.tech/cloud/#app",
+            "@id": "https://ateliercloud.tech/#app",
             "name": "Atelier Cloud",
+            "alternateName": ["PhotoCraft online", "Hosted PhotoCraft"],
             "url": "https://ateliercloud.tech/cloud/",
             "applicationCategory": "MultimediaApplication",
             "operatingSystem": "Any",
             "browserRequirements": "The Origin Private File System and WebAssembly",
-            "description": "A photo editor in the browser with a project library: open PSD, PSB and .pcraft documents, record revisions, and copy a document to your own S3-compatible bucket.",
-            "publisher": { "@id": "https://ateliercloud.tech/#organization" },
+            "description": "A hosted PhotoCraft and PdfCraft in the browser: open PSD, PSB and .pcraft documents, work on PDFs in PdfCraft, keep each project in a browser workspace, and send a document to your own S3-compatible bucket. Free while in alpha, with no account.",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "screenshot": "https://ateliercloud.tech/landing/workspaces.png",
             "featureList": [
               "Open PSD, PSB and .pcraft documents in PhotoCraft",
+              "Read, organise, combine and split PDFs in PdfCraft",
               "One workspace per project, kept in the browser",
-              "Revisions, with a diff against the last recorded version",
-              "Copy a document to your own S3-compatible bucket"
-            ]
+              "See a diff against the last saved copy",
+              "Send a document to your own S3-compatible bucket",
+              "No install, no account, free while in alpha"
+            ],
+            "publisher": { "@id": "https://ateliercloud.tech/#organization" }
           }
         ]
       }

@@ -4,6 +4,7 @@
   import { capabilities } from "$lib/capabilities";
   import { bytes, plural } from "$lib/format";
   import { ensureSpace } from "$lib/contract";
+  import { ORIGIN } from "$lib/site";
   import {
     directory,
     files,
@@ -74,6 +75,8 @@
 
 <svelte:head>
   <title>Settings | Atelier Cloud</title>
+  <link rel="canonical" href="{ORIGIN}/cloud/settings" />
+  <meta name="robots" content="noindex, follow" />
   <meta
     name="description"
     content="What the cloudspace in this browser uses, whether its storage is persistent, and what the files under it are."

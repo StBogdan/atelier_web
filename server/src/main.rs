@@ -227,11 +227,12 @@ async fn robots(headers: HeaderMap) -> impl IntoResponse {
     )
 }
 
-/// The two public pages. Settings is left out because it reports this browser's storage, which is
-/// nobody else's result to find.
+/// The two pages a crawler should index. The launcher and settings are `noindex`: they draw this
+/// browser's storage, which is nobody else's result to find, and their HTML says nothing useful
+/// before OPFS is read.
 async fn sitemap(headers: HeaderMap) -> impl IntoResponse {
     let origin = site(&headers);
-    let urls: String = ["/", "/cloud/", "/cloud/help"]
+    let urls: String = ["/", "/cloud/help"]
         .iter()
         .map(|path| format!("  <url><loc>{origin}{path}</loc></url>\n"))
         .collect();

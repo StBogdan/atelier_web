@@ -3,6 +3,7 @@
   import { browser } from "$app/environment";
   import { base } from "$app/paths";
   import { capabilities } from "$lib/capabilities";
+  import { ORIGIN } from "$lib/site";
 
   /**
    * Rendered into the policy below, so the snippet can be pasted as it stands. It starts as a
@@ -154,15 +155,16 @@
 </script>
 
 <svelte:head>
-  <title>Help | Atelier Cloud</title>
+  <title>PhotoCraft help: storage, buckets and upload errors</title>
+  <link rel="canonical" href="{ORIGIN}/cloud/help" />
   <meta
     name="description"
-    content="Where your work lives in the browser, what committing does, how to attach a bucket and set its CORS policy, and what each upload error means."
+    content="Where PhotoCraft keeps your work in the browser, what recording a version does, how to attach a bucket and set its CORS policy, and what each upload error means."
   />
   {@html `<script type="application/ld+json">${JSON.stringify(faqSchema).replace(/</g, "\\u003c")}</script>`}
 </svelte:head>
 
-<h1>Help</h1>
+<h1>PhotoCraft help</h1>
 <p class="intro">
   Where your work lives, how to send it to your own bucket, and what the upload
   errors mean.

@@ -8,6 +8,7 @@
   import Icon from "$lib/Icon.svelte";
   import BucketFields from "$lib/BucketFields.svelte";
   import Problem from "$lib/Problem.svelte";
+  import { ORIGIN } from "$lib/site";
   import { bytes, since } from "$lib/format";
   import {
     attachBucket,
@@ -441,6 +442,8 @@
 
 <svelte:head>
   <title>Workspaces | Atelier Cloud</title>
+  <link rel="canonical" href="{ORIGIN}/cloud/" />
+  <meta name="robots" content="noindex, follow" />
   <meta
     name="description"
     content="Open PSD, PSB and .pcraft files in PhotoCraft, an open-source photo editor that runs in the browser. Each workspace keeps its own document and revisions, and can upload to a bucket you own."

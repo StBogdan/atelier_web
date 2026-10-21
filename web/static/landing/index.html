@@ -4,10 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <title>Photo and PDF editor in your browser | Atelier Cloud</title>
+    <title>PhotoCraft online, free: a Photoshop alternative in your browser</title>
     <meta
       name="description"
-      content="Open PSD, PSB and PDF files in the open-source PhotoCraft and PdfCraft editors. Every project gets a workspace in your browser, with storage you own. Free while in alpha."
+      content="PhotoCraft online and free: open PSD, PSB and .pcraft files in your browser, or work on PDFs in PdfCraft. No install, no account, no upload to our servers."
     />
     <link rel="canonical" href="https://ateliercloud.tech/" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -24,11 +24,11 @@
     <meta property="og:url" content="https://ateliercloud.tech/" />
     <meta
       property="og:title"
-      content="Photo and PDF editor in your browser | Atelier Cloud"
+      content="PhotoCraft online, free: a Photoshop alternative in your browser"
     />
     <meta
       property="og:description"
-      content="Open PSD, PSB and PDF files in open-source PhotoCraft and PdfCraft. Each project keeps a workspace in your browser."
+      content="A hosted PhotoCraft and PdfCraft: open PSD, PSB and PDF files without installing anything, and keep each project in a workspace your browser holds."
     />
     <meta
       property="og:image"
@@ -44,11 +44,11 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta
       name="twitter:title"
-      content="Photo and PDF editor in your browser | Atelier Cloud"
+      content="PhotoCraft online, free: a Photoshop alternative in your browser"
     />
     <meta
       name="twitter:description"
-      content="Open PSD, PSB and PDF files in open-source PhotoCraft and PdfCraft. Each project keeps a workspace in your browser."
+      content="A hosted PhotoCraft and PdfCraft: open PSD, PSB and PDF files without installing anything, and keep each project in a workspace your browser holds."
     />
     <meta
       name="twitter:image"
@@ -62,7 +62,9 @@
             "@type": "Organization",
             "@id": "https://ateliercloud.tech/#organization",
             "name": "Atelier Cloud",
-            "url": "https://ateliercloud.tech/"
+            "url": "https://ateliercloud.tech/",
+            "logo": "https://ateliercloud.tech/landing/favicon.svg",
+            "sameAs": ["https://github.com/StBogdan/atelier_web"]
           },
           {
             "@type": "WebSite",
@@ -76,11 +78,12 @@
             "@type": "SoftwareApplication",
             "@id": "https://ateliercloud.tech/#app",
             "name": "Atelier Cloud",
+            "alternateName": ["PhotoCraft online", "Hosted PhotoCraft"],
             "url": "https://ateliercloud.tech/cloud/",
             "applicationCategory": "MultimediaApplication",
             "operatingSystem": "Any",
             "browserRequirements": "The Origin Private File System and WebAssembly",
-            "description": "A photo editor and a PDF workbench in the browser with a project library: open PSD, PSB and .pcraft documents in PhotoCraft, work on PDFs in PdfCraft, keep your work in the browser, and send a document to your own S3-compatible bucket.",
+            "description": "A hosted PhotoCraft and PdfCraft in the browser: open PSD, PSB and .pcraft documents, work on PDFs in PdfCraft, keep each project in a browser workspace, and send a document to your own S3-compatible bucket. Free while in alpha, with no account.",
             "offers": {
               "@type": "Offer",
               "price": "0",
@@ -92,9 +95,56 @@
               "Read, organise, combine and split PDFs in PdfCraft",
               "One workspace per project, kept in the browser",
               "See a diff against the last saved copy",
-              "Send a document to your own S3-compatible bucket"
+              "Send a document to your own S3-compatible bucket",
+              "No install, no account, free while in alpha"
             ],
             "publisher": { "@id": "https://ateliercloud.tech/#organization" }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://ateliercloud.tech/#questions",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Is PhotoCraft free to use online?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. PhotoCraft and PdfCraft are open source, and Atelier Cloud is free while it is in alpha. There is no account and no trial to expire."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can I open PSD files in the browser without Photoshop?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. PhotoCraft opens layered PSD and PSB documents and saves them back, keeping layers, groups and masks. It is a young editor, and its authors describe it as not yet a replacement for daily professional Photoshop work."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Do I have to install anything?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. Both editors run in a browser tab. Atelier Cloud needs a browser with the Origin Private File System and WebAssembly, which current Chrome, Edge, Firefox and Safari have."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Where are my files stored?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Each project is a workspace in this browser's own storage, so it survives a reload. A document leaves the machine only when you upload it to a bucket you configured, and the server that serves this page never receives one."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does it work for PDFs too?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. PdfCraft reads, searches, rearranges, combines, splits and annotates PDFs, fills in forms, adds a password, and saves the result into the same workspace."
+                }
+              }
+            ]
           }
         ]
       }
@@ -719,6 +769,51 @@
         color: var(--faint);
       }
 
+      /* Questions */
+      .faq {
+        max-width: 46rem;
+        margin-top: 2.4rem;
+        border-top: 1px solid var(--rule);
+      }
+
+      .faq details {
+        border-bottom: 1px solid var(--rule);
+      }
+
+      .faq summary {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.05rem 0;
+        cursor: pointer;
+        font-weight: 560;
+        list-style: none;
+      }
+
+      .faq summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .faq summary::after {
+        content: "+";
+        color: var(--faint);
+        font-size: 1.2rem;
+        line-height: 1;
+      }
+
+      .faq details[open] summary::after {
+        content: "\2212";
+      }
+
+      .faq p {
+        margin: 0 0 1.2rem;
+        max-width: 42rem;
+        color: var(--dim);
+        font-size: 0.96rem;
+        line-height: 1.65;
+      }
+
       /* Note */
       .note {
         display: flex;
@@ -1020,6 +1115,7 @@
           <a href="#editors">Editors</a>
           <a href="#how">How it works</a>
           <a href="#files">Where files go</a>
+          <a href="#questions">Questions</a>
           <a
             class="gh"
             href="https://github.com/StBogdan/atelier_web"
@@ -1047,12 +1143,14 @@
       <section class="hero">
         <div class="wrap">
           <div>
-            <p class="eyebrow">PhotoCraft and PdfCraft in the browser</p>
-            <h1>Open-source photo and PDF editors, with a workspace in your browser.</h1>
+            <p class="eyebrow">Hosted PhotoCraft and PdfCraft</p>
+            <h1>PhotoCraft online, free: edit Photoshop files in your browser.</h1>
             <p class="lede">
-              Atelier Cloud serves both editors from one web address. Each
-              project gets a workspace that lives in this browser, next to the
-              copies you saved and the bucket you send documents to.
+              Atelier Cloud hosts the open-source PhotoCraft and PdfCraft
+              editors at one web address. Open a PSD, PSB or PDF without
+              installing anything, and keep each project in a workspace this
+              browser holds, next to the copies you saved and the bucket you
+              send documents to.
             </p>
             <div class="actions">
               <a class="button primary" href="/cloud/">
@@ -1074,7 +1172,8 @@
               <a class="button ghost" href="#how">See how it works</a>
             </div>
             <p class="fineprint">
-              Nothing to install and no account to create. Free while it is alpha.
+              Nothing to install, no account to create, and no document reaches
+              our server. Free while it is alpha.
             </p>
           </div>
 
@@ -1391,6 +1490,62 @@
         </div>
       </section>
 
+      <section id="questions">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>Common questions</h2>
+            <p>What people ask before opening a first workspace.</p>
+          </div>
+
+          <div class="faq">
+            <details>
+              <summary>Is PhotoCraft free to use online?</summary>
+              <p>
+                Yes. PhotoCraft and PdfCraft are open source, and Atelier Cloud
+                is free while it is in alpha. There is no account and no trial
+                to expire.
+              </p>
+            </details>
+            <details>
+              <summary>
+                Can I open PSD files in the browser without Photoshop?
+              </summary>
+              <p>
+                Yes. PhotoCraft opens layered PSD and PSB documents and saves
+                them back, keeping layers, groups and masks. It is a young
+                editor, and its authors describe it as not yet a replacement for
+                daily professional Photoshop work.
+              </p>
+            </details>
+            <details>
+              <summary>Do I have to install anything?</summary>
+              <p>
+                No. Both editors run in a browser tab. Atelier Cloud needs a
+                browser with the Origin Private File System and WebAssembly,
+                which current Chrome, Edge, Firefox and Safari have.
+              </p>
+            </details>
+            <details>
+              <summary>Where are my files stored?</summary>
+              <p>
+                Each project is a workspace in this browser's own storage, so it
+                survives a reload. A document leaves the machine only when you
+                upload it to a bucket you configured, and the server that serves
+                this page never receives one.
+              </p>
+            </details>
+            <details>
+              <summary>Does it work for PDFs too?</summary>
+              <p>
+                Yes. PdfCraft reads, searches, rearranges, combines, splits and
+                annotates PDFs, fills in forms, adds a password, and saves the
+                result into the same workspace.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
       <section class="closing">
         <div class="wrap">
           <div class="panel-dark">
@@ -1465,7 +1620,7 @@
       <nav aria-label="Elsewhere">
         <a href="/cloud/">Workspaces</a>
         <a href="/cloud/help">Help</a>
-        <a href="/photocraft/">PhotoCraft</a>
+        <a href="/#editors">PhotoCraft</a>
         <a href="https://github.com/StBogdan/atelier_web">Source</a>
         <a
           class="report"
