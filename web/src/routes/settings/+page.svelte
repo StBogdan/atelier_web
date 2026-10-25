@@ -15,6 +15,7 @@
     type Directory,
   } from "$lib/opfs";
   import { refresh, storage, workspaces } from "$lib/session";
+  import { loadVersion, shortCommit, type BuildVersion } from "$lib/version";
 
   interface Entry {
     name: string;
@@ -26,6 +27,7 @@
   let tree = $state<Entry[]>([]);
   let busy = $state(false);
   let problem = $state<string | null>(null);
+  let build = $state<BuildVersion | null>(null);
 
   async function children(dir: Directory): Promise<Entry[]> {
     const entries: Entry[] = [];
@@ -56,7 +58,10 @@
     }
   }
 
-  onMount(() => void inspect());
+  onMount(() => {
+    void inspect();
+    void loadVersion().then((loaded) => (build = loaded));
+  });
 
   /** `tmp/` is the only thing here that is safe to drop: transient staging from a killed tab. */
   async function clearStaging() {
@@ -163,6 +168,30 @@
         >Clear <code>tmp/</code> staging</button
       >
     </div>
+  </section>
+
+  <section class="panel">
+    <h2>Build</h2>
+    <dl>
+      <dt>Commit</dt>
+      <dd class="mono">{shortCommit(build?.commit)}</dd>
+      {#each build?.editors ?? [] as editor (editor.id)}
+        <dt>{editor.title}</dt>
+        <dd>
+          {#if !editor.hosted}
+            not hosted
+          {:else if editor.version}
+            {editor.version}
+            <span class="muted">({shortCommit(editor.commit)})</span>
+          {:else}
+            unknown
+          {/if}
+        </dd>
+      {/each}
+    </dl>
+    <p class="muted small">
+      Each editor's version is the one its own build published.
+    </p>
   </section>
 </div>
 

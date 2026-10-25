@@ -1,5 +1,5 @@
 diff --git a/apps/photocraft-web/Cargo.toml b/apps/photocraft-web/Cargo.toml
-index 4ecad80a..a09de39a 100644
+index 4ecad80ae..a09de39a5 100644
 --- a/apps/photocraft-web/Cargo.toml
 +++ b/apps/photocraft-web/Cargo.toml
 @@ -34,7 +34,7 @@ rfd = { workspace = true }
@@ -13,7 +13,7 @@ index 4ecad80a..a09de39a 100644
  serde_json = { workspace = true }
 diff --git a/apps/photocraft-web/src/atelier_cloud.rs b/apps/photocraft-web/src/atelier_cloud.rs
 new file mode 100644
-index 00000000..ea1105f2
+index 000000000..ea1105f26
 --- /dev/null
 +++ b/apps/photocraft-web/src/atelier_cloud.rs
 @@ -0,0 +1,631 @@
@@ -649,7 +649,7 @@ index 00000000..ea1105f2
 +    }
 +}
 diff --git a/apps/photocraft-web/src/main.rs b/apps/photocraft-web/src/main.rs
-index 0802a02e..82963ee3 100644
+index 0802a02eb..82963ee3a 100644
 --- a/apps/photocraft-web/src/main.rs
 +++ b/apps/photocraft-web/src/main.rs
 @@ -19,6 +19,9 @@
@@ -663,7 +663,7 @@ index 0802a02e..82963ee3 100644
  mod indexed_presets;
  
 diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
-index 6fd36204..b8eb970b 100644
+index fc1761290..d3cd3a7d3 100644
 --- a/apps/photocraft-web/src/web.rs
 +++ b/apps/photocraft-web/src/web.rs
 @@ -14,7 +14,7 @@ use photocraft_ui_egui::theme::ThemeKind;
@@ -674,8 +674,8 @@ index 6fd36204..b8eb970b 100644
 +type Inbox = Arc<Mutex<Vec<(String, Vec<u8>, Option<String>)>>>;
  
  /// Everything File › Open reads: PhotoCraft, Photoshop, OpenRaster, Krita and Affinity documents, flat images, and
- /// Photoshop brushes (.abr), gradients (.grd) and swatches (.aco, .ase), which go to the preset libraries.
-@@ -339,7 +339,7 @@ impl eframe::App for WebShell {
+ /// Photoshop brushes (.abr), gradients (.grd) and swatches (.aco, .act, .ase), which go to the preset libraries.
+@@ -346,7 +346,7 @@ impl eframe::App for WebShell {
                      match f.bytes_async().await {
                          Ok(bytes) => {
                              let queue = if place { &place_inbox } else { &inbox };
@@ -684,7 +684,7 @@ index 6fd36204..b8eb970b 100644
                              ctx.request_repaint();
                          }
                          Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
-@@ -390,50 +390,87 @@ fn services(inbox: Inbox, place_inbox: Inbox, cursor_pos: photocraft_ui_egui::Cu
+@@ -397,52 +397,91 @@ fn services(inbox: Inbox, place_inbox: Inbox, cursor_pos: photocraft_ui_egui::Cu
          export: Some(Box::new(|doc: &Document, path: &str, settings: &photocraft_ui_egui::ExportSettings| {
              photocraft_io::export(doc, path, &settings.io_options()).map(|r| (r.bytes, r.warnings)).map_err(|e| e.to_string())
          })),
@@ -784,12 +784,17 @@ index 6fd36204..b8eb970b 100644
              }
          })),
 -        write: Some(Box::new(|path: &str, bytes: &[u8]| download(path, bytes))),
+-        // A download may be cancelled and never reports back: it doesn't save the document.
 +        // A save to an `atelier-cloud://` path writes into the project it names; anything else is
 +        // a download, exactly as before (design, Saving).
 +        write: Some(Box::new(|path: &str, bytes: &[u8]| match crate::atelier_cloud::target(path) {
 +            Some((project, document)) => crate::atelier_cloud::write(&project, &document, bytes),
 +            None => download(path, bytes),
 +        })),
++        // A download may be cancelled and never reports back: it doesn't save the document. A
++        // project save is recorded by the page that owns the store, so the path decides.
+         write_unconfirmed: true,
++        write_confirmed: Some(Box::new(|path: &str| crate::atelier_cloud::target(path).is_some())),
          encode_png: Some(Box::new(|w, h, rgba| {
              let img = Image::from_u8(w, h, ChannelLayout::Rgba, rgba.to_vec()).map_err(|e| e.to_string())?;
              photocraft_codecs::encode(&img, photocraft_codecs::Format::Png, &EncodeOptions::default()).map_err(|e| e.to_string())
@@ -806,13 +811,13 @@ index 6fd36204..b8eb970b 100644
          load_prefs: Some(Box::new(|| local_storage()?.get_item(PREFS_KEY).ok().flatten())),
          save_prefs: Some(Box::new(|text: &str| local_storage().ok_or("no localStorage")?.set_item(PREFS_KEY, text).map_err(|e| format!("{e:?}")))),
 diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
-index 5adfd788..325c48e0 100644
+index 6ea5992d4..14581ae5f 100644
 --- a/crates/ui-egui/src/lib.rs
 +++ b/crates/ui-egui/src/lib.rs
-@@ -395,8 +395,9 @@ pub type EncodePngFn = Box<dyn Fn(u32, u32, &[u8]) -> Result<Vec<u8>, String>>;
- pub type ClipboardSetFn = Box<dyn FnMut(u32, u32, &[u8]) -> Result<(), String>>;
- /// Read an RGBA8 image from the OS clipboard.
- pub type ClipboardGetFn = Box<dyn FnMut() -> Option<(u32, u32, Vec<u8>)>>;
+@@ -501,8 +501,9 @@ pub type ClipboardSetFn = Box<dyn FnMut(u32, u32, &[u8]) -> Result<(), String>>;
+ pub type ClipboardGetFn = Box<dyn FnMut() -> Result<Option<(u32, u32, Vec<u8>)>, String>>;
+ /// Whether the last clipboard read found no way to reach the OS clipboard at all.
+ pub type ClipboardUnreadableFn = Box<dyn Fn() -> bool>;
 -/// Shared queue of (file name, bytes) delivered asynchronously.
 -pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
 +/// Shared queue of (file name, bytes, the path they were read from) delivered asynchronously. The
@@ -821,9 +826,9 @@ index 5adfd788..325c48e0 100644
  /// Read the saved preferences text (`None` when there is none yet).
  pub type LoadTextFn = Box<dyn FnMut() -> Option<String>>;
  /// Persist the preferences text.
-@@ -445,6 +446,56 @@ pub type WindowFrameFn = Box<dyn FnMut()>;
- /// The caption buttons' current style ([`Services::caption_style`]).
- pub type CaptionStyleFn = Box<dyn Fn(&egui::Context) -> CaptionStyle>;
+@@ -553,6 +554,56 @@ pub type CaptionStyleFn = Box<dyn Fn(&egui::Context) -> CaptionStyle>;
+ /// Physical right mouse button or stylus barrel button down (Windows; read for brush resize).
+ pub type RightButtonDownFn = Box<dyn Fn() -> bool + Send + Sync>;
  
 +/// The store's listing, read every frame the open window is up ([`WorkspaceOpen`]).
 +pub type WorkspaceListingFn = Box<dyn Fn() -> WorkspaceListing>;
@@ -878,7 +883,17 @@ index 5adfd788..325c48e0 100644
  /// Platform services injected by the app binary (file dialogs, codecs), keeping this crate free of
  /// I/O dependencies.
  #[derive(Default)]
-@@ -482,6 +533,13 @@ pub struct Services {
+@@ -582,6 +633,9 @@ pub struct Services {
+     /// cancel and which reports nothing back), so a save through it names the document but
+     /// leaves its changes unsaved and the leave-page guard armed (#4962).
+     pub write_unconfirmed: bool,
++    /// A path whose write is confirmed even when [`Self::write_unconfirmed`] is set, because the
++    /// store behind it answers before the write returns (the web shell's project saves).
++    pub write_confirmed: Option<Box<dyn Fn(&str) -> bool>>,
+     /// Encode and write in one step on a worker thread, so a large save doesn't freeze the
+     /// window (#2017). With background jobs on, saves use it instead of `export` and `write`.
+     pub save_file: Option<SaveFileFn>,
+@@ -599,6 +653,13 @@ pub struct Services {
      pub encode_png: Option<EncodePngFn>,
      /// Open a URL in the system browser (native). Falls back to `ctx.open_url` (web) when unset.
      pub open_url: Option<OpenUrlFn>,
@@ -892,7 +907,7 @@ index 5adfd788..325c48e0 100644
      /// Preferences ▸ General ▸ Beep When Done: the platform's default beep, played when a
      /// background job finishes successfully. `None` in the web build (and in tests).
      pub beep: Option<fn()>,
-@@ -599,6 +657,9 @@ pub struct PhotocraftApp {
+@@ -725,6 +786,9 @@ pub struct PhotocraftApp {
      pub(crate) remove_trail: Option<stroke_trail::Trail>,
      /// The open menus' items, reused between frames (`menus::ItemCache`).
      pub(crate) menu_cache: Option<menus::ItemCache>,
@@ -902,15 +917,25 @@ index 5adfd788..325c48e0 100644
      /// Move tool drag shown live (`move_ui`).
      pub(crate) move_preview: Option<move_ui::MovePreview>,
      /// Move tool › Show Highlight on Rollover: the last hover answer (`move_hover`).
-@@ -864,6 +925,7 @@ impl PhotocraftApp {
-             remove_pending_doc: None,
+@@ -1029,6 +1093,7 @@ impl PhotocraftApp {
+             remove_pending_target: None,
              remove_trail: None,
              menu_cache: None,
 +            workspace_ui: WorkspaceUi::default(),
              move_preview: None,
              move_hover: None,
-             object_finder: None,
-@@ -1916,17 +1978,17 @@ impl eframe::App for PhotocraftApp {
+             move_distance: None,
+@@ -1945,7 +2010,8 @@ impl PhotocraftApp {
+         let (bytes, warnings) = export(&st.doc, &path, settings)?;
+         let write = self.services.write.as_mut().ok_or("no writer configured")?;
+         write(&path, &bytes)?;
+-        let revision = saved_revision_after_write(!self.services.write_unconfirmed, written, previous);
++        let confirmed = !self.services.write_unconfirmed || self.services.write_confirmed.as_ref().is_some_and(|confirmed| confirmed(&path));
++        let revision = saved_revision_after_write(confirmed, written, previous);
+         self.saved(doc, revision, &path, &warnings, copy);
+         Ok(Some((path, warnings)))
+     }
+@@ -2300,17 +2366,17 @@ impl eframe::App for PhotocraftApp {
              filter_preview_worker::discard_closed(self);
              shortcuts::handle(self, ctx);
          }
@@ -933,19 +958,19 @@ index 5adfd788..325c48e0 100644
          // Finder double-click / Open With / Dock drops (macOS open-documents events).
          self.drain_os_events(ctx);
          // While files are dragged over the window it gets no pointer events: keep frames coming so
-@@ -2055,6 +2117,7 @@ impl eframe::App for PhotocraftApp {
+@@ -2451,6 +2517,7 @@ impl eframe::App for PhotocraftApp {
          analysis_ui::windows(self, &ctx);
          timeline_ui::windows(self, &ctx);
          workspace_ui::windows(self, &ctx);
 +        panels::workspace_window(self, &ctx);
          palette::show(self, &ctx);
          dialogs::show(self, &ctx);
-         rasterize_prompt::run_pending(self, &ctx);
+         layers_panel_ui::show_dialog(self, &ctx);
 diff --git a/crates/ui-egui/src/menus.rs b/crates/ui-egui/src/menus.rs
-index 074d87a8..d7e84086 100644
+index 57b15fb8a..9e6fa89cd 100644
 --- a/crates/ui-egui/src/menus.rs
 +++ b/crates/ui-egui/src/menus.rs
-@@ -222,6 +222,15 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
+@@ -228,6 +228,15 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
          "file.import.videoFramesToLayers" if params.get("path").and_then(Value::as_str).is_none() => {
              app.ask_folder(|app, path| app.run("file.import.videoFramesToLayers", json!({"path": path})).map_err(|e| e.to_string()))
          }
@@ -961,7 +986,7 @@ index 074d87a8..d7e84086 100644
          "file.save" => {
              // Writes back only to a layered file that holds the whole document; anything else
              // goes through Save As, so the original is never overwritten with less (#3806).
-@@ -1084,6 +1093,18 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
+@@ -1129,6 +1138,18 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
          item.label = "Release Clipping Mask".into();
          item.enabled = is_enabled(app, &item.id);
      }
@@ -981,19 +1006,19 @@ index 074d87a8..d7e84086 100644
  }
  
 diff --git a/crates/ui-egui/src/panels.rs b/crates/ui-egui/src/panels.rs
-index 6fc8e2d8..28ad898e 100644
+index b31666925..ce106025a 100644
 --- a/crates/ui-egui/src/panels.rs
 +++ b/crates/ui-egui/src/panels.rs
-@@ -8,7 +8,7 @@ use serde_json::{Value, json};
+@@ -9,7 +9,7 @@ use serde_json::{Value, json};
  use crate::mask_thumbs_ui::MaskKind;
- use crate::state::Tool;
+ use crate::state::{ColorPanelSliderMode, Tool};
  use crate::theme::{self, Tokens};
 -use crate::{PhotocraftApp, icons, widgets};
 +use crate::{PhotocraftApp, WorkspaceListing, icons, widgets};
  
  // ----------------------------------------------------------------------------- toolbar
  
-@@ -686,6 +686,22 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+@@ -706,6 +706,22 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                          }
                          button.context_menu(|ui| crate::prefs_ui::appearance_context_menu(app, ui));
                      }
@@ -1016,7 +1041,7 @@ index 6fc8e2d8..28ad898e 100644
                      if rtl { ui.min_rect().right() } else { ui.min_rect().left() }
                  };
                  free = if rtl { (controls_end, menus_end) } else { (menus_end, controls_end) };
-@@ -745,6 +761,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
+@@ -769,6 +785,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
  
  /// Minimum space kept between the window title and the menus or controls beside it.
  const TITLE_GAP: f32 = 16.0;
@@ -1025,7 +1050,7 @@ index 6fc8e2d8..28ad898e 100644
  /// The workspace switcher's narrowest width, and one 28 pt title-bar icon with its spacing.
  const WORKSPACE_MIN: f32 = 90.0;
  const ICON_SLOT: f32 = 34.0;
-@@ -6387,6 +6405,103 @@ mod properties_target_regressions {
+@@ -7361,6 +7379,103 @@ mod properties_target_regressions {
      }
  }
  
@@ -1127,5 +1152,5 @@ index 6fc8e2d8..28ad898e 100644
 +}
 +
  #[cfg(test)]
- #[path = "history_panel_select_tests.rs"]
- mod history_panel_select_tests;
+ mod navigator_animated_zoom_tests {
+     use super::*;

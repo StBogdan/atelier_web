@@ -9,7 +9,7 @@ browser's own storage, and the documents you care about go to a bucket that is y
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 [![Server: Rust + axum](https://img.shields.io/badge/server-Rust%20%2B%20axum-dea584?logo=rust&logoColor=white)](server)
 [![App: SvelteKit 2](https://img.shields.io/badge/app-SvelteKit%202-ff3e00?logo=svelte&logoColor=white)](web)
-[![Editor: PhotoCraft v0.10.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.10.0-4b5563)](https://github.com/storytold/photocraft)
+[![Editor: PhotoCraft v0.14.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.14.0-4b5563)](https://github.com/storytold/photocraft)
 
 <img src="docs/workspaces.png" alt="The Atelier Cloud workspace grid, with six workspaces and their document, commit state and actions" width="880">
 
@@ -156,12 +156,13 @@ attached with the user's own credential ([Buckets](#buckets)).
 | <http://127.0.0.1:3000/> | the public landing page: the product in one static page, no workspace needed |
 | <http://127.0.0.1:3000/cloud/> | Atelier Cloud: the workspace grid and storage health |
 | <http://127.0.0.1:3000/cloud/workspace/&lt;id&gt; | one workspace: Changes, commit, download, discard, and the bucket |
-| <http://127.0.0.1:3000/cloud/settings> | storage, persistence, and what the cloudspace holds |
+| <http://127.0.0.1:3000/cloud/settings> | storage, persistence, what the cloudspace holds, and the build: its commit and each editor's version |
 | <http://127.0.0.1:3000/cloud/help> | where the work lives, then FAQ and troubleshooting: bucket setup, CORS, and the errors that read like credentials |
 | <http://127.0.0.1:3000/photocraft/> | PhotoCraft; launched into a workspace, its title bar links back to it |
 | <http://127.0.0.1:3000/pdfcraft/> | PdfCraft; the workspace page frames it through the bridge |
 | <http://127.0.0.1:3000/cloud/workspace/&lt;id&gt;/edit/pdfcraft> | the full-viewport cloud page around PdfCraft: back link, Documents toggle, save state |
 | <http://127.0.0.1:3000/api/health> | `{"service":"atelier-web","status":"ok","hello":"world"}` |
+| <http://127.0.0.1:3000/api/version> | the commit this build came from, and the version each hosted editor reports |
 
 `/cloud/`, `/cloud/settings` and `/cloud/help` are prerendered at build time, so the HTML a client
 receives already holds the page: its title, description, headings and copy. A workspace id is not known
@@ -230,11 +231,15 @@ apps are reached through, on one port. It is the reason they share an origin —
 it holds no credential of any kind. It serves:
 
 - `/api/health` — the hello-world JSON endpoint.
+- `/api/version` — the build's commit, and a version per editor. Each editor host is asked for the
+  `/version.json` its build wrote beside its assets, so a build that published none shows as unknown.
 - `/cloud/…` — the built SvelteKit app: the prerendered launcher, settings and help, and `200.html` for
   `/cloud/workspace/<id>`. Any other path is a 404, so an invented URL is not an indexable copy of the app.
   Hashed files under `_app/` are cached for a year; everything else revalidates.
 - `/robots.txt` and `/sitemap.xml` — built from the request's own `Host`, so a second deployment advertises
   itself. Workspaces are disallowed and settings is left out of the sitemap.
+- `/BingSiteAuth.xml` — the file Bing Webmaster Tools asks for to verify the site. It lives in
+  [`web/static/`](web/static) so every deployment carries it.
 - `/photocraft/…` — reverse-proxied to `PHOTOCRAFT_UPSTREAM`, so the editor is on our origin. The prefix is
   stripped before the request goes upstream, so the editor is served from that server's root.
 - `/pdfcraft/…` — the same, to `PDFCRAFT_UPSTREAM`. A deployment without it answers 404 there.
@@ -243,6 +248,11 @@ it holds no credential of any kind. It serves:
 
 Requests and responses are forwarded with hop-by-hop headers stripped and `Host` re-derived, so the editor's
 `application/wasm` MIME type and its precompressed gzip assets keep working untouched.
+
+An editor build publishes its provenance as `version.json` beside its assets (`{"version":"0.14.0",
+"commit":"ff47388…"}`), which is what `/api/version` reads through the proxy. The outer
+[`../run.sh`](../run.sh) writes it for both editors it builds; an editor started some other way has no file,
+and Settings ▸ Build says unknown rather than guessing.
 
 The cloud app talks to OPFS, to this origin's own files, and — only when asked — to the bucket.
 [`../docs/atelier_design.md`](../docs/atelier_design.md) has the detail: what lives where, which side writes
@@ -266,6 +276,7 @@ the Changes panel exact.
 | `PHOTOCRAFT_UPSTREAM` | `http://127.0.0.1:8080` | Where PhotoCraft is served from. |
 | `PDFCRAFT_UPSTREAM` | unset | Where PdfCraft is served from. Unset means `/pdfcraft/` answers 404. |
 | `ATELIER_WEB_DIR` | `web/build` | Directory served at `/cloud/`. |
+| `ATELIER_BUILD_COMMIT` | unset | The commit Settings ▸ Build reports. Read when the binary is compiled and at run time; unset shows unknown. `run.sh` and `deploy.sh` set it. |
 | `ATELIER_PROFILE` | `standalone` | `standalone`, or `hosted` to put a service behind identity and storage. `self-hosted` is accepted for the first. |
 | `ATELIER_CENTRAL_URL` | — | That service's public base URL. Required by `hosted`, ignored otherwise. |
 
@@ -309,7 +320,7 @@ web at it:
 
 ```sh
 cd ../photocraft
-git worktree add --detach /tmp/photocraft-hook 8407d9ccb125af52944fca9d228383459f94aaef
+git worktree add --detach /tmp/photocraft-hook ff4738810134d7f7e68b49f2e4f231b686282ff3
 cd ../atelier_web
 CARGO_TARGET_DIR=../photocraft/target PHOTOCRAFT_DIR=/tmp/photocraft-hook ./hook/apply.sh build
 cd /tmp/photocraft-hook/dist/web && python3 -m http.server 8765

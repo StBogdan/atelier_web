@@ -14,7 +14,7 @@
 //! fails silently. Always use this one (design, [The One-Origin Development Setup](../../../docs/atelier_web_design.md),
 //! "Invariant: always open the front port").
 
-use std::{env, net::IpAddr, net::SocketAddr, path::PathBuf};
+use std::{env, net::IpAddr, net::SocketAddr, path::PathBuf, time::Duration};
 
 use axum::{
     body::to_bytes,
@@ -38,6 +38,16 @@ use profile::Deployment;
 /// Requests are proxied whole; the editor's wasm is ~26 MB, so this is generous but bounded.
 const MAX_BODY: usize = 512 << 20;
 
+/// An editor this deployment hosts, and where it is served.
+#[derive(Clone)]
+struct Editor {
+    id: &'static str,
+    title: &'static str,
+    /// Where it is served, without a trailing slash. `None` when this deployment ships none, which is
+    /// a different answer from an editor that is hosted but published no version.
+    upstream: Option<String>,
+}
+
 #[derive(Clone)]
 struct App {
     /// Where PhotoCraft lives, without a trailing slash, e.g. `http://127.0.0.1:8080`.
@@ -47,6 +57,8 @@ struct App {
     /// The marketing page at `/`, read once at boot. `None` when the build did not produce it, and
     /// `/` then falls back to the cloud app.
     landing: Option<Vec<u8>>,
+    /// The editors this deployment hosts, which `/api/version` reports.
+    editors: Vec<Editor>,
     http: reqwest::Client,
     /// Which edition this is, and the two answers that follow from it.
     deployment: Deployment,
@@ -89,10 +101,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let deployment = deployment_or_exit();
 
+    let editors = vec![
+        Editor { id: "photocraft", title: "PhotoCraft", upstream: Some(upstream.clone()) },
+        Editor { id: "pdfcraft", title: "PdfCraft", upstream: pdfcraft_upstream.clone() },
+    ];
+
     let app = App {
         photocraft: upstream.clone(),
         pdfcraft: pdfcraft_upstream.clone(),
         landing,
+        editors,
         http: reqwest::Client::new(),
         deployment: deployment.clone(),
     };
@@ -102,10 +120,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // What this deployment can do, which is the whole of how the cloud app tells the two
         // editions apart. See `profile.rs`.
         .route("/api/capabilities", get(capabilities))
+        // This build and the editors it hosts: the settings page draws it as the Build panel.
+        .route("/api/version", get(version))
         // Crawlers ask the origin, and the editor has no answer: it is an app shell with nothing to
         // index. Both files name the request's own host, so a second deployment advertises itself.
         .route("/robots.txt", get(robots))
         .route("/sitemap.xml", get(sitemap))
+        // Bing asks for its verification file at the site root, which is otherwise the landing page.
+        // The file is content rather than a route: `web/static/` is copied into the served directory.
+        .route_service("/BingSiteAuth.xml", ServeFile::new(web_dir.join("BingSiteAuth.xml")))
         // `/cloud` without the trailing slash would otherwise 404: point it at the directory.
         .route("/cloud", get(|| async { axum::response::Redirect::permanent("/cloud/") }))
         // The prerendered pages are written as `help.html` and `settings.html`, which the directory
@@ -203,7 +226,7 @@ fn print_banner(addr: SocketAddr, web_dir: &std::path::Path, upstream: &str, pdf
         Some(pdfcraft) => println!("    /pdfcraft/     PdfCraft (proxy → {pdfcraft})"),
         None => println!("    /pdfcraft/     not configured (set PDFCRAFT_UPSTREAM to enable it)"),
     }
-    println!("\nOpen http://{addr}/cloud/ first, so the apps share one OPFS.");
+    println!("\nOpen http://{addr}/cloud/");
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -213,6 +236,99 @@ async fn health() -> Json<serde_json::Value> {
 /// What the cloud app reads at boot, so it can hide what this deployment has no one to do.
 async fn capabilities(State(app): State<App>) -> Json<profile::Capabilities> {
     Json(app.deployment.capabilities())
+}
+
+/// What `/api/version` answers: the commit this build came from, and the editors it hosts.
+#[derive(Debug, serde::Serialize)]
+struct Version {
+    service: &'static str,
+    commit: Option<String>,
+    editors: Vec<HostedEditor>,
+}
+
+/// One editor's provenance, as far as this deployment can tell it.
+#[derive(Debug, serde::Serialize)]
+struct HostedEditor {
+    id: &'static str,
+    title: &'static str,
+    /// Whether this deployment serves the editor at all.
+    hosted: bool,
+    /// The version its build published, or `None` when it is not hosted or published nothing.
+    version: Option<String>,
+    /// The commit its build published, on the same terms.
+    commit: Option<String>,
+}
+
+/// What an editor's build writes beside its assets as `version.json`.
+#[derive(Debug, serde::Deserialize)]
+struct EditorVersion {
+    version: Option<String>,
+    commit: Option<String>,
+}
+
+/// This build and its editors, for the settings page's Build panel.
+///
+/// Each editor is asked when this is called rather than once at boot, so the answer is what its host is
+/// serving now. It is a loopback request, and it is bounded: an editor that hangs must not hold the page.
+async fn version(State(app): State<App>) -> Json<Version> {
+    let mut editors = Vec::with_capacity(app.editors.len());
+    for editor in &app.editors {
+        editors.push(hosted_editor(&app.http, editor).await);
+    }
+    Json(Version { service: profile::SERVICE, commit: build_commit(), editors })
+}
+
+async fn hosted_editor(http: &reqwest::Client, editor: &Editor) -> HostedEditor {
+    let mut hosted = HostedEditor {
+        id: editor.id,
+        title: editor.title,
+        hosted: editor.upstream.is_some(),
+        version: None,
+        commit: None,
+    };
+    let Some(upstream) = editor.upstream.as_deref() else {
+        return hosted;
+    };
+    let response = http
+        .get(format!("{upstream}/version.json"))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await;
+    let Ok(response) = response else {
+        return hosted;
+    };
+    if !response.status().is_success() {
+        return hosted;
+    }
+    let Ok(body) = response.bytes().await else {
+        return hosted;
+    };
+    (hosted.version, hosted.commit) = provenance(&body);
+    hosted
+}
+
+/// The version and commit an editor published. A file that is absent, malformed or blank leaves both
+/// unknown instead of guessing one.
+fn provenance(body: &[u8]) -> (Option<String>, Option<String>) {
+    let Ok(parsed) = serde_json::from_slice::<EditorVersion>(body) else {
+        return (None, None);
+    };
+    (named(parsed.version.as_deref()), named(parsed.commit.as_deref()))
+}
+
+/// The commit this build came from, as `ATELIER_BUILD_COMMIT` recorded it: the deploy sets it for the
+/// compile, and a development run sets it for the process. `None` when neither did, which the page shows
+/// as unknown.
+fn build_commit() -> Option<String> {
+    recorded(env::var("ATELIER_BUILD_COMMIT").ok().as_deref(), option_env!("ATELIER_BUILD_COMMIT"))
+}
+
+fn recorded(runtime: Option<&str>, compiled: Option<&str>) -> Option<String> {
+    named(runtime).or_else(|| named(compiled))
+}
+
+fn named(value: Option<&str>) -> Option<String> {
+    value.map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned)
 }
 
 /// A workspace is someone's own, and the editor is an app shell with nothing to index, so both are
@@ -474,6 +590,28 @@ mod tests {
                 "/?project=abc&document=doc.pcraft"
             );
         }
+    }
+
+    #[test]
+    fn a_build_names_the_commit_its_deploy_recorded() {
+        assert_eq!(recorded(Some("abc1234"), None).as_deref(), Some("abc1234"));
+        assert_eq!(recorded(None, Some("def5678")).as_deref(), Some("def5678"));
+        assert_eq!(recorded(Some("  "), Some("def5678")).as_deref(), Some("def5678"));
+        assert_eq!(recorded(None, None), None);
+    }
+
+    #[test]
+    fn an_editor_publishes_its_version_beside_its_assets() {
+        let (version, commit) = provenance(br#"{"version":"0.14.0","commit":"ff47388"}"#);
+        assert_eq!(version.as_deref(), Some("0.14.0"));
+        assert_eq!(commit.as_deref(), Some("ff47388"));
+    }
+
+    #[test]
+    fn an_editor_that_published_nothing_readable_is_unknown_rather_than_wrong() {
+        assert_eq!(provenance(b"not json"), (None, None));
+        assert_eq!(provenance(br#"{}"#), (None, None));
+        assert_eq!(provenance(br#"{"version":" ","commit":null}"#), (None, None));
     }
 
     #[test]

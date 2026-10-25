@@ -77,4 +77,10 @@ if [ -n "${PDFCRAFT_UPSTREAM:-}" ]; then
 fi
 say ""
 
+# The commit the cloud build came from, which the settings page's Build panel shows. A tree with
+# uncommitted changes says so, rather than naming a commit that does not contain them.
+ATELIER_BUILD_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+[ -z "$(git status --porcelain 2>/dev/null)" ] || ATELIER_BUILD_COMMIT="$ATELIER_BUILD_COMMIT-dirty"
+export ATELIER_BUILD_COMMIT
+
 exec cargo run --release --manifest-path server/Cargo.toml

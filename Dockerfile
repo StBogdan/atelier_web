@@ -12,6 +12,10 @@ COPY web/ ./
 RUN npm run build
 
 FROM rust:1-bookworm AS server
+# What the settings page reports as the build's commit, baked in at compile time. Empty when the build
+# does not say, and the page then shows unknown.
+ARG ATELIER_BUILD_COMMIT=
+ENV ATELIER_BUILD_COMMIT=$ATELIER_BUILD_COMMIT
 WORKDIR /app
 COPY server/Cargo.toml server/Cargo.lock ./
 # A stub main, so the dependency build is cached independently of the source that follows.

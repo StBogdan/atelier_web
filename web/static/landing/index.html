@@ -150,62 +150,65 @@
       }
     </script>
     <style>
+      /* The cloud app's own tokens (`web/src/app.css`), copied here because this page loads without the
+         app bundle: the same greys, the same accent, the same radii and control heights, so the front
+         door and the workspace list read as one product. A value changed here is changed there too. */
       :root {
         color-scheme: light dark;
         --font:
           "Plus Jakarta Sans", Inter, -apple-system, BlinkMacSystemFont,
           "Segoe UI", system-ui, sans-serif;
         --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-        --bg: #fbfbfd;
-        --panel: #ffffff;
-        --ink: #131318;
-        --dim: #54545f;
-        --faint: #63636d;
-        --line: #e5e5ec;
-        --rule: #ededf2;
-        --soft: #f3f6fd;
-        --accent: #2f6feb;
-        --accent-ink: #ffffff;
-        --accent-soft: rgba(47, 111, 235, 0.1);
-        --link: #1d4ed8;
-        --cta: #2f6feb;
-        --cta-ink: #ffffff;
-        --ok: #3f7a2a;
+        /* Studio Light: canvas, card, field, text and radii. */
+        --bg: #e2e2e6;
+        --panel: #fcfcfd;
+        --line: #dedee4;
+        --rule: #e2e2e8;
+        --ink: #18181c;
+        --dim: #5f5f6a;
+        --faint: #64646f;
+        --accent: #6c5ce7;
+        --primary: #141418;
+        --primary-ink: #fafafc;
+        --link: #5b4bd6;
+        --hover: #e8e8ed;
+        --field-line: #8a8a96;
         --warn: #8a5f0a;
-        --warn-soft: #fdf6e7;
-        --warn-line: #f0e0b8;
-        --shadow-sm: 0 1px 2px rgba(16, 18, 22, 0.05);
+        --chrome: #f6f6f8;
+        --strip: #f0f0f3;
+        /* A section that sits a step away from the canvas, the way the app's status strip does. */
+        --band: #f6f6f8;
         --shadow:
-          0 2px 4px rgba(16, 18, 22, 0.04), 0 18px 40px rgba(16, 18, 22, 0.09);
-        --radius-sm: 8px;
-        --radius: 12px;
-        --radius-lg: 18px;
-        --max: 1120px;
+          0 1px 2px rgba(16, 18, 22, 0.06), 0 8px 24px rgba(16, 18, 22, 0.08);
+        --chip-radius: 999px;
+        --radius-sm: 6px;
+        --radius: 8px;
+        --radius-lg: 12px;
+        --max: 68rem;
       }
 
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #141417;
-          --panel: #1d1d21;
-          --ink: #edeef2;
-          --dim: #a5a5b1;
-          --faint: #8a8a96;
-          --line: #2b2b31;
-          --rule: #242429;
-          --soft: #1a2233;
-          --accent: #5b8ff5;
-          --accent-ink: #0d0d10;
-          --accent-soft: rgba(91, 143, 245, 0.14);
-          --link: #8ab4f8;
-          --cta: #5b8ff5;
-          --cta-ink: #0d0d10;
-          --ok: #85dc6a;
+          /* Pro: the flat, near-black chrome the editor ships with. */
+          --bg: #282828;
+          --panel: #323232;
+          --line: #1e1e1e;
+          --rule: #1e1e1e;
+          --ink: #dedede;
+          --dim: #b2b2b2;
+          --faint: #9a9aa6;
+          --accent: #5aa9f7;
+          --primary: #2a72cc;
+          --primary-ink: #ffffff;
+          --link: #7ab6f8;
+          --hover: #424242;
+          --field-line: #7a7a86;
           --warn: #e8b046;
-          --warn-soft: #241f13;
-          --warn-line: #453917;
-          --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+          --chrome: #323232;
+          --strip: #262626;
+          --band: #262626;
           --shadow:
-            0 2px 4px rgba(0, 0, 0, 0.4), 0 18px 44px rgba(0, 0, 0, 0.5);
+            0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 28px rgba(0, 0, 0, 0.35);
         }
       }
 
@@ -247,7 +250,7 @@
         width: 100%;
         max-width: var(--max);
         margin: 0 auto;
-        padding: 0 1.5rem;
+        padding: 0 1.25rem;
       }
 
       .skip {
@@ -265,103 +268,107 @@
         border-radius: var(--radius-sm);
       }
 
-      /* Top bar */
+      /* The title bar, drawn like the app's: a flat chrome row, the brand on two lines, the sections as
+         quiet links, and the one action in the bar filled. */
       .bar {
         position: sticky;
         top: 0;
         z-index: 10;
-        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        background: var(--chrome);
         border-bottom: 1px solid var(--rule);
-        backdrop-filter: blur(10px);
       }
 
       .bar .wrap {
         display: flex;
         align-items: center;
-        gap: 1.5rem;
-        min-height: 4rem;
+        gap: 1.25rem;
+        min-height: 3.25rem;
+        padding-block: 0.35rem;
       }
 
       .brand {
-        display: inline-flex;
+        display: flex;
         align-items: center;
         gap: 0.6rem;
+        flex: 0 0 auto;
         text-decoration: none;
-        font-weight: 600;
-        letter-spacing: -0.015em;
-        font-size: 0.98rem;
       }
 
       .mark {
+        display: block;
         width: 1.75rem;
         height: 1.75rem;
         color: var(--accent);
         flex: 0 0 auto;
       }
 
+      .names {
+        display: block;
+        line-height: 1.25;
+      }
+
+      .names strong {
+        font-weight: 600;
+        font-size: 0.94rem;
+        letter-spacing: -0.01em;
+      }
+
+      .names small {
+        display: block;
+        font-weight: 400;
+        color: var(--faint);
+        font-size: 0.72rem;
+        letter-spacing: 0;
+      }
+
       .bar nav {
         display: flex;
         align-items: center;
-        gap: 1.4rem;
+        gap: 0.15rem;
         margin-left: auto;
-        font-size: 0.92rem;
+        min-width: 0;
       }
 
       .bar nav a {
-        text-decoration: none;
         color: var(--dim);
+        text-decoration: none;
+        font-size: 0.84rem;
+        padding: 0.3rem 0.6rem;
+        border-radius: var(--radius);
+        white-space: nowrap;
       }
 
       .bar nav a:hover {
+        background: var(--hover);
         color: var(--ink);
       }
 
       .bar nav .gh {
         display: inline-flex;
         align-items: center;
+        padding: 0.3rem 0.45rem;
       }
 
       .bar .cta {
-        color: var(--cta-ink);
-        background: var(--cta);
-        padding: 0.45rem 0.9rem;
-        border-radius: 999px;
-        font-weight: 600;
+        margin-left: 0.35rem;
+        background: var(--primary);
+        border: 1px solid var(--primary);
+        color: var(--primary-ink);
+        font-weight: 560;
       }
 
       .bar .cta:hover {
-        color: var(--cta-ink);
-        filter: brightness(1.06);
+        background: var(--primary);
+        color: var(--primary-ink);
+        filter: brightness(1.08);
       }
 
-      /* Hero */
+      /* Hero. The app's canvas is flat, so the page's is too: no glow behind the headline. */
       .hero {
-        position: relative;
-        overflow: clip;
-        padding: 4.5rem 0 5rem;
-      }
-
-      .hero::before {
-        content: "";
-        position: absolute;
-        inset: -20% -10% auto;
-        height: 34rem;
-        background:
-          radial-gradient(
-            42rem 20rem at 18% 20%,
-            var(--accent-soft),
-            transparent 70%
-          ),
-          radial-gradient(
-            30rem 18rem at 78% 0%,
-            color-mix(in srgb, var(--accent) 8%, transparent),
-            transparent 70%
-          );
-        pointer-events: none;
+        padding: 3.5rem 0 4rem;
       }
 
       .hero .wrap {
-        position: relative;
         display: grid;
         grid-template-columns: 0.86fr 1.14fr;
         gap: 2.75rem;
@@ -369,38 +376,27 @@
       }
 
       .eyebrow {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin: 0 0 1.1rem;
-        font-size: 0.78rem;
+        margin: 0 0 0.9rem;
+        font-size: 0.76rem;
         font-weight: 600;
-        letter-spacing: 0.09em;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--dim);
       }
 
-      .eyebrow::before {
-        content: "";
-        width: 0.45rem;
-        height: 0.45rem;
-        border-radius: 50%;
-        background: var(--accent);
-      }
-
       h1 {
         margin: 0;
-        font-size: clamp(2.35rem, 5.2vw, 3.6rem);
-        line-height: 1.06;
-        letter-spacing: -0.035em;
-        font-weight: 640;
+        font-size: clamp(1.9rem, 3.4vw, 2.5rem);
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        font-weight: 600;
         text-wrap: balance;
       }
 
       .lede {
-        margin: 1.4rem 0 0;
+        margin: 1.1rem 0 0;
         max-width: 34rem;
-        font-size: 1.12rem;
+        font-size: 1.02rem;
         line-height: 1.62;
         color: var(--dim);
       }
@@ -409,40 +405,40 @@
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 0.75rem 1.35rem;
-        margin-top: 2rem;
+        gap: 0.6rem 1.1rem;
+        margin-top: 1.6rem;
       }
 
       .button {
         display: inline-flex;
         align-items: center;
-        gap: 0.5rem;
-        padding: 0.72rem 1.25rem;
-        border-radius: 999px;
-        font-size: 0.98rem;
+        gap: 0.45rem;
+        padding: 0.5rem 0.95rem;
+        border-radius: var(--radius);
+        font-size: 0.9rem;
         font-weight: 560;
         text-decoration: none;
         border: 1px solid transparent;
       }
 
       .button.primary {
-        background: var(--cta);
-        color: var(--cta-ink);
-        box-shadow: 0 6px 18px color-mix(in srgb, var(--cta) 28%, transparent);
+        background: var(--primary);
+        border-color: var(--primary);
+        color: var(--primary-ink);
       }
 
       .button.primary:hover {
-        filter: brightness(1.06);
+        filter: brightness(1.08);
       }
 
       .button.ghost {
         color: var(--ink);
-        border-color: var(--line);
+        border-color: var(--field-line);
         background: var(--panel);
       }
 
       .button.ghost:hover {
-        border-color: var(--faint);
+        border-color: var(--accent);
       }
 
       .fineprint {
@@ -471,8 +467,8 @@
         align-items: center;
         gap: 0.45rem;
         padding: 0.6rem 0.85rem;
-        background: var(--soft);
-        border-bottom: 1px solid var(--line);
+        background: var(--strip);
+        border-bottom: 1px solid var(--rule);
       }
 
       .shot .dots {
@@ -489,8 +485,8 @@
 
       .shot .url {
         margin-left: 0.4rem;
-        padding: 0.15rem 0.7rem;
-        border-radius: 999px;
+        padding: 0.1rem 0.6rem;
+        border-radius: var(--radius-sm);
         background: var(--panel);
         border: 1px solid var(--line);
         font: 0.72rem / 1.5 var(--mono);
@@ -520,11 +516,12 @@
 
       /* Sections */
       section {
-        padding: 4.5rem 0;
+        padding: 3.5rem 0;
       }
 
+      /* A banded section, in the app's own strip tone rather than a tint mixed for this page. */
       section.tinted {
-        background: color-mix(in srgb, var(--panel) 55%, var(--bg));
+        background: var(--band);
         border-block: 1px solid var(--rule);
       }
 
@@ -534,17 +531,17 @@
 
       h2 {
         margin: 0;
-        font-size: clamp(1.65rem, 3.1vw, 2.2rem);
-        line-height: 1.15;
-        letter-spacing: -0.025em;
-        font-weight: 620;
+        font-size: 1.3rem;
+        line-height: 1.3;
+        letter-spacing: -0.01em;
+        font-weight: 600;
         text-wrap: balance;
       }
 
       .section-head p {
-        margin: 1rem 0 0;
+        margin: 0.8rem 0 0;
         color: var(--dim);
-        font-size: 1.02rem;
+        font-size: 0.98rem;
       }
 
       /* Cards */
@@ -552,28 +549,28 @@
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 1rem;
-        margin-top: 2.6rem;
+        margin-top: 2rem;
       }
 
       .card {
-        padding: 1.5rem 1.5rem 1.6rem;
+        padding: 1.15rem 1.2rem 1.25rem;
         background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow-sm);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
       }
 
       .card svg {
-        width: 1.5rem;
-        height: 1.5rem;
+        width: 1.35rem;
+        height: 1.35rem;
         color: var(--accent);
       }
 
       .card h3 {
-        margin: 0.9rem 0 0;
-        font-size: 1.04rem;
+        margin: 0.8rem 0 0;
+        font-size: 1rem;
         font-weight: 600;
-        letter-spacing: -0.012em;
+        letter-spacing: -0.01em;
       }
 
       .card p {
@@ -587,8 +584,8 @@
         font-family: var(--mono);
         font-size: 0.86em;
         padding: 0.1rem 0.3rem;
-        border-radius: 4px;
-        background: var(--accent-soft);
+        border-radius: var(--radius-sm);
+        background: color-mix(in srgb, var(--line) 55%, transparent);
       }
 
       /* The two editors */
@@ -596,15 +593,15 @@
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 1rem;
-        margin-top: 2.6rem;
+        margin-top: 2rem;
       }
 
       .editor {
-        padding: 1.6rem 1.6rem 1.7rem;
+        padding: 1.2rem 1.25rem 1.3rem;
         background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow-sm);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
       }
 
       .editor header {
@@ -615,20 +612,17 @@
 
       .editor h3 {
         margin: 0;
-        font-size: 1.14rem;
-        font-weight: 620;
-        letter-spacing: -0.015em;
+        font-size: 1.05rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
       }
 
       .chip {
-        padding: 0.1rem 0.55rem;
-        border-radius: 999px;
-        background: var(--accent-soft);
-        color: var(--link);
-        font-size: 0.7rem;
-        font-weight: 650;
-        letter-spacing: 0.07em;
-        text-transform: uppercase;
+        border: 1px solid var(--line);
+        border-radius: var(--chip-radius);
+        padding: 0.05em 0.6em;
+        font-size: 0.78rem;
+        color: var(--dim);
       }
 
       .editor .what {
@@ -667,7 +661,7 @@
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 1.5rem;
-        margin: 2.8rem 0 0;
+        margin: 2rem 0 0;
         padding: 0;
         list-style: none;
         counter-reset: step;
@@ -728,13 +722,13 @@
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 1rem;
-        margin-top: 2.6rem;
+        margin-top: 2rem;
       }
 
       .place {
-        padding: 1.4rem 1.4rem 1.5rem;
+        padding: 1.15rem 1.2rem 1.25rem;
         border: 1px solid var(--line);
-        border-radius: var(--radius);
+        border-radius: var(--radius-lg);
         background: var(--panel);
       }
 
@@ -772,7 +766,7 @@
       /* Questions */
       .faq {
         max-width: 46rem;
-        margin-top: 2.4rem;
+        margin-top: 1.8rem;
         border-top: 1px solid var(--rule);
       }
 
@@ -814,28 +808,27 @@
         line-height: 1.65;
       }
 
-      /* Note */
+      /* Note: the app's banner, a plain panel with the warning on its leading edge. */
       .note {
         display: flex;
-        gap: 1rem;
+        gap: 0.9rem;
         align-items: flex-start;
-        margin-top: 2.4rem;
-        padding: 1.2rem 1.35rem;
-        border: 1px solid var(--warn-line);
+        margin-top: 1.8rem;
+        padding: 0.7rem 0.9rem;
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--warn);
         border-radius: var(--radius);
-        background: var(--warn-soft);
       }
 
       .note .tag {
         flex: 0 0 auto;
-        padding: 0.1rem 0.5rem;
-        border-radius: 999px;
-        border: 1px solid var(--warn-line);
+        padding: 0.05em 0.6em;
+        border-radius: var(--chip-radius);
+        border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
+        background: color-mix(in srgb, var(--warn) 12%, transparent);
         color: var(--warn);
-        font-size: 0.72rem;
-        font-weight: 650;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
+        font-size: 0.78rem;
+        font-weight: 600;
         line-height: 1.6;
       }
 
@@ -845,71 +838,31 @@
         color: var(--ink);
       }
 
-      /* Closing */
+      /* Closing: one panel on the canvas, the same card the workspace list is built from. */
       .closing {
-        padding: 4.5rem 0 5.5rem;
+        padding: 3.5rem 0 4.5rem;
       }
 
-      .panel-dark {
-        position: relative;
-        overflow: hidden;
-        padding: 3.2rem clamp(1.5rem, 5vw, 3.5rem);
-        border-radius: 22px;
-        background: #15161b;
-        color: #f4f5f8;
+      .closing-panel {
+        padding: 2rem clamp(1.25rem, 4vw, 2.25rem);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
       }
 
-      @media (prefers-color-scheme: dark) {
-        .panel-dark {
-          background: #1f2026;
-          border: 1px solid #303039;
-        }
-      }
-
-      .panel-dark::before {
-        content: "";
-        position: absolute;
-        inset: auto -10% -60% 40%;
-        height: 26rem;
-        background: radial-gradient(
-          24rem 14rem at 60% 40%,
-          rgba(91, 143, 245, 0.28),
-          transparent 70%
-        );
-        pointer-events: none;
-      }
-
-      .panel-dark > * {
-        position: relative;
-      }
-
-      .panel-dark h2 {
-        color: #f4f5f8;
+      .closing-panel h2 {
         max-width: 26ch;
       }
 
-      .panel-dark p {
-        margin: 1rem 0 0;
+      .closing-panel p {
+        margin: 0.8rem 0 0;
         max-width: 40rem;
-        color: #b9bcc7;
+        color: var(--dim);
       }
 
-      .panel-dark .actions {
-        margin-top: 1.9rem;
-      }
-
-      .panel-dark .button.primary {
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-      }
-
-      .panel-dark .button.ghost {
-        background: transparent;
-        color: #f4f5f8;
-        border-color: #3a3b45;
-      }
-
-      .panel-dark .button.ghost:hover {
-        border-color: #6a6c7a;
+      .closing-panel .actions {
+        margin-top: 1.5rem;
       }
 
       /* Footer */
@@ -992,14 +945,14 @@
 
       footer nav .report {
         padding: 0.25rem 0.8rem;
-        border: 1px solid var(--line);
-        border-radius: 999px;
+        border: 1px solid var(--field-line);
+        border-radius: var(--radius);
         color: var(--ink);
         background: var(--panel);
       }
 
       footer nav .report:hover {
-        border-color: var(--faint);
+        border-color: var(--accent);
       }
 
       @media (max-width: 960px) {
@@ -1109,7 +1062,10 @@
               </g>
             </g>
           </svg>
-          <span>Atelier Cloud</span>
+          <span class="names">
+            <strong>Atelier Cloud</strong>
+            <small>cloudspace for browser apps</small>
+          </span>
         </a>
         <nav aria-label="Sections">
           <a href="#editors">Editors</a>
@@ -1144,7 +1100,10 @@
         <div class="wrap">
           <div>
             <p class="eyebrow">Hosted PhotoCraft and PdfCraft</p>
-            <h1>PhotoCraft online, free: edit Photoshop files in your browser.</h1>
+            <h1>
+              PhotoCraft online, free: edit .psd and pdf files directly in the
+              browser.
+            </h1>
             <p class="lede">
               Atelier Cloud hosts the open-source PhotoCraft and PdfCraft
               editors at one web address. Open a PSD, PSB or PDF without
@@ -1548,7 +1507,7 @@
 
       <section class="closing">
         <div class="wrap">
-          <div class="panel-dark">
+          <div class="closing-panel">
             <h2>Your workspaces</h2>
             <p>
               The grid lists every project this browser holds. You can start one

@@ -17,8 +17,8 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 PATCH="$HERE/atelier_web.patch"
 CHECKOUT=${PHOTOCRAFT_DIR:-$HERE/../../photocraft}
-# Recorded upstream ref: v0.10.0, the pin in the outer repository.
-PINNED_REF=8407d9ccb125af52944fca9d228383459f94aaef
+# Recorded upstream ref: v0.14.0, the pin in the outer repository.
+PINNED_REF=ff4738810134d7f7e68b49f2e4f231b686282ff3
 # The one file the patch adds, so `revert` knows what to remove.
 ADDED_FILE=apps/photocraft-web/src/atelier_cloud.rs
 

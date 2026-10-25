@@ -9,8 +9,8 @@
 
 use std::{env, fmt};
 
-/// The name every capabilities response carries, so a client can tell one service from another.
-const SERVICE: &str = "atelier-web";
+/// The name every JSON answer carries, so a client can tell one service from another.
+pub const SERVICE: &str = "atelier-web";
 
 /// The two profiles one artifact ships as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

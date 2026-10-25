@@ -17,7 +17,7 @@ apply.sh                   apply / check / revert / build it against any ref
 | `apps/photocraft-web/src/main.rs` | one line: `mod atelier_cloud;` |
 | `apps/photocraft-web/src/web.rs` | `services()`: `write` routes through the module, and the `workspace` and `home_link` fields the shell adds |
 | `apps/photocraft-web/Cargo.toml` | the `web-sys` features the OPFS bindings need |
-| `crates/ui-egui/src/lib.rs` | the `Services` fields and the store's types, and the `Inbox`'s third element: the path a document was read from |
+| `crates/ui-egui/src/lib.rs` | the `Services` fields and the store's types, the `Inbox`'s third element (the path a document was read from), and `write_confirmed` beside upstream's `write_unconfirmed` |
 | `crates/ui-egui/src/menus.rs` | `File ▸ Open from Workspace…`: the item the shell's store inserts, labelled by that shell, and the command behind it |
 | `crates/ui-egui/src/panels.rs` | the door's window, and the title bar drawing the way back after its other controls |
 
@@ -51,6 +51,10 @@ write: Some(Box::new(|path: &str, bytes: &[u8]| match crate::atelier_cloud::targ
     Some((project, document)) => crate::atelier_cloud::write(&project, &document, bytes),
     None => download(path, bytes),
 })),
+// A download reports nothing back, so upstream calls every web save unconfirmed (#4962); a
+// project save is recorded by the page that owns the store, so it counts as saved.
+write_unconfirmed: true,
+write_confirmed: Some(Box::new(|path: &str| crate::atelier_cloud::target(path).is_some())),
 // The shell's two contributions to the chrome: the store the workspace door lists, and the way back.
 workspace: crate::atelier_cloud::workspace_open(inbox.clone()),
 inbox: Some(inbox),
@@ -93,7 +97,9 @@ Four details worth knowing before changing it:
   (a `photo.png` workspace document exported as PNG): it writes over it.
 - **The write is asynchronous.** OPFS cannot be written synchronously from the main thread and the
   editor's `Services::write` is synchronous, so the module schedules the write and reports success.
-  What actually happened to the file is Atelier web's to derive from the filesystem (design [File Ownership](../../docs/atelier_web_design.md#file-ownership)).
+  What actually happened to the file is Atelier web's to derive from the filesystem (design [File Ownership](../../docs/atelier_web_design.md#file-ownership)). Because the module reports success, a save
+  into a project counts as saved: `write_confirmed` names the paths for which that holds, next to
+  upstream's `write_unconfirmed`, which stays on for the downloads that report nothing back.
 - **Nothing here knows which document a save is for beyond its path.** The path is the whole binding: a
   `Binding` holds the project, never a document, so several documents can be open at once and a save
   cannot land on the wrong one.
@@ -131,7 +137,8 @@ bound to a project opens it the way it always did, unbound and unsaved.
   `Reflect`, because the typed `LockManager` bindings sit behind `web_sys_unstable_apis`, a cfg this build
   does not set.
 - **One `thread_local!` binding** holds `{ project, document }`, set once from `services()`. The app's own
-  state is untouched: no new `Services` field beyond `home_link`, no new trait method, no format change.
+  state is untouched: the `Services` fields the shell fills (`workspace`, `home_link`, `write_confirmed`),
+  no new trait method, no format change.
 - **One synthetic event.** eframe paints when something asks it to, so after the launch read the module
   dispatches `popstate` on the window, which the web runner repaints on. Without it the document waits for
   the next mouse move.
@@ -156,7 +163,7 @@ PHOTOCRAFT_DIR=... ./apply.sh check <ref>     # against another checkout or ref
 own `packaging/env.sh` does for a release. Without it the About dialog reports the last *release*
 number and "(dev build)", which is misleading: PhotoCraft's version is bumped only at a release, so a
 build of the commit before v0.8.2 says `0.7.0 (dev build)` even though it is newer than `v0.7.0`.
-Stamped, the same line reads `0.10.0 (8407d9ccb, 2026-10-18)` and names what it was built from.
+Stamped, the same line reads `0.14.0 (ff4738810, 2026-10-23)` and names what it was built from.
 
 Keep the pinned submodule clean. Use a scratch checkout:
 
@@ -187,21 +194,23 @@ edit is therefore not a way to prove the build did not change; comparing the pat
 
 ## When upstream moves
 
-The patch is written against `8407d9ccb125af52944fca9d228383459f94aaef` (`v0.10.0`), the
+The patch is written against `ff4738810134d7f7e68b49f2e4f231b686282ff3` (`v0.14.0`), the
 commit the outer repository pins. Drift shows up as `apply.sh check` failing against a newer ref.
-Checked on 2026-10-18, it applies cleanly to the pin and also to upstream `main` (`8d2e615a`, 70
-commits on). Coming off the previous pin (`v0.9.0`) the conflicts were in three files: `Cargo.toml`,
-where upstream added the `DomRect` `web-sys` feature; `web.rs`, where upstream split the shell into
-`logic`/`ui` and routed drops that land on the canvas through a second inbox (`place_inbox`); and
-`panels.rs`, where upstream removed the title bar's Discord button, so the way back now follows the
-theme toggle rather than preceding that link.
+Checked on 2026-10-23, it applies cleanly to the pin. Coming off the previous pin (`v0.10.0`) the
+conflicts were in two files: `web.rs`, where upstream made the browser's save an unconfirmed one
+(`write_unconfirmed`, #4962), so the patch now also names the paths that are confirmed
+(`write_confirmed`) and keeps upstream's flag for downloads; and `lib.rs`, where the clipboard read
+became fallible (`ClipboardGetFn` returns a `Result`, with `ClipboardUnreadableFn` beside it) in the
+same hunk as the `Inbox`'s third element. `Cargo.toml`, `main.rs`, `menus.rs` and `panels.rs` took
+their hunks with line offsets only, even though `panels.rs` grew by 1238 lines and lost 227 across
+the 2807 commits between the two tags.
 
 The `file_dialog` closure in `services()` is where most hunks land, so it is the second place to look
 after the title bar. A 3-way merge needs the pinned ref in the object database, so fetch it first when
 the checkout is a shallow clone of another branch:
 
 ```sh
-git -C /tmp/photocraft-hook fetch --depth 1 origin 8407d9ccb125af52944fca9d228383459f94aaef
+git -C /tmp/photocraft-hook fetch --depth 1 origin ff4738810134d7f7e68b49f2e4f231b686282ff3
 ```
 
 Re-apply by hand when upstream moves inside a hunk. `git diff` skips an untracked file, so `git add -N`
