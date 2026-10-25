@@ -9,7 +9,7 @@ browser's own storage, and the documents you care about go to a bucket that is y
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 [![Server: Rust + axum](https://img.shields.io/badge/server-Rust%20%2B%20axum-dea584?logo=rust&logoColor=white)](server)
 [![App: SvelteKit 2](https://img.shields.io/badge/app-SvelteKit%202-ff3e00?logo=svelte&logoColor=white)](web)
-[![Editor: PhotoCraft v0.14.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.14.0-4b5563)](https://github.com/storytold/photocraft)
+[![Editor: PhotoCraft v0.16.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.16.0-4b5563)](https://github.com/storytold/photocraft)
 
 <img src="docs/workspaces.png" alt="The Atelier Cloud workspace grid, with six workspaces and their document, commit state and actions" width="880">
 
@@ -249,7 +249,7 @@ it holds no credential of any kind. It serves:
 Requests and responses are forwarded with hop-by-hop headers stripped and `Host` re-derived, so the editor's
 `application/wasm` MIME type and its precompressed gzip assets keep working untouched.
 
-An editor build publishes its provenance as `version.json` beside its assets (`{"version":"0.14.0",
+An editor build publishes its provenance as `version.json` beside its assets (`{"version":"0.16.0",
 "commit":"ff47388…"}`), which is what `/api/version` reads through the proxy. The outer
 [`../run.sh`](../run.sh) writes it for both editors it builds; an editor started some other way has no file,
 and Settings ▸ Build says unknown rather than guessing.
@@ -320,7 +320,7 @@ web at it:
 
 ```sh
 cd ../photocraft
-git worktree add --detach /tmp/photocraft-hook ff4738810134d7f7e68b49f2e4f231b686282ff3
+git worktree add --detach /tmp/photocraft-hook b1794c6e0608ccfc887213dcf58398977c5cb75e
 cd ../atelier_web
 CARGO_TARGET_DIR=../photocraft/target PHOTOCRAFT_DIR=/tmp/photocraft-hook ./hook/apply.sh build
 cd /tmp/photocraft-hook/dist/web && python3 -m http.server 8765
@@ -370,7 +370,7 @@ policy](docs/buckets.md#cors-on-the-bucket) is what the browser needs.
 
 **The editor patch is a first-class artifact**, and [`.github/workflows/patch.yml`](.github/workflows/patch.yml)
 proves it still applies (3-way, and reverts), still builds, and still fits inside its documented footprint
-and the 25 MiB wasm budget that Cloudflare enforces. Its second job checks the patch against upstream `main`
+and the 27 MiB wasm budget the workflow enforces. Its second job checks the patch against upstream `main`
 and is allowed to fail: drift from upstream should be a red build, not a surprise.
 
 ## Samples

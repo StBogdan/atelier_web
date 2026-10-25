@@ -14,12 +14,14 @@ on:
   workflow_dispatch:
 
 env:
-  # The pin recorded in the outer repository (v0.14.0), and the same default `apply.sh` uses.
-  PINNED_REF: ff4738810134d7f7e68b49f2e4f231b686282ff3
+  # The pin recorded in the outer repository (v0.16.0), and the same default `apply.sh` uses.
+  PINNED_REF: b1794c6e0608ccfc887213dcf58398977c5cb75e
   # Upstream's own CI pin, so this build is the one the release job makes.
   TRUNK_VERSION: 0.21.14
-  # Cloudflare rejects a file over 25 MiB, which is the hard gate 12 names.
-  WASM_LIMIT: 26214400
+  # 27 MiB. The wasm is served by nginx on the box, so Cloudflare's 25 MiB per-file cap does not bind
+  # this deployment; the budget stays just above the build (26,447,372 bytes at PhotoCraft v0.16.0), so
+  # a growing editor still fails loudly.
+  WASM_LIMIT: 28311552
 
 jobs:
   build:

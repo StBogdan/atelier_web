@@ -132,7 +132,7 @@ bound to a project opens it the way it always did, unbound and unsaved.
 
 - **No new crates.** OPFS is `web-sys`: `FileSystemDirectoryHandle`, `FileSystemFileHandle`,
   `FileSystemWritableFileStream`. Those features are the whole `Cargo.toml` hunk, so the wasm dependency
-  graph is unchanged, and CI holds the release build to Cloudflare's 25 MiB per-file cap.
+  graph is unchanged, and CI holds the release build to a 27 MiB wasm budget.
 - **`js_sys::Reflect` for two APIs.** `navigator.locks.request` and `BroadcastChannel` go through
   `Reflect`, because the typed `LockManager` bindings sit behind `web_sys_unstable_apis`, a cfg this build
   does not set.
@@ -163,7 +163,7 @@ PHOTOCRAFT_DIR=... ./apply.sh check <ref>     # against another checkout or ref
 own `packaging/env.sh` does for a release. Without it the About dialog reports the last *release*
 number and "(dev build)", which is misleading: PhotoCraft's version is bumped only at a release, so a
 build of the commit before v0.8.2 says `0.7.0 (dev build)` even though it is newer than `v0.7.0`.
-Stamped, the same line reads `0.14.0 (ff4738810, 2026-10-23)` and names what it was built from.
+Stamped, the same line reads `0.16.0 (b1794c6e0, 2026-10-25)` and names what it was built from.
 
 Keep the pinned submodule clean. Use a scratch checkout:
 
@@ -194,23 +194,27 @@ edit is therefore not a way to prove the build did not change; comparing the pat
 
 ## When upstream moves
 
-The patch is written against `ff4738810134d7f7e68b49f2e4f231b686282ff3` (`v0.14.0`), the
+The patch is written against `b1794c6e0608ccfc887213dcf58398977c5cb75e` (`v0.16.0`), the
 commit the outer repository pins. Drift shows up as `apply.sh check` failing against a newer ref.
-Checked on 2026-10-23, it applies cleanly to the pin. Coming off the previous pin (`v0.10.0`) the
-conflicts were in two files: `web.rs`, where upstream made the browser's save an unconfirmed one
-(`write_unconfirmed`, #4962), so the patch now also names the paths that are confirmed
-(`write_confirmed`) and keeps upstream's flag for downloads; and `lib.rs`, where the clipboard read
-became fallible (`ClipboardGetFn` returns a `Result`, with `ClipboardUnreadableFn` beside it) in the
-same hunk as the `Inbox`'s third element. `Cargo.toml`, `main.rs`, `menus.rs` and `panels.rs` took
-their hunks with line offsets only, even though `panels.rs` grew by 1238 lines and lost 227 across
-the 2807 commits between the two tags.
+Checked on 2026-10-25, it applies cleanly to the pin. Coming off the previous pin (`v0.14.0`) there
+was one conflict, in `Cargo.toml`: upstream added `RequestMode` to the `web-sys` feature list, which
+is the line the patch extends, so the regenerated line is upstream's list with the patch's own
+additions kept (`File`, `StorageManager` and the `FileSystem*` handles). `main.rs`, `web.rs`,
+`lib.rs`, `menus.rs` and `panels.rs` took their hunks with line offsets only, even though `panels.rs`
+changed by 1756 lines across the 545 commits between the two tags.
+
+The move before that, from `v0.10.0`, conflicted in two files: `web.rs`, where upstream made the
+browser's save an unconfirmed one (`write_unconfirmed`, #4962), so the patch now also names the paths
+that are confirmed (`write_confirmed`) and keeps upstream's flag for downloads; and `lib.rs`, where
+the clipboard read became fallible (`ClipboardGetFn` returns a `Result`, with `ClipboardUnreadableFn`
+beside it) in the same hunk as the `Inbox`'s third element.
 
 The `file_dialog` closure in `services()` is where most hunks land, so it is the second place to look
 after the title bar. A 3-way merge needs the pinned ref in the object database, so fetch it first when
 the checkout is a shallow clone of another branch:
 
 ```sh
-git -C /tmp/photocraft-hook fetch --depth 1 origin ff4738810134d7f7e68b49f2e4f231b686282ff3
+git -C /tmp/photocraft-hook fetch --depth 1 origin b1794c6e0608ccfc887213dcf58398977c5cb75e
 ```
 
 Re-apply by hand when upstream moves inside a hunk. `git diff` skips an untracked file, so `git add -N`
