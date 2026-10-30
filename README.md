@@ -9,7 +9,7 @@ browser's own storage, and the documents you care about go to a bucket that is y
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 [![Server: Rust + axum](https://img.shields.io/badge/server-Rust%20%2B%20axum-dea584?logo=rust&logoColor=white)](server)
 [![App: SvelteKit 2](https://img.shields.io/badge/app-SvelteKit%202-ff3e00?logo=svelte&logoColor=white)](web)
-[![Editor: PhotoCraft v0.16.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.16.0-4b5563)](https://github.com/storytold/photocraft)
+[![Editor: PhotoCraft v0.17.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.17.0-4b5563)](https://github.com/storytold/photocraft)
 
 <img src="docs/workspaces.png" alt="The Atelier Cloud workspace grid, with six workspaces and their document, commit state and actions" width="880">
 

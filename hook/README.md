@@ -1,7 +1,7 @@
 # The PhotoCraft patch
 
-One new file and six hunks, applied to a PhotoCraft checkout. This is the only place the patch is
-documented. The design says why it exists ([The PhotoCraft Patch](../../docs/atelier_web_design.md#the-photocraft-patch), [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable));
+Two new files and edits in twelve others, applied to a PhotoCraft checkout. This is the only place
+the patch is documented. The design says why it exists ([The PhotoCraft Patch](../../docs/atelier_web_design.md#the-photocraft-patch), [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable));
 everything operational is here, next to the file.
 
 ```
@@ -17,21 +17,23 @@ apply.sh                   apply / check / revert / build it against any ref
 | `apps/photocraft-web/src/main.rs` | one line: `mod atelier_cloud;` |
 | `apps/photocraft-web/src/web.rs` | `services()`: `write` routes through the module, and the `workspace` and `home_link` fields the shell adds |
 | `apps/photocraft-web/Cargo.toml` | the `web-sys` features the OPFS bindings need |
-| `crates/ui-egui/src/lib.rs` | the `Services` fields and the store's types, the `Inbox`'s third element (the path a document was read from), and `write_confirmed` beside upstream's `write_unconfirmed` |
-| `crates/ui-egui/src/menus.rs` | `File ▸ Open from Workspace…`: the item the shell's store inserts, labelled by that shell, and the command behind it |
-| `crates/ui-egui/src/panels.rs` | the door's window, and the title bar drawing the way back after its other controls |
+| `crates/ui-egui/src/panels/workspace_open_ui.rs` | new: the door's window |
+| `crates/ui-egui/src/services.rs` | the `Services` fields and the store's types, the `Inbox`'s third element (the path a document was read from), and `write_confirmed` beside upstream's `write_unconfirmed` |
+| `crates/ui-egui/src/lib.rs`, `app.rs`, `app/frame.rs`, `app/files.rs` | the app's field and its default, the inbox drain handing each path to the open, and the save's confirmed check |
+| `crates/ui-egui/src/menus/invoke.rs`, `menus/items.rs` | `File ▸ Open from Workspace…`: the item the shell's store inserts, labelled by that shell, and the command behind it |
+| `crates/ui-egui/src/panels.rs`, `panels/title_bar.rs` | the module for the window, and the title bar drawing the way back after its other controls |
 
 The `Cargo.toml` hunk has to be there: `FileSystemDirectoryHandle`, `FileSystemFileHandle` and
 `FileSystemWritableFileStream` are the bindings design [Keeping the Patch Re-appliable](../../docs/atelier_web_design.md#keeping-the-patch-re-appliable) names, and none of
 them is switched on for the web runner today. Features are not dependencies, so nothing is added to the
 wasm dependency graph.
 
-The four `crates/ui-egui` hunks, across three files, are the patch's only footprint outside the web
-runner, and they are deliberate: the `Services` fields and the store's types, the File menu item the
-shell's store is reached by, and the title bar and the window that draw it. Take them out and the way
-back to the workspace is a link floating over the canvas, and opening one of its documents is a page
-navigation, rather than part of the app. Everything else upstream (engine, format, `crates/io`, the
-`Services` trait) is untouched.
+The `crates/ui-egui` hunks are the patch's only footprint outside the web runner, and they are
+deliberate: the `Services` fields and the store's types, the inbox path and the confirmed-save check,
+the File menu item the shell's store is reached by, and the title bar and the window that draw it.
+Take them out and the way back to the workspace is a link floating over the canvas, and opening one of
+its documents is a page navigation, rather than part of the app. Everything else upstream (engine,
+format, `crates/io`, the `Services` trait) is untouched.
 
 The patch speaks only the names in [`../../docs/atelier_design.md`](../../docs/atelier_design.md), never
 Atelier web's internals, so
@@ -42,9 +44,11 @@ an Atelier web release cannot force a patch release.
 ```rust
 file_dialog: Some(Box::new({
     crate::atelier_cloud::start(inbox.clone());
+    let picker_inbox = inbox.clone();
     move |request, _parent, reply| match request {
         request if crate::atelier_cloud::claims(&request) => crate::atelier_cloud::answer(request, reply),
-        /* the browser's picker, unchanged */
+        /* the browser's picker, unchanged except for the `bound()` branch that hands the picked
+           files to `atelier_cloud::take` instead of answering with them */
     }
 })),
 write: Some(Box::new(|path: &str, bytes: &[u8]| match crate::atelier_cloud::target(path) {
@@ -132,7 +136,7 @@ bound to a project opens it the way it always did, unbound and unsaved.
 
 - **No new crates.** OPFS is `web-sys`: `FileSystemDirectoryHandle`, `FileSystemFileHandle`,
   `FileSystemWritableFileStream`. Those features are the whole `Cargo.toml` hunk, so the wasm dependency
-  graph is unchanged, and CI holds the release build to a 27 MiB wasm budget.
+  graph is unchanged, and CI holds the release build to a 29 MiB wasm budget.
 - **`js_sys::Reflect` for two APIs.** `navigator.locks.request` and `BroadcastChannel` go through
   `Reflect`, because the typed `LockManager` bindings sit behind `web_sys_unstable_apis`, a cfg this build
   does not set.
@@ -163,7 +167,7 @@ PHOTOCRAFT_DIR=... ./apply.sh check <ref>     # against another checkout or ref
 own `packaging/env.sh` does for a release. Without it the About dialog reports the last *release*
 number and "(dev build)", which is misleading: PhotoCraft's version is bumped only at a release, so a
 build of the commit before v0.8.2 says `0.7.0 (dev build)` even though it is newer than `v0.7.0`.
-Stamped, the same line reads `0.16.0 (b1794c6e0, 2026-10-25)` and names what it was built from.
+Stamped, the same line reads `0.17.0 (b8c3f3aa8, 2026-10-30)` and names what it was built from.
 
 Keep the pinned submodule clean. Use a scratch checkout:
 
@@ -194,34 +198,44 @@ edit is therefore not a way to prove the build did not change; comparing the pat
 
 ## When upstream moves
 
-The patch is written against `b1794c6e0608ccfc887213dcf58398977c5cb75e` (`v0.16.0`), the
+The patch is written against `b8c3f3aa8e2918032cadc0e042664414a03be333` (`v0.17.0`), the
 commit the outer repository pins. Drift shows up as `apply.sh check` failing against a newer ref.
-Checked on 2026-10-25, it applies cleanly to the pin. Coming off the previous pin (`v0.14.0`) there
-was one conflict, in `Cargo.toml`: upstream added `RequestMode` to the `web-sys` feature list, which
-is the line the patch extends, so the regenerated line is upstream's list with the patch's own
-additions kept (`File`, `StorageManager` and the `FileSystem*` handles). `main.rs`, `web.rs`,
-`lib.rs`, `menus.rs` and `panels.rs` took their hunks with line offsets only, even though `panels.rs`
-changed by 1756 lines across the 545 commits between the two tags.
+Checked on 2026-10-30, it applies cleanly to the pin.
 
-The move before that, from `v0.10.0`, conflicted in two files: `web.rs`, where upstream made the
-browser's save an unconfirmed one (`write_unconfirmed`, #4962), so the patch now also names the paths
-that are confirmed (`write_confirmed`) and keeps upstream's flag for downloads; and `lib.rs`, where
-the clipboard read became fallible (`ClipboardGetFn` returns a `Result`, with `ClipboardUnreadableFn`
-beside it) in the same hunk as the `Inbox`'s third element.
+The move from `v0.16.0` was the largest so far, and worth knowing before the next one:
+
+- **Every `crates/ui-egui` hunk conflicted, because the files moved.** `lib.rs` kept `PhotocraftApp`
+  but its `Services` types went to `services.rs`; `menus.rs` became `menus/` (`invoke.rs`, `items.rs`);
+  `panels.rs` became `panels/` (`title_bar.rs`). Each hunk was re-applied to its new home.
+- **`Cargo.toml` and `main.rs` applied as they were.** `web.rs` needed its `services()` closure and one
+  drop-site line redone by hand.
+- **Upstream had grown the path the patch needed.** `open_bytes_from(name, bytes, path)` exists in
+  `v0.17.0`, so the drain in `app/frame.rs` calls it instead of `open_bytes`, and the `Inbox`'s third
+  element is the only new plumbing there.
+- **The title bar's link has to measure the room it started with.** `v0.17.0` lays the far-end controls
+  out in a group, so `ui.available_width()` at the end of that group is spent; the link is gated on the
+  width the group began with.
+
+The move before that, from `v0.14.0` to `v0.16.0`, conflicted only in `Cargo.toml`: upstream added
+`RequestMode` to the `web-sys` feature list, which is the line the patch extends, so the regenerated
+line is upstream's list with the patch's own additions kept (`File`, `StorageManager` and the
+`FileSystem*` handles). The move before that, from `v0.10.0`, conflicted in `web.rs`, where upstream
+made the browser's save an unconfirmed one (`write_unconfirmed`, #4962), so the patch also names the
+paths that are confirmed (`write_confirmed`) and keeps upstream's flag for downloads.
 
 The `file_dialog` closure in `services()` is where most hunks land, so it is the second place to look
 after the title bar. A 3-way merge needs the pinned ref in the object database, so fetch it first when
 the checkout is a shallow clone of another branch:
 
 ```sh
-git -C /tmp/photocraft-hook fetch --depth 1 origin b1794c6e0608ccfc887213dcf58398977c5cb75e
+git -C /tmp/photocraft-hook fetch --depth 1 origin b8c3f3aa8e2918032cadc0e042664414a03be333
 ```
 
 Re-apply by hand when upstream moves inside a hunk. `git diff` skips an untracked file, so `git add -N`
-the new module first, and regenerate:
+the new modules first, and regenerate:
 
 ```sh
-git -C /tmp/photocraft-hook add -N apps/photocraft-web/src/atelier_cloud.rs
+git -C /tmp/photocraft-hook add -N apps/photocraft-web/src/atelier_cloud.rs crates/ui-egui/src/panels/workspace_open_ui.rs
 git -C /tmp/photocraft-hook diff > hook/atelier_web.patch
 ```
 

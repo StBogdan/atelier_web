@@ -14,14 +14,14 @@ on:
   workflow_dispatch:
 
 env:
-  # The pin recorded in the outer repository (v0.16.0), and the same default `apply.sh` uses.
-  PINNED_REF: b1794c6e0608ccfc887213dcf58398977c5cb75e
+  # The pin recorded in the outer repository (v0.17.0), and the same default `apply.sh` uses.
+  PINNED_REF: b8c3f3aa8e2918032cadc0e042664414a03be333
   # Upstream's own CI pin, so this build is the one the release job makes.
   TRUNK_VERSION: 0.21.14
-  # 27 MiB. The wasm is served by nginx on the box, so Cloudflare's 25 MiB per-file cap does not bind
-  # this deployment; the budget stays just above the build (26,447,372 bytes at PhotoCraft v0.16.0), so
+  # 29 MiB. The wasm is served by nginx on the box, so Cloudflare's 25 MiB per-file cap does not bind
+  # this deployment; the budget stays just above the build (28,959,238 bytes at PhotoCraft v0.17.0), so
   # a growing editor still fails loudly.
-  WASM_LIMIT: 28311552
+  WASM_LIMIT: 30408704
 
 jobs:
   build:
@@ -62,10 +62,10 @@ jobs:
         run: |
           changed=$(git -C /tmp/photocraft status --porcelain | awk '{print $2}')
           echo "$changed"
-          # Patch Shape: the web runner, plus three `crates/ui-egui` files — the `Services` field,
-          # the File › Open from Workspace item and window, and the title bar's link. Anything else
-          # is the patch sprawling.
-          allowed='^(apps/photocraft-web/.*|crates/ui-egui/src/(lib|menus|panels)\.rs)$'
+          # Patch Shape: the web runner, plus the `crates/ui-egui` files that carry the `Services`
+          # fields, the inbox path, the File › Open from Workspace item and window, and the title
+          # bar's link. Anything else is the patch sprawling.
+          allowed='^(apps/photocraft-web/.*|crates/ui-egui/src/(lib|services|app|panels|menus)\.rs|crates/ui-egui/src/(app|panels|menus)/[a-z_]+\.rs)$'
           if echo "$changed" | grep -Evq "$allowed"; then
             echo "::error::the patch reaches outside its documented footprint"
             exit 1

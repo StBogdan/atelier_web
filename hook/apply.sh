@@ -17,10 +17,10 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 PATCH="$HERE/atelier_web.patch"
 CHECKOUT=${PHOTOCRAFT_DIR:-$HERE/../../photocraft}
-# Recorded upstream ref: v0.16.0, the pin in the outer repository.
-PINNED_REF=b1794c6e0608ccfc887213dcf58398977c5cb75e
-# The one file the patch adds, so `revert` knows what to remove.
-ADDED_FILE=apps/photocraft-web/src/atelier_cloud.rs
+# Recorded upstream ref: v0.17.0, the pin in the outer repository.
+PINNED_REF=b8c3f3aa8e2918032cadc0e042664414a03be333
+# The files the patch adds, so `revert` knows what to remove.
+ADDED_FILES="apps/photocraft-web/src/atelier_cloud.rs crates/ui-egui/src/panels/workspace_open_ui.rs"
 
 say() { printf '%s\n' "$*"; }
 die() {
@@ -56,7 +56,7 @@ apply() {
 			# A conflicted merge leaves markers and unmerged entries; clear them before saying so.
 			git_in reset -q
 			git_in checkout -- . 2>/dev/null || true
-			rm -f "$CHECKOUT/$ADDED_FILE"
+			for f in $ADDED_FILES; do rm -f "$CHECKOUT/$f"; done
 			die "the patch conflicts with $(git_in rev-parse --short HEAD): upstream moved inside a hunk.
    A 3-way merge fitted most of it and left conflicts in the rest, so this is drift to reconcile by
    hand (README.md, When upstream moves), not a clean application."
@@ -75,7 +75,7 @@ apply() {
 revert() {
 	git_in reset -q
 	git_in checkout -- .
-	rm -f "$CHECKOUT/$ADDED_FILE"
+	for f in $ADDED_FILES; do rm -f "$CHECKOUT/$f"; done
 	say "reverted $CHECKOUT to $(git_in rev-parse --short HEAD)"
 }
 

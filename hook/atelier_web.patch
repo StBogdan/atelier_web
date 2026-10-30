@@ -1,5 +1,5 @@
 diff --git a/apps/photocraft-web/Cargo.toml b/apps/photocraft-web/Cargo.toml
-index 279d13b45..916d6e91b 100644
+index 0176e0fe8..624d4f6fd 100644
 --- a/apps/photocraft-web/Cargo.toml
 +++ b/apps/photocraft-web/Cargo.toml
 @@ -34,7 +34,7 @@ rfd = { workspace = true }
@@ -663,7 +663,7 @@ index 0802a02eb..82963ee3a 100644
  mod indexed_presets;
  
 diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
-index 20e64fa04..675c2a184 100644
+index f82051dbf..f4b163a3d 100644
 --- a/apps/photocraft-web/src/web.rs
 +++ b/apps/photocraft-web/src/web.rs
 @@ -14,7 +14,7 @@ use photocraft_ui_egui::theme::ThemeKind;
@@ -675,16 +675,16 @@ index 20e64fa04..675c2a184 100644
  
  /// Everything File › Open reads: PhotoCraft, Photoshop, OpenRaster, Krita and Affinity documents, flat images, and
  /// Photoshop brushes (.abr), gradients (.grd), layer styles (.asl) and swatches (.aco, .act, .ase), which go to the preset libraries.
-@@ -347,7 +347,7 @@ impl eframe::App for WebShell {
+@@ -352,7 +352,7 @@ impl eframe::App for WebShell {
                      match f.bytes_async().await {
                          Ok(bytes) => {
                              let queue = if place { &place_inbox } else { &inbox };
--                            queue.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
-+                            queue.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes, None));
+-                            queue.lock().unwrap_or_else(PoisonError::into_inner).push((name, bytes));
++                            queue.lock().unwrap_or_else(PoisonError::into_inner).push((name, bytes, None));
                              ctx.request_repaint();
                          }
                          Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
-@@ -398,52 +398,91 @@ fn services(inbox: Inbox, place_inbox: Inbox, cursor_pos: photocraft_ui_egui::Cu
+@@ -405,52 +405,91 @@ fn services(inbox: Inbox, place_inbox: Inbox, cursor_pos: photocraft_ui_egui::Cu
          export: Some(Box::new(|doc: &Document, path: &str, settings: &photocraft_ui_egui::ExportSettings| {
              photocraft_io::export(doc, path, &settings.io_options()).map(|r| (r.bytes, r.warnings)).map_err(|e| e.to_string())
          })),
@@ -810,122 +810,23 @@ index 20e64fa04..675c2a184 100644
          // Preferences live in the browser's localStorage.
          load_prefs: Some(Box::new(|| local_storage()?.get_item(PREFS_KEY).ok().flatten())),
          save_prefs: Some(Box::new(|text: &str| local_storage().ok_or("no localStorage")?.set_item(PREFS_KEY, text).map_err(|e| format!("{e:?}")))),
-diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
-index 4db3dc2a3..c798202af 100644
---- a/crates/ui-egui/src/lib.rs
-+++ b/crates/ui-egui/src/lib.rs
-@@ -506,8 +506,9 @@ pub type ClipboardSetFn = Box<dyn FnMut(u32, u32, &[u8]) -> Result<(), String>>;
- pub type ClipboardGetFn = Box<dyn FnMut() -> Result<Option<(u32, u32, Vec<u8>)>, String>>;
- /// Whether the last clipboard read found no way to reach the OS clipboard at all.
- pub type ClipboardUnreadableFn = Box<dyn Fn() -> bool>;
--/// Shared queue of (file name, bytes) delivered asynchronously.
--pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
-+/// Shared queue of (file name, bytes, the path they were read from) delivered asynchronously. The
-+/// path is what makes File › Save write back to the file a shell opened, rather than to a download.
-+pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>, Option<String>)>>>;
- /// Read the saved preferences text (`None` when there is none yet).
- pub type LoadTextFn = Box<dyn FnMut() -> Option<String>>;
- /// Persist the preferences text.
-@@ -558,6 +559,56 @@ pub type CaptionStyleFn = Box<dyn Fn(&egui::Context) -> CaptionStyle>;
- /// Physical right mouse button or stylus barrel button down (Windows; read for brush resize).
- pub type RightButtonDownFn = Box<dyn Fn() -> bool + Send + Sync>;
- 
-+/// The store's listing, read every frame the open window is up ([`WorkspaceOpen`]).
-+pub type WorkspaceListingFn = Box<dyn Fn() -> WorkspaceListing>;
-+/// Read the store again ([`WorkspaceOpen`]).
-+pub type WorkspaceRefreshFn = Box<dyn Fn()>;
-+/// Hand documents back to the app by name ([`WorkspaceOpen`]).
-+pub type WorkspaceOpenFn = Box<dyn Fn(&[String])>;
-+
-+/// A store a shell can open documents from, so the editor offers more than the browser's file
-+/// picker (design, Open from Workspace). Closures rather than a trait, so a shell outside this
-+/// crate can build one without depending on the app's types.
-+pub struct WorkspaceOpen {
-+    /// What the File menu item says, e.g. `"Open from Workspace…"`.
-+    pub label: String,
-+    /// What the store holds right now. Read every frame the window is open, so a document the
-+    /// editor itself just saved shows up without the window being reopened.
-+    pub listing: WorkspaceListingFn,
-+    /// Read the store again.
-+    pub refresh: WorkspaceRefreshFn,
-+    /// Hand these documents back to the app, by name. The shell reads them and answers through the
-+    /// [`Inbox`], so a slow read never blocks a frame.
-+    pub open: WorkspaceOpenFn,
-+}
-+
-+/// What a [`WorkspaceOpen`] can offer.
-+#[derive(Clone)]
-+pub enum WorkspaceListing {
-+    /// The store is still being read.
-+    Loading,
-+    /// The documents it holds, in the order they should be shown.
-+    Ready(Vec<WorkspaceDocument>),
-+    /// The read failed, in the user's words.
-+    Failed(String),
-+}
-+
-+/// One document a [`WorkspaceOpen`] offers.
-+#[derive(Clone)]
-+pub struct WorkspaceDocument {
-+    /// The file name, which is also what [`WorkspaceOpen::open`] takes back.
-+    pub name: String,
-+    /// Its size in bytes, as the store last saw it.
-+    pub size: u64,
-+}
-+
-+/// The state of the Open from Workspace window: whether it is up, and what is ticked in it.
-+#[derive(Default)]
-+pub(crate) struct WorkspaceUi {
-+    pub(crate) open: bool,
-+    pub(crate) chosen: std::collections::BTreeSet<String>,
-+}
-+
- /// Platform services injected by the app binary (file dialogs, codecs), keeping this crate free of
- /// I/O dependencies.
- #[derive(Default)]
-@@ -587,6 +638,9 @@ pub struct Services {
-     /// cancel and which reports nothing back), so a save through it names the document but
-     /// leaves its changes unsaved and the leave-page guard armed (#4962).
-     pub write_unconfirmed: bool,
-+    /// A path whose write is confirmed even when [`Self::write_unconfirmed`] is set, because the
-+    /// store behind it answers before the write returns (the web shell's project saves).
-+    pub write_confirmed: Option<Box<dyn Fn(&str) -> bool>>,
-     /// Encode and write in one step on a worker thread, so a large save doesn't freeze the
-     /// window (#2017). With background jobs on, saves use it instead of `export` and `write`.
-     pub save_file: Option<SaveFileFn>,
-@@ -604,6 +658,13 @@ pub struct Services {
-     pub encode_png: Option<EncodePngFn>,
-     /// Open a URL in the system browser (native). Falls back to `ctx.open_url` (web) when unset.
-     pub open_url: Option<OpenUrlFn>,
-+    /// (label, url) for a button on the Home screen, next to the community links: the shell that
-+    /// launched this editor supplies its own way back. `None` when nothing wrapped the editor, which
-+    /// leaves the screen exactly as it was.
-+    pub home_link: Option<(String, String)>,
-+    /// A store this shell can open documents from: File › Open from Workspace…. `None` when no
-+    /// store wrapped the editor, which leaves the File menu exactly as upstream draws it.
-+    pub workspace: Option<WorkspaceOpen>,
-     /// Preferences ▸ General ▸ Beep When Done: the platform's default beep, played when a
-     /// background job finishes successfully. `None` in the web build (and in tests).
-     pub beep: Option<fn()>,
-@@ -735,6 +796,9 @@ pub struct PhotocraftApp {
-     pub(crate) remove_trail: Option<stroke_trail::Trail>,
-     /// The open menus' items, reused between frames (`menus::ItemCache`).
-     pub(crate) menu_cache: Option<menus::ItemCache>,
-+    /// File › Open from Workspace: whether that window is up and what is ticked in it, when a
-+    /// shell supplied a store ([`Services::workspace`]).
-+    pub(crate) workspace_ui: WorkspaceUi,
-     /// Move tool drag shown live (`move_ui`).
-     pub(crate) move_preview: Option<move_ui::MovePreview>,
-     /// Move tool › Show Highlight on Rollover: the last hover answer (`move_hover`).
-@@ -1044,6 +1108,7 @@ impl PhotocraftApp {
+diff --git a/crates/ui-egui/src/app.rs b/crates/ui-egui/src/app.rs
+index e5f987c71..da327fab9 100644
+--- a/crates/ui-egui/src/app.rs
++++ b/crates/ui-egui/src/app.rs
+@@ -57,6 +57,7 @@ impl PhotocraftApp {
              remove_pending_target: None,
              remove_trail: None,
              menu_cache: None,
-+            workspace_ui: WorkspaceUi::default(),
++            workspace_ui: crate::services::WorkspaceUi::default(),
              move_preview: None,
              move_hover: None,
              move_distance: None,
-@@ -1972,7 +2037,8 @@ impl PhotocraftApp {
+diff --git a/crates/ui-egui/src/app/files.rs b/crates/ui-egui/src/app/files.rs
+index 97b25ddb4..c0ebb31c9 100644
+--- a/crates/ui-egui/src/app/files.rs
++++ b/crates/ui-egui/src/app/files.rs
+@@ -413,7 +413,8 @@ impl PhotocraftApp {
          let (bytes, warnings) = export(&st.doc, &path, settings)?;
          let write = self.services.write.as_mut().ok_or("no writer configured")?;
          write(&path, &bytes)?;
@@ -935,9 +836,13 @@ index 4db3dc2a3..c798202af 100644
          self.saved(doc, revision, &path, &warnings, copy);
          Ok(Some((path, warnings)))
      }
-@@ -2328,17 +2394,17 @@ impl eframe::App for PhotocraftApp {
-             filter_preview_worker::discard_closed(self);
-             shortcuts::handle(self, ctx);
+diff --git a/crates/ui-egui/src/app/frame.rs b/crates/ui-egui/src/app/frame.rs
+index d19eb31f7..71a703672 100644
+--- a/crates/ui-egui/src/app/frame.rs
++++ b/crates/ui-egui/src/app/frame.rs
+@@ -89,17 +89,17 @@ impl PhotocraftApp {
+                 }
+             }
          }
 -        let arrived: Vec<(String, Vec<u8>)> =
 +        let arrived: Vec<(String, Vec<u8>, Option<String>)> =
@@ -958,19 +863,43 @@ index 4db3dc2a3..c798202af 100644
          // Finder double-click / Open With / Dock drops (macOS open-documents events).
          self.drain_os_events(ctx);
          // While files are dragged over the window it gets no pointer events: keep frames coming so
-@@ -2481,6 +2547,7 @@ impl eframe::App for PhotocraftApp {
+@@ -250,6 +250,7 @@ impl PhotocraftApp {
          analysis_ui::windows(self, &ctx);
          timeline_ui::windows(self, &ctx);
          workspace_ui::windows(self, &ctx);
-+        panels::workspace_window(self, &ctx);
++        panels::workspace_open_ui::window(self, &ctx);
          palette::show(self, &ctx);
          dialogs::show(self, &ctx);
          layers_panel_ui::show_dialog(self, &ctx);
-diff --git a/crates/ui-egui/src/menus.rs b/crates/ui-egui/src/menus.rs
-index 962c79f82..e4ecddb1a 100644
---- a/crates/ui-egui/src/menus.rs
-+++ b/crates/ui-egui/src/menus.rs
-@@ -232,6 +232,15 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index 67b54ef73..e2c80e27c 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -231,7 +231,8 @@ pub use services::{
+     AdoptAutosaveFn, AppendTextFn, AutomationCommandFn, AutomationOpenPcraftFn, AutomationReadFn, AutomationWriteFn, AutosaveFn, AutosaveResultsFn, CapsLockFn,
+     CaptionStyleFn, ClipboardGetFn, ClipboardSetFn, ClipboardUnreadableFn, CursorPosFn, DiscardAutosaveFn, EncodePngFn, ExportFn, ExportSettings, FileStamp,
+     FileStampFn, FormatChoices, ImportFn, Inbox, LoadTextFn, OpenUrlFn, OsEventsFn, PhotoshopShortcutsFn, QuitFn, RecoverFn, Recoverable, RightButtonDownFn,
+-    SameFileFn, SaveFileFn, SaveTextFn, Services, SystemThemeFn, WindowFrameFn, WriteFn,
++    SameFileFn, SaveFileFn, SaveTextFn, Services, SystemThemeFn, WindowFrameFn, WorkspaceDocument, WorkspaceListing, WorkspaceListingFn, WorkspaceOpen,
++    WorkspaceOpenFn, WorkspaceRefreshFn, WriteFn,
+ };
+ pub use text::bidi_text;
+ pub use text::cjk_fonts;
+@@ -354,6 +355,9 @@ pub struct PhotocraftApp {
+     pub(crate) remove_trail: Option<stroke_trail::Trail>,
+     /// The open menus' items, reused between frames (`menus::ItemCache`).
+     pub(crate) menu_cache: Option<menus::ItemCache>,
++    /// File › Open from Workspace: whether that window is up and what is ticked in it, when a
++    /// shell supplied a store ([`Services::workspace`]).
++    pub(crate) workspace_ui: services::WorkspaceUi,
+     /// Move tool drag shown live (`move_ui`).
+     pub(crate) move_preview: Option<move_ui::MovePreview>,
+     /// Move tool › Show Highlight on Rollover: the last hover answer (`move_hover`).
+diff --git a/crates/ui-egui/src/menus/invoke.rs b/crates/ui-egui/src/menus/invoke.rs
+index 850ac92fd..9170cbd39 100644
+--- a/crates/ui-egui/src/menus/invoke.rs
++++ b/crates/ui-egui/src/menus/invoke.rs
+@@ -214,6 +214,15 @@ fn invoke_file_commands(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str,
          "file.import.videoFramesToLayers" if params.get("path").and_then(Value::as_str).is_none() => {
              app.ask_folder(|app, path| app.run("file.import.videoFramesToLayers", json!({"path": path})).map_err(|e| e.to_string()))
          }
@@ -986,7 +915,11 @@ index 962c79f82..e4ecddb1a 100644
          "file.save" => {
              // Writes back only to a layered file that holds the whole document; anything else
              // goes through Save As, so the original is never overwritten with less (#3806).
-@@ -1143,6 +1152,18 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
+diff --git a/crates/ui-egui/src/menus/items.rs b/crates/ui-egui/src/menus/items.rs
+index 37944cca5..7caa2d660 100644
+--- a/crates/ui-egui/src/menus/items.rs
++++ b/crates/ui-egui/src/menus/items.rs
+@@ -241,6 +241,18 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
          item.label = "Release Clipping Mask".into();
          item.enabled = is_enabled(app, &item.id);
      }
@@ -1006,27 +939,32 @@ index 962c79f82..e4ecddb1a 100644
  }
  
 diff --git a/crates/ui-egui/src/panels.rs b/crates/ui-egui/src/panels.rs
-index b6bd34d9d..0c224b44e 100644
+index 2fcf3fee8..9f7a31ebd 100644
 --- a/crates/ui-egui/src/panels.rs
 +++ b/crates/ui-egui/src/panels.rs
-@@ -9,7 +9,7 @@ use serde_json::{Value, json};
- use crate::mask_thumbs_ui::MaskKind;
- use crate::state::Tool;
- use crate::theme::{self, Tokens};
--use crate::{PhotocraftApp, icons, widgets};
-+use crate::{PhotocraftApp, WorkspaceListing, icons, widgets};
+@@ -62,6 +62,7 @@ pub(super) mod titlebar;
+ mod toolbar;
+ pub mod type_panels_ui;
+ pub(super) mod variables_ui;
++pub mod workspace_open_ui;
  
- // ----------------------------------------------------------------------------- toolbar
- 
-@@ -706,6 +706,22 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+ #[cfg(test)]
+ use color::color_field_height;
+diff --git a/crates/ui-egui/src/panels/title_bar.rs b/crates/ui-egui/src/panels/title_bar.rs
+index d93315af1..c0f550cf9 100644
+--- a/crates/ui-egui/src/panels/title_bar.rs
++++ b/crates/ui-egui/src/panels/title_bar.rs
+@@ -124,6 +124,24 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                          }
                          button.context_menu(|ui| crate::prefs_ui::appearance_context_menu(app, ui));
                      }
 +                    // A shell that launched the editor gets its own way back, after the theme
 +                    // toggle. It is added last, so a narrow bar drops it first (the shell's own Home
-+                    // screen carries nothing extra: this is the editor's only chrome for it).
++                    // screen carries nothing extra: this is the editor's only chrome for it). The
++                    // room is the one this end of the bar started with: the controls after it have
++                    // already spent theirs.
 +                    if let Some((label, url)) = app.services.home_link.clone()
-+                        && ui.available_width() >= BACK_ROOM
++                        && room >= WORKSPACE_MIN + 2.0 * ICON_SLOT + BACK_ROOM
 +                    {
 +                        let back = egui::Button::image_and_text(
 +                            icons::image("chevron-left", 14.0, t.text_dim),
@@ -1041,25 +979,33 @@ index b6bd34d9d..0c224b44e 100644
                      if rtl { ui.min_rect().right() } else { ui.min_rect().left() }
                  };
                  free = if rtl { (controls_end, menus_end) } else { (menus_end, controls_end) };
-@@ -769,6 +785,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
+@@ -187,6 +205,8 @@ pub fn sync_window_title(app: &mut PhotocraftApp, ctx: &egui::Context) {
  
  /// Minimum space kept between the window title and the menus or controls beside it.
  const TITLE_GAP: f32 = 16.0;
 +/// Free room the launcher's own link needs, after the other controls.
 +const BACK_ROOM: f32 = 190.0;
+ 
  /// The workspace switcher's narrowest width, and one 28 pt title-bar icon with its spacing.
  const WORKSPACE_MIN: f32 = 90.0;
- const ICON_SLOT: f32 = 34.0;
-@@ -7413,6 +7431,103 @@ mod properties_target_regressions {
-     }
- }
- 
-+// ----------------------------------------------------------- open from workspace
+diff --git a/crates/ui-egui/src/panels/workspace_open_ui.rs b/crates/ui-egui/src/panels/workspace_open_ui.rs
+new file mode 100644
+index 000000000..9eb151050
+--- /dev/null
++++ b/crates/ui-egui/src/panels/workspace_open_ui.rs
+@@ -0,0 +1,101 @@
++//! File › Open from Workspace: the documents a shell's own store can hand over.
++
++use egui::{Align2, RichText, vec2};
++
++use super::{PhotocraftApp, Tokens};
++use crate::WorkspaceListing;
++use crate::widgets;
 +
 +/// File › Open from Workspace: the documents the shell can hand over, ticked and opened together
 +/// (design, Open from Workspace). Drawn only while the menu item has raised it, and only a shell
 +/// that supplied [`crate::Services::workspace`] can reach it.
-+pub fn workspace_window(app: &mut PhotocraftApp, ctx: &egui::Context) {
++pub fn window(app: &mut PhotocraftApp, ctx: &egui::Context) {
 +    if !app.workspace_ui.open {
 +        return;
 +    }
@@ -1070,11 +1016,10 @@ index b6bd34d9d..0c224b44e 100644
 +    // Off the app for the frame: the closure below borrows these, never `app`, because the shell's
 +    // own closures borrow `app.services` for as long as the window lives.
 +    let mut chosen = std::mem::take(&mut app.workspace_ui.chosen);
-+    let (title, listing) = (store.label.trim_end_matches('…').to_string(), (store.listing)());
++    let (title, listing) = (store.label.trim_end_matches('…').to_owned(), (store.listing)());
 +    let t = Tokens::get(ctx);
 +    let (mut refresh, mut open_now, mut close) = (false, false, false);
 +    egui::Window::new(title)
-+        .id(egui::Id::new("workspace-open"))
 +        .collapsible(false)
 +        .resizable(true)
 +        .default_width(400.0)
@@ -1150,7 +1095,100 @@ index b6bd34d9d..0c224b44e 100644
 +        app.workspace_ui.open = false;
 +    }
 +}
+diff --git a/crates/ui-egui/src/services.rs b/crates/ui-egui/src/services.rs
+index 53d3c2e7f..7d0a9493e 100644
+--- a/crates/ui-egui/src/services.rs
++++ b/crates/ui-egui/src/services.rs
+@@ -250,8 +250,9 @@ pub type ClipboardGetFn = Box<dyn FnMut() -> Result<Option<(u32, u32, Vec<u8>)>,
+ /// Whether the last clipboard read found no way to reach the OS clipboard at all.
+ pub type ClipboardUnreadableFn = Box<dyn Fn() -> bool>;
+ 
+-/// Shared queue of (file name, bytes) delivered asynchronously.
+-pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
++/// Shared queue of (file name, bytes, the path they were read from) delivered asynchronously. The
++/// path is what makes File › Save write back to the file a shell opened, rather than to a download.
++pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>, Option<String>)>>>;
+ 
+ /// Read the saved preferences text (`None` when there is none yet).
+ pub type LoadTextFn = Box<dyn FnMut() -> Option<String>>;
+@@ -319,6 +320,56 @@ pub type CaptionStyleFn = Box<dyn Fn(&egui::Context) -> CaptionStyle>;
+ /// Physical right mouse button or stylus barrel button down (Windows; read for brush resize).
+ pub type RightButtonDownFn = Box<dyn Fn() -> bool + Send + Sync>;
+ 
++/// The store's listing, read every frame the open window is up ([`WorkspaceOpen`]).
++pub type WorkspaceListingFn = Box<dyn Fn() -> WorkspaceListing>;
++/// Read the store again ([`WorkspaceOpen`]).
++pub type WorkspaceRefreshFn = Box<dyn Fn()>;
++/// Hand documents back to the app by name ([`WorkspaceOpen`]).
++pub type WorkspaceOpenFn = Box<dyn Fn(&[String])>;
 +
- #[cfg(test)]
- mod navigator_animated_zoom_tests {
-     use super::*;
++/// A store a shell can open documents from, so the editor offers more than the browser's file
++/// picker (design, Open from Workspace). Closures rather than a trait, so a shell outside this
++/// crate can build one without depending on the app's types.
++pub struct WorkspaceOpen {
++    /// What the File menu item says, e.g. `"Open from Workspace…"`.
++    pub label: String,
++    /// What the store holds right now. Read every frame the window is open, so a document the
++    /// editor itself just saved shows up without the window being reopened.
++    pub listing: WorkspaceListingFn,
++    /// Read the store again.
++    pub refresh: WorkspaceRefreshFn,
++    /// Hand these documents back to the app, by name. The shell reads them and answers through the
++    /// [`Inbox`], so a slow read never blocks a frame.
++    pub open: WorkspaceOpenFn,
++}
++
++/// What a [`WorkspaceOpen`] can offer.
++#[derive(Clone)]
++pub enum WorkspaceListing {
++    /// The store is still being read.
++    Loading,
++    /// The documents it holds, in the order they should be shown.
++    Ready(Vec<WorkspaceDocument>),
++    /// The read failed, in the user's words.
++    Failed(String),
++}
++
++/// One document a [`WorkspaceOpen`] offers.
++#[derive(Clone)]
++pub struct WorkspaceDocument {
++    /// The file name, which is also what [`WorkspaceOpen::open`] takes back.
++    pub name: String,
++    /// Its size in bytes, as the store last saw it.
++    pub size: u64,
++}
++
++/// The state of the Open from Workspace window: whether it is up, and what is ticked in it.
++#[derive(Default)]
++pub(crate) struct WorkspaceUi {
++    pub(crate) open: bool,
++    pub(crate) chosen: std::collections::BTreeSet<String>,
++}
++
+ /// Platform services injected by the app binary (file dialogs, codecs), keeping this crate free of
+ /// I/O dependencies.
+ #[derive(Default)]
+@@ -348,6 +399,9 @@ pub struct Services {
+     /// cancel and which reports nothing back), so a save through it names the document but
+     /// leaves its changes unsaved and the leave-page guard armed (#4962).
+     pub write_unconfirmed: bool,
++    /// A path whose write is confirmed even when [`Self::write_unconfirmed`] is set, because the
++    /// store behind it answers before the write returns (the web shell's project saves).
++    pub write_confirmed: Option<Box<dyn Fn(&str) -> bool>>,
+     /// Encode and write in one step on a worker thread, so a large save doesn't freeze the
+     /// window (#2017). With background jobs on, saves use it instead of `export` and `write`.
+     pub save_file: Option<SaveFileFn>,
+@@ -365,6 +419,13 @@ pub struct Services {
+     pub encode_png: Option<EncodePngFn>,
+     /// Open a URL in the system browser (native). Falls back to `ctx.open_url` (web) when unset.
+     pub open_url: Option<OpenUrlFn>,
++    /// (label, url) for a button on the Home screen, next to the community links: the shell that
++    /// launched this editor supplies its own way back. `None` when nothing wrapped the editor, which
++    /// leaves the screen exactly as it was.
++    pub home_link: Option<(String, String)>,
++    /// A store this shell can open documents from: File › Open from Workspace…. `None` when no
++    /// store wrapped the editor, which leaves the File menu exactly as upstream draws it.
++    pub workspace: Option<WorkspaceOpen>,
+     /// Preferences ▸ General ▸ Beep When Done: the platform's default beep, played when a
+     /// background job finishes successfully. `None` in the web build (and in tests).
+     pub beep: Option<fn()>,
