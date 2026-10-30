@@ -43,7 +43,7 @@ const cloud = await context.newPage();
 const editorLog = [];
 
 step('create a workspace from a bundled document (Atelier web)');
-await cloud.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+await cloud.goto(`${ORIGIN}/workspaces/`, { waitUntil: 'networkidle' });
 await cloud.click('button:has-text("New workspace")');
 await cloud.fill('input[type=text]', NAME);
 await cloud.click('button:has-text("Create")');
@@ -175,7 +175,7 @@ step('Several documents at once, in several formats');
 		'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',
 		'base64'
 	);
-	await cloud.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+	await cloud.goto(`${ORIGIN}/workspaces/`, { waitUntil: 'networkidle' });
 	await cloud.click('button:has-text("New workspace")');
 	await cloud.fill('input[type=text]', many);
 	await cloud.click('.option:has-text("document from this computer") input[type=radio]');
@@ -201,7 +201,7 @@ step('Several documents at once, in several formats');
 
 	const manyHref = await cloud.getAttribute(`article:has-text("${many}") a:has-text("Open in PhotoCraft")`, 'href');
 	const manyProject = new URL(manyHref, ORIGIN).searchParams.get('project');
-	await cloud.goto(`${ORIGIN}/cloud/workspace/${manyProject}`, { waitUntil: 'networkidle' });
+	await cloud.goto(`${ORIGIN}/workspaces/${manyProject}`, { waitUntil: 'networkidle' });
 	await cloud.waitForSelector('.documents tbody tr');
 	const rows = await cloud.$$eval('.documents tbody tr', (list) =>
 		list.map((row) => ({ name: row.getAttribute('data-document'), open: Boolean(row.querySelector('a.button, details.open-menu summary.button')) })),

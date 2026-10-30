@@ -84,7 +84,7 @@
               "name": "PhotoCraft",
               "url": "https://github.com/storytold/photocraft"
             },
-            "url": "https://ateliercloud.tech/cloud/",
+            "url": "https://ateliercloud.tech/workspaces/",
             "applicationCategory": "MultimediaApplication",
             "operatingSystem": "Any",
             "browserRequirements": "The Origin Private File System and WebAssembly",
@@ -99,7 +99,7 @@
               "Open PSD, PSB and .pcraft documents in PhotoCraft",
               "Read, organise, combine and split PDFs in PdfCraft",
               "One workspace per project, kept in the browser",
-              "See a diff against the last saved copy",
+              "A version recorded every time you save",
               "Send a document to your own S3-compatible bucket",
               "No install, no account, free while in alpha"
             ],
@@ -1095,7 +1095,7 @@
               />
             </svg>
           </a>
-          <a class="cta" href="/cloud/">Your workspaces</a>
+          <a class="cta" href="/workspaces/">Your workspaces</a>
         </nav>
       </div>
     </header>
@@ -1106,7 +1106,7 @@
           <div>
             <p class="eyebrow">Hosted PhotoCraft and PdfCraft</p>
             <h1>
-              PhotoCraft online, free: edit .psd and pdf files directly in the
+              PhotoCraft online, free: edit .psd and .pdf files directly in the
               browser.
             </h1>
             <p class="lede">
@@ -1117,7 +1117,7 @@
               send documents to.
             </p>
             <div class="actions">
-              <a class="button primary" href="/cloud/">
+              <a class="button primary" href="/workspaces/">
                 Open your workspaces
                 <svg
                   width="15"
@@ -1144,7 +1144,7 @@
           <figure class="shot">
             <div class="chrome" aria-hidden="true">
               <span class="dots"><span></span><span></span><span></span></span>
-              <span class="url">ateliercloud.tech/cloud/</span>
+              <span class="url">ateliercloud.tech/workspaces/</span>
             </div>
             <picture>
               <source
@@ -1222,11 +1222,11 @@
                 <path d="M4 6h16M4 12h10M4 18h6" />
                 <path d="M16 15l2 2 4-4" />
               </svg>
-              <h3>See what changed before you save</h3>
+              <h3>A version on every save</h3>
               <p>
-                The Changes panel compares the document with the last copy you
-                kept and lists what changed, with counts and sizes. It runs in
-                the browser, so nothing is uploaded first.
+                Saving in the editor records a version of the workspace: the
+                document's size, object count and hash, read in the browser. It
+                happens on its own, and nothing is uploaded to do it.
               </p>
             </article>
 
@@ -1342,10 +1342,10 @@
               </p>
             </li>
             <li>
-              <h3>Save and review</h3>
+              <h3>Save</h3>
               <p>
-                File ▸ Save writes the document back to the workspace. The
-                Changes panel shows what changed.
+                File ▸ Save writes the document back to the workspace, and the
+                save becomes its version.
               </p>
             </li>
             <li>
@@ -1520,7 +1520,7 @@
               save a copy when you are done.
             </p>
             <div class="actions">
-              <a class="button primary" href="/cloud/">
+              <a class="button primary" href="/workspaces/">
                 Open your workspaces
                 <svg
                   width="15"
@@ -1536,7 +1536,7 @@
                   <path d="M3 8h10M9 4l4 4-4 4" />
                 </svg>
               </a>
-              <a class="button ghost" href="/cloud/help">Read the help page</a>
+              <a class="button ghost" href="/workspaces/help">Read the help page</a>
             </div>
           </div>
         </div>
@@ -1582,8 +1582,8 @@
         </p>
       </div>
       <nav aria-label="Elsewhere">
-        <a href="/cloud/">Workspaces</a>
-        <a href="/cloud/help">Help</a>
+        <a href="/workspaces/">Workspaces</a>
+        <a href="/workspaces/help">Help</a>
         <a href="/#editors">PhotoCraft</a>
         <a href="https://github.com/StBogdan/atelier_web">Source</a>
         <a

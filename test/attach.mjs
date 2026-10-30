@@ -101,7 +101,7 @@ async function main() {
 	});
 
 	step('The Help page carries the bucket setup, and the nav reaches it');
-	await page.goto(`${ORIGIN}/cloud/help`, { waitUntil: 'networkidle' });
+	await page.goto(`${ORIGIN}/workspaces/help`, { waitUntil: 'networkidle' });
 	const help = await page.innerText('.shell');
 	check('Help renders the bucket walkthrough', /Setting up a bucket/.test(help), help.slice(0, 120));
 	check('Help renders troubleshooting', /Troubleshooting/.test(help));
@@ -125,7 +125,7 @@ async function main() {
 	);
 	check(
 		'the nav links to it',
-		(await page.getAttribute('nav.chrome a:has-text("Help")', 'href')) === '/cloud/help',
+		(await page.getAttribute('nav.chrome a:has-text("Help")', 'href')) === '/workspaces/help',
 		String(await page.getAttribute('nav.chrome a:has-text("Help")', 'href'))
 	);
 
@@ -144,11 +144,11 @@ async function main() {
 	);
 
 	step('A workspace to attach a bucket to');
-	await page.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+	await page.goto(`${ORIGIN}/workspaces/`, { waitUntil: 'networkidle' });
 	await page.waitForSelector('text=Workspaces');
 	check(
-		'with nothing uncommitted, the main page says nothing about it',
-		!/not committed yet/.test(await page.innerText('.shell'))
+		'with nothing unrecorded, the main page says nothing about it',
+		!/not recorded yet|not committed yet/.test(await page.innerText('.shell'))
 	);
 	await page.click('button:has-text("New workspace")');
 	await page.fill('input[type=text]', 'Attached bucket');
@@ -158,7 +158,7 @@ async function main() {
 	const project = new URL(href, ORIGIN).searchParams.get('project');
 	check('a workspace exists with a uuid project id', Boolean(project), project ?? 'none');
 
-	await page.goto(`${ORIGIN}/cloud/workspace/${project}`, { waitUntil: 'networkidle' });
+	await page.goto(`${ORIGIN}/workspaces/${project}`, { waitUntil: 'networkidle' });
 	await page.waitForSelector('h2:text-is("Bucket")');
 
 	const before = await panel(page, 'Bucket');
@@ -166,33 +166,21 @@ async function main() {
 	check('a fresh workspace has no bucket', /none attached/.test(before), before);
 	check('and offers nothing to upload to', !/Upload document to bucket/.test(before), before);
 
-	const changes = await panel(page, 'Changes');
-	check('the Changes panel carries the upload too', /Upload to bucket/.test(changes), changes);
-	check('with no bucket it explains itself with an info icon', /ⓘ/.test(changes), changes);
+	const version = await panel(page, 'Version');
+	log('   version panel:\n' + version.split('\n').map((line) => `     ${line}`).join('\n'));
+	check('the version panel carries the upload', /Upload to bucket/.test(version), version);
+	check('and says there is no bucket', /No bucket attached/.test(version), version);
 	check(
-		'and the explanation under the actions is there even with nothing to do',
-		/Recording a version marks the current state/.test(changes),
-		changes
-	);
-	const cleanHeading = (await page.innerText('section.panel.changes h2')).trim();
-	check(
-		'the up-to-date heading keeps the same "Changes —" prefix, so nothing jumps',
-		cleanHeading === 'Changes — Version up to date',
-		cleanHeading
+		'with the upload disabled until one is attached',
+		await page.isDisabled('section.panel.version button:has-text("Upload to bucket")')
 	);
 	check(
-		'and the button is disabled',
-		await page.isDisabled('section.panel.changes button:has-text("Upload to bucket")')
-	);
-	const info = await page.getAttribute('section.panel.changes .info', 'title');
-	check('the info icon gives the reason on hover', info?.includes('No bucket is attached') === true, String(info));
-	check(
-		'the record action stays in place when there is nothing to record, greyed as "Up to date"',
-		await page.isDisabled('section.panel.changes button:has-text("Up to date")')
+		'there is no record action to press',
+		(await page.locator('section.panel.version button:has-text("Record")').count()) === 0
 	);
 
-	const downloadBox = await page.locator('section.panel.changes button:has-text("Download files")').boundingBox();
-	const uploadBox = await page.locator('section.panel.changes button:has-text("Upload to bucket")').boundingBox();
+	const downloadBox = await page.locator('section.panel.version button:has-text("Download files")').boundingBox();
+	const uploadBox = await page.locator('section.panel.version button:has-text("Upload to bucket")').boundingBox();
 	check(
 		'"Download files" is pushed to the right end of the row',
 		Boolean(downloadBox && uploadBox) && downloadBox.x > uploadBox.x + uploadBox.width,
@@ -286,10 +274,10 @@ async function main() {
 		`${config?.endpoint} (wanted ${stub.url})`
 	);
 	check(
-		"the Changes panel's upload is live once a bucket is attached",
-		!(await page.isDisabled('section.panel.changes button:has-text("Upload to bucket")'))
+		"the version panel's upload is live once a bucket is attached",
+		!(await page.isDisabled('section.panel.version button:has-text("Upload to bucket")'))
 	);
-	const uploadButton = 'section.panel.changes button:has-text("Upload to bucket")';
+	const uploadButton = 'section.panel.version button:has-text("Upload to bucket")';
 	check(
 		'and highlighted, because the bucket does not have this document yet',
 		((await page.getAttribute(uploadButton, 'class')) ?? '').includes('primary'),
@@ -366,7 +354,7 @@ async function main() {
 
 	step('Edit the document, so the bucket copy is no longer the document');
 	await page.evaluate(async (id) => {
-		const response = await fetch('/cloud/samples/02-layer-groups.pcraft');
+		const response = await fetch('/workspaces/samples/02-layer-groups.pcraft');
 		const other = new Uint8Array(await response.arrayBuffer());
 		const space = await (await navigator.storage.getDirectory()).getDirectoryHandle('atelier-cloud');
 		const dir = await (await space.getDirectoryHandle('projects')).getDirectoryHandle(id);
@@ -384,33 +372,31 @@ async function main() {
 	check('the attachment survives a reload, without the credential being re-entered', edited.includes(stub.bucket), edited);
 	check('the panel knows the bucket copy is stale', /bucket copy is behind/.test(edited), edited);
 
-	const pendingChanges = await panel(page, 'Changes');
+	const afterEdit = await panel(page, 'Version');
 	check(
-		'and the explanation under the actions does not vanish when there are changes to record',
-		/Recording a version marks the current state/.test(pendingChanges),
-		pendingChanges
+		'the version panel stays put when the document has moved on',
+		/Upload to bucket/.test(afterEdit) && /Download files/.test(afterEdit),
+		afterEdit.split('\n').join(' · ')
 	);
-	check('nor does the internals wording come back', !/outbox|manifest and thumbnail/.test(pendingChanges), pendingChanges);
 	check(
-		'and the diff note is a count, not a narrated sentence',
-		!/not copied again|no longer names/.test(pendingChanges) && /objects? (unchanged|unused)/.test(pendingChanges),
-		pendingChanges
+		'and it still names no internals',
+		!/outbox|manifest and thumbnail/.test(afterEdit),
+		afterEdit.split('\n').join(' · ')
 	);
 
-	await page.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
-	await page.waitForSelector('text=not committed yet', { timeout: 15_000 });
+	await page.goto(`${ORIGIN}/workspaces/`, { waitUntil: 'networkidle' });
+	await page.waitForSelector('article');
 	const grid = await page.innerText('.shell');
 	check(
-		'now that something is uncommitted, the main page says so',
-		/workspace has changes that are not committed yet/.test(grid),
+		'the launcher records the save it finds and its card says so',
+		/saved/.test(grid) && !/not recorded yet|not committed yet/.test(grid),
 		grid.slice(0, 200)
 	);
-	check('and without the "nothing else has them" tail', !/nothing else has them/.test(grid), grid.slice(0, 200));
-	await page.goto(`${ORIGIN}/cloud/workspace/${project}`, { waitUntil: 'networkidle' });
-	await page.waitForSelector('section.panel.changes');
+	await page.goto(`${ORIGIN}/workspaces/${project}`, { waitUntil: 'networkidle' });
+	await page.waitForSelector('section.panel.version');
 	check(
-		'but a workspace page does not repeat it, since the panel speaks for itself',
-		!/not committed yet/.test(await page.innerText('.shell'))
+		'and the workspace page has no unrecorded state to announce',
+		!/not committed yet|not recorded yet/.test(await page.innerText('.shell'))
 	);
 
 	step('Download from the bucket, back into the workspace');
@@ -428,13 +414,17 @@ async function main() {
 	check('the document is byte-for-byte the uploaded one again', digest(after) === digest(original));
 
 	const metaAfter = await readJson(page, project, 'meta.json');
-	check('the restore left the workspace uncommitted, not silently committed', metaAfter.dirty === true, JSON.stringify(metaAfter.dirty));
+	check(
+		'the restore is recorded as the workspace\'s version',
+		metaAfter.dirty === false && metaAfter.revision.hash === metaAfter.sync.remote.hash,
+		`dirty ${metaAfter.dirty}, version ${metaAfter.revision.hash}, bucket ${metaAfter.sync.remote.hash}`
+	);
 	check('no request failed signature verification all the way through', stub.failures.length === 0, stub.failures.join('; '));
 
 	step('Start a workspace from what the bucket already holds');
 	const otherId = '11111111-2222-3333-4444-555555555555';
 	const otherBytes = await page.evaluate(async () => {
-		const response = await fetch('/cloud/samples/02-layer-groups.pcraft');
+		const response = await fetch('/workspaces/samples/02-layer-groups.pcraft');
 		return [...new Uint8Array(await response.arrayBuffer())];
 	});
 	stub.objects.set(`${otherId}/02-layer-groups.pcraft`, Buffer.from(otherBytes));
@@ -478,7 +468,7 @@ async function main() {
 		`${loadedBytes?.length} B`
 	);
 	const loadedMeta = await readJson(page, project, 'meta.json');
-	check('and it arrives uncommitted, not recorded as a version', loadedMeta.dirty === true, JSON.stringify(loadedMeta.dirty));
+	check('and it is recorded as this workspace\'s version', loadedMeta.dirty === false, JSON.stringify(loadedMeta.dirty));
 	check(
 		'the chooser closes once it has done its work',
 		(await page.locator('table:has-text("02-layer-groups.pcraft")').count()) === 0
@@ -530,7 +520,7 @@ async function main() {
 	check('and the document is untouched by detaching', stillThere !== null);
 
 	step('A bucket attached after a workspace was started can still hand its files over');
-	await page.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+	await page.goto(`${ORIGIN}/workspaces/`, { waitUntil: 'networkidle' });
 	await page.waitForSelector('text=Workspaces');
 	await page.click('button:has-text("New workspace")');
 	await page.fill('input[type=text]', 'Attached later');
@@ -538,7 +528,7 @@ async function main() {
 	await page.waitForSelector('article h2:has-text("Attached later")');
 	const laterHref = await page.getAttribute('article:has(h2:has-text("Attached later")) a:has-text("Open in PhotoCraft")', 'href');
 	const later = new URL(laterHref, ORIGIN).searchParams.get('project');
-	await page.goto(`${ORIGIN}/cloud/workspace/${later}`, { waitUntil: 'networkidle' });
+	await page.goto(`${ORIGIN}/workspaces/${later}`, { waitUntil: 'networkidle' });
 	await page.waitForSelector('h2:text-is("Bucket")');
 	check(
 		'this workspace already has a document of its own, and nothing uploaded',
@@ -572,8 +562,8 @@ async function main() {
 		`${fetchedLater?.length} B, wanted ${seeded.length} B`
 	);
 	check(
-		'and it arrives uncommitted',
-		(await readJson(page, later, 'meta.json')).dirty === true
+		'and it is recorded as that workspace\'s version',
+		(await readJson(page, later, 'meta.json')).dirty === false
 	);
 	check('no request failed signature verification through any of this', stub.failures.length === 0, stub.failures.join('; '));
 
@@ -623,7 +613,7 @@ async function main() {
 			for await (const _ of projects.keys()) count++;
 			return count;
 		});
-	await page.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+	await page.goto(`${ORIGIN}/workspaces/`, { waitUntil: 'networkidle' });
 	await page.waitForSelector('text=Workspaces');
 	const projectsBefore = await projectCount();
 
@@ -648,6 +638,10 @@ async function main() {
 	await page.selectOption('label:has-text("Start from") select', 'seeded-workspace/start-here.pcraft');
 	await page.click('button:has-text("Create")');
 	await page.waitForSelector('article h2:has-text("Started from the bucket")');
+	// What the page says it did is a toast that clears itself after a few seconds, so read it here
+	// rather than after the steps below.
+	await page.waitForSelector('.banner.info', { timeout: 15_000 });
+	const toast = await page.innerText('.banner.info');
 	const startedHref = await page.getAttribute(
 		'article:has(h2:has-text("Started from the bucket")) a:has-text("Open in PhotoCraft")',
 		'href'
@@ -667,16 +661,15 @@ async function main() {
 	);
 	check(
 		'with the page saying which document and which bucket',
-		/starting from seeded-workspace\/start-here\.pcraft/.test(await page.innerText('.banner.info')) &&
-			/attached to/.test(await page.innerText('.banner.info')),
-		await page.innerText('.banner.info')
+		/starting from seeded-workspace\/start-here\.pcraft/.test(toast) && /attached to/.test(toast),
+		toast
 	);
 
 	check('the page never asked the server about a bucket', !requested.includes('/api/storage'), requested.filter((path) => path.startsWith('/api')).join(', '));
 
 	step('The new-workspace dialog fits a narrow screen');
 	await page.setViewportSize({ width: 320, height: 640 });
-	await page.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+	await page.goto(`${ORIGIN}/workspaces/`, { waitUntil: 'networkidle' });
 	await page.waitForSelector('text=Workspaces');
 	await page.click('button:has-text("New workspace")');
 	await page.check('input[type=radio][value="bucket"]');

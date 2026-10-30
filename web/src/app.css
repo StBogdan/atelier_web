@@ -36,6 +36,9 @@
   --chrome: #f6f6f8;
   --strip: #f0f0f3;
   --shadow: 0 1px 2px rgba(16, 18, 22, 0.06), 0 8px 24px rgba(16, 18, 22, 0.08);
+  /* A line that divides rows and sections on the page itself. Darker than --rule, which only draws
+     a surface's own edge, because there is no surface here to do the separating. */
+  --hairline: color-mix(in srgb, var(--ink) 16%, transparent);
   --chip-radius: 999px;
   --radius-sm: 6px;
   --radius: 8px;
@@ -116,6 +119,7 @@ button:active:not(:disabled),
   button,
   .button,
   input[type="text"],
+  input[type="password"],
   select {
     min-height: 2.75rem;
   }
@@ -149,13 +153,6 @@ button:active:not(:disabled),
   gap: 0.6rem;
   text-decoration: none;
   flex: 0 0 auto;
-}
-
-.mark {
-  display: block;
-  width: 1.75rem;
-  height: 1.75rem;
-  color: var(--accent);
 }
 
 .names {
@@ -262,6 +259,9 @@ nav.chrome a.action:hover {
 }
 
 /* The action names the workspace it will open, so the bar always answers "where does this go?". */
+/* Where the action goes: the workspace, then the document it will open with. Both sit on the one
+   line the label already had, so the bar's height is unchanged; each gives way with an ellipsis
+   before the label does. */
 nav.chrome a.action .where {
   display: inline-block;
   margin-left: 0.5rem;
@@ -274,6 +274,21 @@ nav.chrome a.action .where {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+
+nav.chrome a.action .doc {
+  max-width: 11rem;
+  font-family: var(--mono);
+  font-size: 0.94em;
+  opacity: 0.72;
+}
+
+/* Below this the bar has to choose, and the workspace is the name that says where the button goes:
+   the document is in the tooltip, and on the page it opens. */
+@media (max-width: 62rem) {
+  nav.chrome a.action .doc {
+    display: none;
+  }
 }
 
 @media (max-width: 46rem) {
@@ -521,7 +536,8 @@ th {
   white-space: nowrap;
 }
 
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
   font: inherit;
   color: inherit;
   background: var(--field);

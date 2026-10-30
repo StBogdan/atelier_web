@@ -66,11 +66,11 @@ while [ "$i" -lt 20 ]; do
 done
 if [ "$healthy" = 0 ]; then
   say "editor: $UPSTREAM is not answering; starting Atelier web anyway"
-  say "        /cloud/ works regardless; /photocraft/ shows how to start the editor."
+  say "        /workspaces/ works regardless; /photocraft/ shows how to start the editor."
 fi
 
 say ""
-say "Atelier Cloud  →  http://127.0.0.1:$PORT/cloud/"
+say "Atelier Cloud  →  http://127.0.0.1:$PORT/workspaces/"
 say "PhotoCraft     →  http://127.0.0.1:$PORT/photocraft/"
 if [ -n "${PDFCRAFT_UPSTREAM:-}" ]; then
   say "PdfCraft       →  http://127.0.0.1:$PORT/pdfcraft/"

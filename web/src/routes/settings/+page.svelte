@@ -80,7 +80,7 @@
 
 <svelte:head>
   <title>Settings | Atelier Cloud</title>
-  <link rel="canonical" href="{ORIGIN}/cloud/settings" />
+  <link rel="canonical" href="{ORIGIN}/workspaces/settings" />
   <meta name="robots" content="noindex, follow" />
   <meta
     name="description"

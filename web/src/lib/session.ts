@@ -8,6 +8,7 @@
 
 import { writable, get } from "svelte/store";
 import {
+  commit,
   ensureSpace,
   requestPersistence,
   scan,
@@ -15,7 +16,7 @@ import {
   type Storage,
   type Workspace,
 } from "./contract";
-import { SPACE } from "./opfs";
+import { SPACE, type Directory } from "./opfs";
 
 export const workspaces = writable<Workspace[]>([]);
 export const storage = writable<Storage>({
@@ -27,18 +28,30 @@ export const storage = writable<Storage>({
 });
 export const ready = writable(false);
 export const failure = writable<string | null>(null);
-export const unsynced = writable(0);
 
-export function countUnsynced(list: Workspace[]): number {
-  return list.filter((workspace) => workspace.dirty).length;
+/**
+ * A save becomes a version as soon as the provider looks: the editor announces every save, this page
+ * re-reads on that ping, and whatever has moved since the last version is recorded on the way. The
+ * list is read again after recording, so a card shows the version that exists rather than the one it
+ * was about to become.
+ */
+async function recordSaves(space: Directory): Promise<Workspace[]> {
+  const list = await scan(space);
+  const moved = list.filter((workspace) => workspace.dirty);
+  if (!moved.length) return list;
+  for (const workspace of moved) {
+    await commit(space, workspace.id).catch(() => {
+      // What cannot be recorded yet keeps its own badge, and the next look tries again.
+    });
+  }
+  return await scan(space);
 }
 
-/** Re-read the cloudspace and refresh what the chrome shows. */
+/** Re-read the cloudspace, record any save it has not seen, and refresh what the chrome shows. */
 export async function refresh(): Promise<void> {
   try {
-    const list = await scan(await ensureSpace());
-    workspaces.set(list);
-    unsynced.set(countUnsynced(list));
+    const space = await ensureSpace();
+    workspaces.set(await recordSaves(space));
     storage.set(await storageHealth());
     failure.set(null);
   } catch (e) {

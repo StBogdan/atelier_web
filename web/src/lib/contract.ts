@@ -24,13 +24,11 @@ import {
   type Directory,
 } from "./opfs";
 import {
-  difference,
   isPcraft,
   objectSet,
   previewEntry,
   readDirectory,
   readEntry,
-  type Difference,
   type ZipEntry,
 } from "./pcraft";
 import {
@@ -47,6 +45,7 @@ export const PROVIDER_NAME = "Atelier Cloud";
 export const PROVIDER_FILE = "provider.json";
 export const CATALOG_FILE = "workspaces.json";
 export const META_FILE = "meta.json";
+/** Left in a project by older builds as the staging record for a pending diff; nothing writes it now. */
 export const PENDING_FILE = "pending.json";
 export const THUMB_FILE = "thumb.png";
 
@@ -77,7 +76,7 @@ export interface Remote {
   /** The logical key, without the deployment's prefix. */
   key: string;
   /** `sha256:<hex>` of the bytes that were uploaded, so "is the bucket copy this document?" costs
-   * nothing more than the hash the Changes panel already computes. */
+   * nothing more than the hash the workspace's version already holds. */
   hash: string;
   size: number;
   at: string;
@@ -153,27 +152,6 @@ export interface WorkspaceDocument {
   size: number;
   /** The file's `File.lastModified`. */
   modified: number;
-  /** Whether a one-save-back copy sits beside it, which is what a previous download reads. */
-  previous: boolean;
-}
-
-export interface Pending {
-  protocol: number;
-  project: string;
-  document: string;
-  /** What kind of revision this change would record. Absent on older files. */
-  kind?: DocumentKind;
-  rev: number;
-  hash: string;
-  size: number;
-  modified: number;
-  at: string;
-  added: number;
-  changed: number;
-  removed: number;
-  bytes: number;
-  unchanged: number;
-  unchangedBytes: number;
 }
 
 export interface Storage {
@@ -287,7 +265,6 @@ export async function inspect(
       name,
       size,
       modified: info?.modified ?? 0,
-      previous: (await stat(dir, `${name}.prev`)) !== null,
     });
   }
   const size = documents.reduce((total, entry) => total + entry.size, 0);
@@ -538,74 +515,6 @@ export async function readDocument(
   };
 }
 
-/** The exact change against the committed revision: what the Changes panel renders. */
-export interface Change {
-  document: string;
-  /** `objects` when the difference is exact, `whole` when the file is replaced as one. */
-  kind: "objects" | "whole";
-  difference: Difference;
-  hash: string;
-  size: number;
-  modified: number;
-}
-
-export async function pendingChange(
-  space: Directory,
-  project: string,
-  meta: Meta,
-  document?: string,
-): Promise<Change | null> {
-  const names = await documentNames(await projectDir(space, project));
-  const name =
-    document ??
-    (meta.document && names.includes(meta.document) ? meta.document : null) ??
-    preferredDocument(names, null);
-  if (!name) return null;
-  const read = await readDocument(space, project, name);
-  if (!read) return null;
-  if (read.kind === "none") return null;
-  const previous = meta.revision?.objects ?? {};
-  const difference_ =
-    read.kind === "objects"
-      ? difference(previous, read.objects, read.entries)
-      : {
-          added: [],
-          changed: [],
-          removed: 0,
-          unchanged: 0,
-          unchangedBytes: 0,
-          bytes: read.bytes.length,
-        };
-  const info = await stat(await projectDir(space, project), read.name);
-  const change: Change = {
-    document: read.name,
-    kind: read.kind,
-    difference: difference_,
-    hash: await hash(read.bytes),
-    size: read.bytes.length,
-    modified: info?.modified ?? Date.now(),
-  };
-  if (meta.revision && change.hash === meta.revision.hash) return null;
-  await writeJson(await outboxDir(space, project, true), PENDING_FILE, {
-    protocol: PROTOCOL,
-    project,
-    document: change.document,
-    kind: change.kind,
-    rev: meta.rev,
-    hash: change.hash,
-    size: change.size,
-    modified: change.modified,
-    at: new Date().toISOString(),
-    added: difference_.added.length,
-    changed: difference_.changed.length,
-    removed: difference_.removed,
-    bytes: difference_.bytes,
-    unchanged: difference_.unchanged,
-    unchangedBytes: difference_.unchangedBytes,
-  } satisfies Pending);
-  return change;
-}
-
 async function clearPending(space: Directory, project: string): Promise<void> {
   if (
     !(await hasDirectory(space, "outbox")) ||
@@ -675,7 +584,9 @@ export async function commit(
       rev: meta.rev + 1,
       dirty: false,
       size: bytes.length,
-      sync: { state: "local", at: now },
+      // The bucket copy the workspace already had stays on record: a new version does not un-upload
+      // the last one, and comparing the two hashes is how the page says the bucket is behind.
+      sync: { ...meta.sync, state: "local", at: now },
       revision: {
         kind,
         hash: await hash(bytes),
@@ -692,9 +603,23 @@ export async function commit(
 }
 
 /**
+ * Record the document as this workspace's version when it has moved since the last one. Saving in an
+ * editor is the only way a document changes, so this is what a Record button used to be: whichever
+ * provider page sees the save first records it.
+ */
+export async function recordIfDirty(
+  space: Directory,
+  project: string,
+): Promise<boolean> {
+  if (!(await inspect(space, project)).dirty) return false;
+  await commit(space, project);
+  return true;
+}
+
+/**
  * Write a document an embedded editor sent back, under the project lock. The previous bytes stay
- * beside it as `<name>.prev`, so discard keeps working. The editor has no filesystem access, so this
- * is the write for that route.
+ * beside it as `<name>.prev`. The editor has no filesystem access, so this is the write for that
+ * route.
  */
 export async function saveFromEditor(
   space: Directory,
@@ -713,36 +638,6 @@ export async function saveFromEditor(
     await writeBytes(dir, safe, bytes);
   });
   return safe;
-}
-
-/**
- * Put back the previous bytes: the one destructive action in the provider.
- *
- * `.prev` is the editor's, one save back, which is the committed revision only when exactly one save
- * has happened since the commit. The answer says which of the two came back.
- */
-export async function discard(
-  space: Directory,
-  project: string,
-  document?: string,
-): Promise<"revision" | "previous"> {
-  const dir = await projectDir(space, project);
-  const meta = await readJson<Meta>(dir, META_FILE);
-  const outcome = await withLock(lockName(project), "exclusive", async () => {
-    const name =
-      document ??
-      preferredDocument(await documentNames(dir), meta?.document ?? null);
-    if (!name) throw new Error("this project has no document");
-    const previous = await readBytes(dir, `${name}.prev`).catch(() => null);
-    if (!previous) throw new Error("there are no previous bytes to restore");
-    await writeBytes(dir, name, previous);
-    return (await hash(previous)) === meta?.revision?.hash
-      ? ("revision" as const)
-      : ("previous" as const);
-  });
-  await clearPending(space, project);
-  await inspect(space, project);
-  return outcome;
 }
 
 /**
@@ -765,8 +660,8 @@ export async function recordUpload(
 /**
  * Put bytes fetched from the bucket into the document slot, as a whole-document replace under the
  * project's exclusive lock. One of the few places the provider writes the document itself, and it
- * carries the same hazard as `discard`: an editor that has the document open writes its own copy
- * back over this on its next save.
+ * carries a hazard: an editor that has the document open writes its own copy back over this on its
+ * next save.
  */
 export async function restoreDocument(
   space: Directory,

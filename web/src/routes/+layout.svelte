@@ -5,6 +5,7 @@
   import { browser } from "$app/environment";
   import "../app.css";
   import Icon from "$lib/Icon.svelte";
+  import Brand from "$lib/Brand.svelte";
   import {
     capabilities,
     capabilitiesReady,
@@ -30,9 +31,7 @@
   const here = $derived(page.url.pathname);
   // An embedded editor owns the whole viewport: the cloud app's bar and storage strip would only take
   // height from it. Its own page carries the way back and the save state.
-  const embedded = $derived(
-    here.startsWith(`${base}/workspace/`) && here.endsWith("/edit/pdfcraft"),
-  );
+  const embedded = $derived(here.endsWith("/edit/pdfcraft"));
   const origin = browser ? location.origin : "";
   const share = $derived(
     $storage.quota ? Math.min(1, $storage.usage / $storage.quota) : 0,
@@ -58,39 +57,7 @@
   <a class="skip" href="#main">Skip to content</a>
   <header class="appbar">
     <a class="brand" href="{base}/">
-      <svg
-        class="mark"
-        viewBox="0 0 32 32"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <rect width="32" height="32" rx="7" fill="#2f6feb" />
-        <g transform="translate(1.69 1.38) scale(0.78)">
-          <path
-            d="M10.7 8 2 32M10.7 8 34.7 32M5.3 22.9H25.6"
-            fill="none"
-            stroke="#fff"
-            stroke-width="3.2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-          <g
-            transform="translate(20.55 7.43) scale(0.72) rotate(45 10 5.5)"
-            fill="none"
-            stroke="#fff"
-            stroke-width="2.8"
-            stroke-linejoin="round"
-          >
-            <path
-              d="M4.5 11A4.5 4.5 0 0 1 4.5 2A5.6 5.6 0 0 1 15.2 1.2A4.6 4.6 0 0 1 19.6 8.6A3.1 3.1 0 0 1 16.9 11Z"
-            />
-          </g>
-        </g>
-      </svg>
-      <span class="names">
-        <strong>Atelier Cloud</strong>
-        <small>cloudspace for browser apps</small>
-      </span>
+      <Brand />
     </a>
     <nav class="chrome" aria-label="Sections">
       <span class="links">
@@ -138,10 +105,16 @@
           )}
           target="_blank"
           rel="noopener"
-          title="Open {latest.name} in {latestEditor.title}"
+          title="Open {latest.name}
+            {latest.document
+            ? ` / ${latest.document}`
+            : ''} in {latestEditor.title}"
         >
           Open in {latestEditor.title}
           <span class="where">{latest.name}</span>
+          {#if latest.document}
+            <span class="where doc">{latest.document}</span>
+          {/if}
         </a>
       {:else}
         <a

@@ -70,16 +70,16 @@
       a: "This limits the risk; it does not remove it. A script running on this origin could still use the key to sign requests, and a copy of this browser's profile may be enough to use the key elsewhere. So attach a bucket-scoped read/write token rather than an account-wide one, and attach a bucket only on an origin you would trust with it.",
     },
     {
-      q: "Does the bucket keep my revisions?",
-      a: "No. It holds one object per document you upload, and the next upload of that document overwrites it. Revisions live in the cloudspace. Server-side history is planned but does not exist yet.",
+      q: "Does the bucket keep my versions?",
+      a: "No. It holds one object per document you upload, and the next upload of that document overwrites it. Versions live in the cloudspace, and server-side history is planned rather than here.",
     },
     {
-      q: "What does <em>Record version</em> do?",
-      a: "It saves the document as this workspace's next version: the object list, hash and time go into <code>meta.json</code>, the thumbnail is refreshed, and the pending change is cleared. Nothing is uploaded. The Changes panel then has a baseline, so it can show the exact diff, and the workspace card drops its uncommitted state. It is not a backup and it keeps no history: the cloudspace holds only the latest revision, and only an upload survives the browser clearing your storage.",
+      q: "When is a version recorded?",
+      a: "On save, without a button. Atelier Cloud looks at the workspace when a page opens and while it stays open, and records whatever the editor wrote since the last version. A save made with no Atelier Cloud page open is recorded the next time one opens. It is not a backup and there is no history: the cloudspace holds the latest version, and only an upload survives the browser clearing your storage.",
     },
     {
-      q: "Do I have to commit before uploading?",
-      a: "No. An upload sends the document as it is on disk right now, recorded or not, and records the upload against that copy. Recording a version is what makes a revision; uploading is what copies the bytes off this machine.",
+      q: "Do I have to do anything before uploading?",
+      a: "No. An upload sends the document as it is on disk right now, and records the upload against that copy.",
     },
     {
       q: "Can two workspaces share one bucket?",
@@ -156,7 +156,7 @@
 
 <svelte:head>
   <title>PhotoCraft help: storage, buckets and upload errors</title>
-  <link rel="canonical" href="{ORIGIN}/cloud/help" />
+  <link rel="canonical" href="{ORIGIN}/workspaces/help" />
   <meta
     name="description"
     content="Where PhotoCraft keeps your work in the browser, what recording a version does, how to attach a bucket and set its CORS policy, and what each upload error means."
@@ -224,12 +224,11 @@
               </td>
             </tr>
             <tr>
-              <td>The revision</td>
+              <td>The version</td>
               <td>
                 The workspace's <code>meta.json</code>: the hash, size and time
-                the document had when you recorded it, and the list of objects
-                inside it. The Changes panel compares the current document
-                against this.
+                the document had when it was last recorded, and the list of
+                objects inside it.
               </td>
             </tr>
             <tr>
@@ -244,16 +243,22 @@
         </table>
       </div>
       <p>
-        <em>Record version</em>, called <em>Commit</em> on the main page, does
-        not move your work anywhere. It reads the document, saves its object
-        list, hash and time into <code>meta.json</code>, refreshes the
-        thumbnail, increases the revision number, and clears the pending change.
+        A version is recorded when you save. Recording reads the document and
+        writes its object list, hash and time into <code>meta.json</code>, then
+        refreshes the thumbnail. There is no button for it: Atelier Cloud looks
+        at the workspace on load, when the tab regains focus, every few seconds
+        while a page is open, and the moment the editor says it has saved.
       </p>
       <p>
-        That gives you the exact diff against the last revision, and the
-        "uncommitted" state on the workspace card and here. It is not a backup,
-        and it keeps no history: the cloudspace holds only the latest revision,
-        and only an upload survives the browser clearing your storage.
+        A save made with no Atelier Cloud page open waits in this browser. The
+        document is already on disk; the version is recorded the next time a
+        page looks at the workspace, so opening the workspace list after saving
+        brings <code>meta.json</code> up to date.
+      </p>
+      <p>
+        A version is not a backup, and there is no history: the cloudspace holds
+        only the latest one, and only an upload survives the browser clearing
+        your storage.
       </p>
       <p>
         The editor writes to this workspace and exports elsewhere through
@@ -264,18 +269,10 @@
         browser's download, and nothing in the workspace changes.
       </p>
       <p>
-        The pending change is <code
-          >atelier-cloud/outbox/&lt;workspace&gt;/pending.json</code
-        >, which Atelier Cloud writes whenever a scan finds the document
-        different from the recorded revision. The file holds a summary rather
-        than your data: how many objects the document gained, changed and lost,
-        with its hash, size and time. The Changes panel and the workspace card
-        read their status from it. Recording a version empties it.
-      </p>
-      <p>
-        <em>Upload to bucket</em> is what moves the bytes. It sends the document as
-        it is right now, recorded or not, to that object, and the next upload overwrites
-        it. A workspace with a bucket shows a small green cloud on its card.
+        <em>Upload to bucket</em> is what moves the bytes, from the workspace page.
+        It sends the document as it is right now, recorded or not, to that object,
+        and the next upload overwrites it. A workspace with a bucket shows a small
+        green cloud on its card.
       </p>
     </section>
 
@@ -445,12 +442,9 @@
           a bucket are a pair.
         </p>
         <p class="muted">
-          In the workspace, neither button records a version, so the document
-          arrives as an unrecorded change: the Changes panel shows it, and <em
-            >Record version</em
-          >
-          is what turns it into one. Listing the bucket requires a token that allows
-          it, and <em>Object Read &amp; Write</em> does.
+          A document loaded from a bucket becomes this workspace's version
+          straight away, like any other save. Listing the bucket requires a
+          token that allows it, and <em>Object Read &amp; Write</em> does.
         </p>
       </section>
 

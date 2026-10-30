@@ -6,7 +6,7 @@ export function bytes(count: number): string {
   return `${(count / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-/** "2 min ago", "just now": the same shape on every card and in the Changes panel (design, The Workspace Grid; Where Cloud State Is Surfaced). */
+/** "2 min ago", "just now": the same shape on a row and on the workspace page (design, The Workspace List; Where Cloud State Is Surfaced). */
 export function since(iso: string, now = Date.now()): string {
   const then = Date.parse(iso);
   if (!Number.isFinite(then)) return "unknown";
@@ -29,11 +29,4 @@ export function plural(count: number, one: string, many = `${one}s`): string {
 export function extensionOf(name: string): string {
   const dot = name.lastIndexOf(".");
   return dot > 0 && dot < name.length - 1 ? name.slice(dot) : "";
-}
-
-export function objects(added: number, changed: number): string {
-  const parts: string[] = [];
-  if (added) parts.push(`${plural(added, "new object")}`);
-  if (changed) parts.push(`${plural(changed, "changed object")}`);
-  return parts.join(", ") || "no new objects";
 }

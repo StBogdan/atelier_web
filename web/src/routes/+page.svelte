@@ -21,11 +21,7 @@
     type BucketConfig,
     type BucketDocument,
   } from "$lib/bucket";
-  import {
-    commitAndUpload,
-    downloadWorkspaceFiles,
-    type CommitResult,
-  } from "$lib/actions";
+  import { downloadWorkspaceFiles } from "$lib/actions";
   import {
     createProject,
     documentFileName,
@@ -43,12 +39,7 @@
   } from "$lib/editors";
   import { resolveTarget } from "$lib/sigv4";
   import type { Directory } from "$lib/opfs";
-  import {
-    ensurePersistence,
-    refresh,
-    unsynced,
-    workspaces,
-  } from "$lib/session";
+  import { ensurePersistence, refresh, workspaces } from "$lib/session";
 
   interface Sample {
     file: string;
@@ -184,9 +175,8 @@
   }
 
   /**
-   * Which workspaces have a bucket attached, so the row's action can say what it will do: the commit is
-   * the same either way, but only one of them has somewhere to upload to. This reads `bucket.json` only —
-   * knowing a bucket is attached never needs the key that signs for it.
+   * Which workspaces have a bucket attached, so the row can say the copy off this machine exists. This
+   * reads `bucket.json` only: knowing a bucket is attached never needs the key that signs for it.
    */
   let buckets = $state<Record<string, BucketConfig>>({});
 
@@ -207,65 +197,41 @@
     })();
   });
 
-  /**
-   * What the keep action says it will do. It is one button either way — the commit — but only a
-   * workspace with a bucket has anywhere to send it, and only a workspace with changes has anything
-   * to send.
-   */
-  function keepTip(workspace: Workspace): string {
-    if (!workspace.dirty) return `${workspace.name} has no changes to commit`;
-    const bucket = buckets[workspace.id];
-    return bucket
-      ? `Commit ${workspace.name} and upload it to ${bucket.bucket}`
-      : `Record ${workspace.name} as a version here. No bucket is attached, so there is nowhere to upload it.`;
-  }
-
   /** What the last row action failed with, when it is worth a heading rather than one coloured line. */
   let failure = $state<unknown>(null);
 
   /** Which workspace's row is working, so its buttons can wait rather than being pressed twice. */
   let working = $state<string | null>(null);
-  /** What the last row action did, or why it could not, in the page's own banner. */
+  /** What the last row action did, or why it could not, in the toast over the page. */
   let status = $state<string | null>(null);
 
   /**
-   * Keep the workspace (a revision, then its bucket copy) or take it away (the document), without
-   * opening it. The editor is for changing a document; this is for not losing one.
+   * A toast is read once and then leaves: a finished message clears itself, and one that is still
+   * working stays until the row action replaces it with what happened.
    */
-  async function act(workspace: Workspace, what: "keep" | "take") {
+  $effect(() => {
+    if (!status || working) return;
+    const timer = setTimeout(() => (status = null), 8000);
+    return () => clearTimeout(timer);
+  });
+
+  /**
+   * Take the workspace away as a zip, without opening it. The editor is for changing a document; this
+   * is for not losing one.
+   */
+  async function take(workspace: Workspace) {
     working = workspace.id;
     failure = null;
-    status =
-      what === "keep"
-        ? `Committing ${workspace.name} and uploading it…`
-        : `Downloading ${workspace.name}…`;
+    status = `Downloading ${workspace.name}…`;
     try {
       const space = await ensureSpace();
-      if (what === "take") {
-        status = `Downloaded ${await downloadWorkspaceFiles(space, workspace.id)}.`;
-        return;
-      }
-      const result = await commitAndUpload(space, workspace.id);
-      await refresh();
-      status = describe(workspace.name, result);
+      status = `Downloaded ${await downloadWorkspaceFiles(space, workspace.id)}.`;
     } catch (e) {
       failure = e;
       status = null;
     } finally {
       working = null;
     }
-  }
-
-  function describe(name: string, result: CommitResult): string {
-    const uploaded = result.uploaded;
-    if (result.committed && uploaded) {
-      return `Committed ${name} at rev ${result.rev}, and uploaded ${uploaded.name} (${bytes(uploaded.size)}) to ${uploaded.where}.`;
-    }
-    if (result.committed) return `Committed ${name} at rev ${result.rev}.`;
-    if (uploaded) {
-      return `Nothing new to commit: uploaded ${uploaded.name} (${bytes(uploaded.size)}) to ${uploaded.where}.`;
-    }
-    return `${name} is already at rev ${result.rev}.`;
   }
 
   onMount(() => {
@@ -442,7 +408,7 @@
 
 <svelte:head>
   <title>Workspaces | Atelier Cloud</title>
-  <link rel="canonical" href="{ORIGIN}/cloud/" />
+  <link rel="canonical" href="{ORIGIN}/workspaces/" />
   <meta name="robots" content="noindex, follow" />
   <meta
     name="description"
@@ -451,7 +417,10 @@
 </svelte:head>
 
 <div class="head">
-  <h1>Workspaces</h1>
+  <h1>
+    Workspaces
+    {#if $workspaces.length}<span class="count">{$workspaces.length}</span>{/if}
+  </h1>
   {#if $workspaces.length}
     <div class="controls">
       <div class="segmented" role="group" aria-label="Workspace layout">
@@ -477,20 +446,15 @@
   {/if}
 </div>
 
-{#if $unsynced > 0}
-  <p class="banner">
-    {$unsynced === 1 ? "One workspace has" : `${$unsynced} workspaces have`} changes
-    that are not committed yet.
-  </p>
-{/if}
-
 {#if failure}
   <Problem problem={failure} banner />
 {/if}
 
-{#if status}
-  <p class="banner info">{status}</p>
-{/if}
+<div class="toast" role="status">
+  {#if status}
+    <p class="banner info">{status}</p>
+  {/if}
+</div>
 
 {#if $workspaces.length === 0}
   <div class="panel empty">
@@ -511,6 +475,14 @@
 {/if}
 
 {#if $workspaces.length}
+  {#if view === "list"}
+    <div class="list-head" class:no-thumb={!thumbs} aria-hidden="true">
+      {#if thumbs}<span class="thumb-gap"></span>{/if}
+      <span>Workspace</span>
+      <span>Document</span>
+      <span></span>
+    </div>
+  {/if}
   <div class={view === "grid" ? "grid" : "list"}>
     {#each $workspaces as workspace (workspace.id)}
       {@const editor = editorFor(workspace.document, workspace.editor)}
@@ -525,9 +497,7 @@
           </div>
         {/if}
         <h2 class="ident" title={workspace.name}>
-          <a class="name" href="{base}/workspace/{workspace.id}"
-            >{workspace.name}</a
-          >
+          <a class="name" href="{base}/{workspace.id}">{workspace.name}</a>
         </h2>
         <div class="facts">
           <p class="muted small">
@@ -536,9 +506,9 @@
           </p>
           <p class="small">
             {#if workspace.dirty}
-              <span class="warn">uncommitted changes</span>
+              <span class="warn">not recorded yet</span>
             {:else}
-              <span class="ok">committed</span>
+              <span class="ok">saved</span>
               <span class="muted">· {since(workspace.updatedAt, now)}</span>
             {/if}
             {#if buckets[workspace.id]}
@@ -548,7 +518,7 @@
                 aria-label="A bucket is attached: {buckets[workspace.id]
                   .bucket}"
                 title="A bucket is attached ({buckets[workspace.id]
-                  .bucket}), so a commit can also be copied off this machine."
+                  .bucket}), so there is a copy off this machine."
               >
                 <Icon name="bucket" size={16} />
               </span>
@@ -574,40 +544,17 @@
               <Icon name="edit" />
               Open in {editor.title}
             </a>
-            <a class="button" href="{base}/workspace/{workspace.id}">Details</a>
+            <a class="button" href="{base}/{workspace.id}">Details</a>
           </div>
           <div class="row">
-            {#if buckets[workspace.id]}
-              <button
-                class="action-button"
-                class:primary={workspace.dirty}
-                title={keepTip(workspace)}
-                disabled={working !== null || !workspace.dirty}
-                onclick={() => act(workspace, "keep")}
-              >
-                <Icon name="upload" />
-                Commit &amp; upload
-              </button>
-            {:else}
-              <button
-                class="action-button"
-                class:primary={workspace.dirty}
-                title={keepTip(workspace)}
-                disabled={working !== null || !workspace.dirty}
-                onclick={() => act(workspace, "keep")}
-              >
-                <Icon name="commit" />
-                Commit
-              </button>
-            {/if}
             <button
-              class="action-button icon-only"
-              aria-label="Download every file in {workspace.name} as a zip"
+              class="action-button"
               title="Download every file in {workspace.name} as a zip"
               disabled={working !== null}
-              onclick={() => act(workspace, "take")}
+              onclick={() => take(workspace)}
             >
               <Icon name="download" />
+              Download
             </button>
           </div>
         </div>
@@ -792,12 +739,20 @@
   }
 
   /* The alpha notice reads as the end of the page, not as another card competing with the work. */
+  .count {
+    margin-left: 0.4rem;
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+
   .notice {
     margin-top: 2.5rem;
     padding: 1.25rem 0 0;
     background: transparent;
     border: 0;
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--hairline);
     border-radius: 0;
     box-shadow: none;
   }
@@ -878,27 +833,73 @@
     color: var(--ink);
   }
 
-  /* List: one row per workspace, in three columns: the thumbnail and name, the details, then the
-     actions. The same grid areas as the card view, so the markup does not change between them. */
+  /* One tone: rows, cells and the empty state sit on the page itself and are divided by a hairline.
+     Nothing here floats, so the eye reads down a column of workspaces rather than across a stack of
+     cards. */
+  .list .card,
+  .grid .card,
+  .empty {
+    background: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* List: a table with buttons. The column names sit over the values they name, in the same tracks
+     as the rows, and every row is separated by the same hairline. */
   .list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0;
+  }
+
+  .list-head {
+    display: grid;
+    grid-template-columns: auto minmax(10rem, 0.9fr) minmax(12rem, 1.3fr) auto;
+    column-gap: 1.25rem;
+    align-items: end;
+    padding: 0 0 0.5rem;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  .list-head.no-thumb {
+    grid-template-columns: minmax(10rem, 0.9fr) minmax(12rem, 1.3fr) auto;
+  }
+
+  /* The thumbnail's own column, so the names below start where this ends. */
+  .thumb-gap {
+    width: 2.75rem;
   }
 
   .list .card {
+    border: 0;
+    border-bottom: 1px solid var(--hairline);
     grid-template-columns:
       auto minmax(10rem, 0.9fr) minmax(12rem, 1.3fr)
       auto;
     grid-template-areas: "thumb name facts actions";
     align-items: center;
-    padding: 0.6rem 0.9rem;
+    padding: 0.7rem 0;
     column-gap: 1.25rem;
   }
 
   .list .card.no-thumb {
     grid-template-columns: minmax(10rem, 0.9fr) minmax(12rem, 1.3fr) auto;
     grid-template-areas: "name facts actions";
+  }
+
+  /* The grid is cells on the page, not cards: an outline, no fill. */
+  .grid .card {
+    border: 1px solid var(--hairline);
+  }
+
+  /* Nothing to show yet: the same outline, at the page's own width. */
+  .empty {
+    border: 1px solid var(--hairline);
   }
 
   /* A workspace that can send a copy off this machine says so: the cloud is drawn only when a bucket is
@@ -911,7 +912,8 @@
     color: var(--ok);
   }
 
-  /* The row's two icon actions: an icon and its label, the same height as the buttons beside them. */
+  /* The row's one action besides opening the workspace: an icon and its label, the same height as
+     the buttons beside them. */
   .action-button {
     display: inline-flex;
     align-items: center;
@@ -924,38 +926,30 @@
     color: var(--ink);
   }
 
-  /* An action whose glyph says it already: a square target, with the name in its label and tooltip. */
-  .icon-only {
-    min-width: 2rem;
-    padding: 0.25rem;
-    justify-content: center;
-    color: var(--dim);
-  }
-
-  @media (pointer: coarse) {
-    .icon-only {
-      min-width: 2.75rem;
-    }
-  }
-
-  /* The one action that protects work: solid, so it reads as the thing to press when the badge
-     beside it says there is something to commit. */
-  .action-button.primary {
-    background: var(--primary);
-    border-color: var(--primary);
-    color: var(--primary-ink);
-    padding: 0.15rem 0.55rem;
-  }
-
-  .action-button.primary:hover:not(:disabled) {
-    color: var(--primary-ink);
-    filter: brightness(1.08);
-  }
-
   /* What a row action did is information, not a warning: blue. */
   .banner.info {
     border-left-color: var(--accent);
     color: var(--link);
+  }
+
+  /* It floats over the page instead of joining it, so committing a card does not push everything
+     below it down and pull it back up when the message goes. Only the text box takes clicks, so the
+     page under the rest of the toast stays usable, and the text itself can still be selected. */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 1.25rem;
+    z-index: 20;
+    width: min(34rem, calc(100vw - 2rem));
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  .toast .banner {
+    margin: 0;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    pointer-events: auto;
   }
 
   /* The name keeps the left edge and gives way before the details do. It wraps rather than being cut
@@ -979,6 +973,20 @@
     margin: 0;
   }
 
+  /* A row's actions carry the same weight as each other: the row is the thing, not one of its three
+     buttons. The grid keeps the solid one, where it is the only way in. */
+  .list .actions .primary {
+    background: transparent;
+    border-color: var(--field-line);
+    color: var(--ink);
+  }
+
+  .list .actions .primary:hover {
+    background: var(--hover);
+    border-color: var(--accent);
+    filter: none;
+  }
+
   /* The actions are the row's last column, so they line up down the page. */
   .list .actions {
     margin-top: 0;
@@ -994,6 +1002,10 @@
   /* Narrower than three comfortable columns: the details drop under the name and the actions take
      their own line, so nothing is squeezed to a few characters. */
   @media (max-width: 62rem) {
+    .list-head {
+      display: none;
+    }
+
     .list .card {
       grid-template-columns: auto minmax(0, 1fr);
       grid-template-areas:
@@ -1061,6 +1073,11 @@
     grid-area: thumb;
   }
 
+  /* The preview is squared like the rest of the page: no card, so no rounded corners inside one. */
+  .ident-thumb :global(.thumb) {
+    border-radius: 0;
+  }
+
   /* A long name wraps, up to four lines, and stops there; the full text stays in the tooltip. */
   .ident {
     grid-area: name;
@@ -1092,8 +1109,8 @@
     text-underline-offset: 2px;
   }
 
-  /* In the grid view the two pairs stack: Editor and Details over Commit and Download. The rows are
-     independent, so a longer row below cannot open a blank gap in the short row above it. */
+  /* In the grid view the two rows stack: Editor and Details over Download. The rows are independent,
+     so a longer row above cannot open a blank gap in the short row below it. */
   .actions {
     grid-area: actions;
     margin-top: 0.6rem;

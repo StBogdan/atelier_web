@@ -143,7 +143,7 @@ export function editorHref(
   document?: string,
 ): string {
   if (editor.launch === "embed")
-    return `${base}/workspace/${encodeURIComponent(project)}/edit/${editor.id}${
+    return `${base}/${encodeURIComponent(project)}/edit/${editor.id}${
       document ? `?document=${encodeURIComponent(document)}` : ""
     }`;
   return `${editor.route}?project=${encodeURIComponent(project)}${

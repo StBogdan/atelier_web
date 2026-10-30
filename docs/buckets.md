@@ -26,8 +26,7 @@ nothing extra has to be configured for it.
 
 One upload:
 
-1. The cloud app reads `projects/<id>/<name>.pcraft` under the project's shared lock — the same read the
-   Changes panel does.
+1. The cloud app reads `projects/<id>/<name>.pcraft` under the project's shared lock.
 2. It signs a short-lived URL for that key, in the browser ([`../web/src/lib/sigv4.ts`](../web/src/lib/sigv4.ts)).
    Signing is local: no bucket round trip, nothing to ask the server.
 3. The browser PUTs the bytes straight to the bucket. They never pass through Atelier web, which is what
@@ -36,16 +35,16 @@ One upload:
 
 **Download** is the other direction, and it is a whole-document replace under the project's exclusive lock,
 so it asks first: an editor that has the document open will write its own copy back on its next save. The
-restored bytes arrive uncommitted, exactly as an edit does, so the Changes panel shows them and *Record
-version* is what makes them the revision. That is a provider write to the document slot, which the contract
-otherwise keeps to the editor — [`../../docs/atelier_web_design.md`](../../docs/atelier_web_design.md#file-ownership),
-File Ownership, records it next to the other one, *Discard*.
+restored bytes are recorded as the workspace's version, exactly as an edit is. That is a provider write to
+the document slot, which the contract otherwise keeps to the editor —
+[`../../docs/atelier_web_design.md`](../../docs/atelier_web_design.md#file-ownership), File Ownership,
+records it beside the editor's own writes.
 
 ## Choose from a bucket
 
 **Choose from bucket…** brings a document a bucket already holds into an existing workspace: it lists the
 bucket, one row per object that is not a version shadow or a dotfile, with the workspace id it sits under.
-*Load* puts the chosen one here, uncommitted, by the same rule as a download. Any format is offered, because a
+*Load* puts the chosen one here as the workspace's version, by the same rule as a download. Any format is offered, because a
 workspace holds any file, not only a `.pcraft`. The new-workspace dialog offers the same list under *A cloud
 bucket*; it signs with the fields alone, so listing before the workspace exists writes nothing. Listing is
 always a person's click and never a guess: nothing local can name a document whose workspace id is not this

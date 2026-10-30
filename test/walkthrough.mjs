@@ -1,6 +1,6 @@
 // The handoff walkthrough, end to end, in a real Chromium with a real OPFS: create a workspace in
-// Atelier Cloud, launch the editor into it, edit, save, and watch the change appear in the Changes
-// panel, then commit it, download it, discard it and reopen it.
+// Atelier Cloud, launch the editor into it, edit, save, and watch the save become the workspace's
+// version, then download it and reopen it.
 //
 //   npm install playwright-core      # once, in this directory
 //   node walkthrough.mjs
@@ -53,6 +53,16 @@ async function opfs(page) {
 
 const find = (entries, path) => entries?.find((entry) => entry.path === path);
 
+/** A workspace's `meta.json` as the app wrote it: the version, its hash and whether a save is pending. */
+async function readMeta(page, project) {
+	return await page.evaluate(async (id) => {
+		const space = await (await navigator.storage.getDirectory()).getDirectoryHandle('atelier-cloud');
+		const dir = await (await space.getDirectoryHandle('projects')).getDirectoryHandle(id);
+		const text = await (await dir.getFileHandle('meta.json')).getFile().then((file) => file.text());
+		return JSON.parse(text);
+	}, project);
+}
+
 /** Everything under `atelier-cloud/tmp/`: the write staging the patch cleans up after itself. */
 const staging = (entries) => (entries ?? []).filter((entry) => entry.path.startsWith('tmp/') && entry.kind === 'file').map((entry) => entry.path);
 
@@ -82,7 +92,7 @@ async function main() {
 	provider.on('pageerror', (error) => console_.push(`[provider:error] ${error.message}`));
 
 	step('Atelier Cloud: create a workspace from a bundled document');
-	await provider.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+	await provider.goto(`${ORIGIN}/workspaces/`, { waitUntil: 'networkidle' });
 	await provider.waitForSelector('text=Workspaces');
 	await provider.click('button:has-text("New workspace")');
 	await provider.fill('input[type=text]', 'Walkthrough workspace');
@@ -96,7 +106,7 @@ async function main() {
 	const before = await opfs(provider);
 	log('   cloudspace:\n' + (before ?? []).map((entry) => `     ${entry.path}${entry.kind === 'file' ? ` ${entry.size} B` : ''}`).join('\n'));
 	const document = find(before, `projects/${project}/01-rgb-layered.pcraft`);
-	check('projects/<id>/<name>.pcraft is committed', document?.size === 179714, `${document?.size} B`);
+	check('projects/<id>/<name>.pcraft is saved', document?.size === 179714, `${document?.size} B`);
 	check('projects/<id>/thumb.png was extracted', find(before, `projects/${project}/thumb.png`)?.size > 0);
 	check('projects/<id>/meta.json', find(before, `projects/${project}/meta.json`)?.size > 0);
 	check('provider.json', find(before, 'provider.json')?.size > 0);
@@ -104,11 +114,11 @@ async function main() {
 	check('nothing in tmp/', staging(before).length === 0, staging(before).join(', '));
 
 	step('Atelier Cloud: the whole workspace can be downloaded, and only that');
-	await provider.goto(`${ORIGIN}/cloud/workspace/${project}`, { waitUntil: 'networkidle' });
-	await provider.waitForSelector('h2:has-text("Changes")');
+	await provider.goto(`${ORIGIN}/workspaces/${project}`, { waitUntil: 'networkidle' });
+	await provider.waitForSelector('h2:has-text("Version")');
 	check(
 		'"Download files" is offered',
-		!(await provider.isDisabled('section.panel.changes button:has-text("Download files")'))
+		!(await provider.isDisabled('section.panel.version button:has-text("Download files")'))
 	);
 	check(
 		'and there is no separate one-save-back download',
@@ -155,56 +165,52 @@ async function main() {
 	check('the document was modified', documentAfter?.modified !== document?.modified);
 	check('tmp/ is empty again', staging(after).length === 0, staging(after).join(', '));
 
-	step('Atelier Cloud: the change is recorded in the Changes panel');
+	step('Atelier Cloud: the save became a version');
 	await provider.bringToFront();
-	await provider.goto(`${ORIGIN}/cloud/workspace/${project}`, { waitUntil: 'networkidle' });
-	await provider.waitForSelector('h2:has-text("Changes")');
-	const panel = await provider.innerText('section.panel.changes');
-	log('   panel:\n' + panel.split('\n').map((line) => `     ${line}`).join('\n'));
-	check('the panel reports uncommitted changes since rev 1', /uncommitted since rev 1/.test(panel));
-	check('the panel names the document', panel.includes('01-rgb-layered.pcraft'));
-	check('the panel counts objects', /[0-9]+ (new|changed) object/.test(panel));
-	const withPending = await opfs(provider);
-	check('outbox/<id>/pending.json was written', find(withPending, `outbox/${project}/pending.json`)?.size > 0);
-
-	step('Atelier Cloud: record the version');
-	await provider.click('button:has-text("Record version")');
-	await provider.waitForTimeout(1500);
-	const committed = await provider.innerText('section.panel.changes');
-	log('   panel:\n' + committed.split('\n').map((line) => `     ${line}`).join('\n'));
-	check('the panel is clean after committing', /Version up to date/.test(committed));
-	const cleanHeading = (await provider.innerText('section.panel.changes h2')).trim();
+	await provider.goto(`${ORIGIN}/workspaces/${project}`, { waitUntil: 'networkidle' });
+	await provider.waitForSelector('section.panel.version');
+	const version = await provider.innerText('section.panel.version');
+	log('   version:\n' + version.split('\n').map((line) => `     ${line}`).join('\n'));
 	check(
-		'and it keeps the same heading prefix, so the layout does not jump',
-		cleanHeading === 'Changes — Version up to date',
-		cleanHeading
+		'the header counts the documents rather than naming one',
+		/1 document · 175\.5 KB/.test(await provider.innerText('.top')),
+		(await provider.innerText('.top')).split('\n').join(' · ')
 	);
-	check('and the explanation stays under the actions', /Recording a version marks the current state/.test(committed), committed);
 	check(
-		'and the record button is still there, greyed as "Up to date"',
-		await provider.isDisabled('button:has-text("Up to date")')
+		'and Open names the document it targets',
+		/01-rgb-layered\.pcraft/.test(await provider.innerText('.top .open-target')),
+		await provider.innerText('.top .open-target')
 	);
-	const committedTree = await opfs(provider);
-	check('outbox/<id>/pending.json is gone', find(committedTree, `outbox/${project}/pending.json`) === undefined);
-	const revision = find(committedTree, `projects/${project}/meta.json`);
-	check('meta.json was rewritten for the revision', revision?.size > 0);
+	check('and the version counts what it holds', /[0-9]+ objects/.test(version), version.replace(/\n/g, ' · '));
+	check('and carries a hash', /sha256:[0-9a-f]+/.test(version), version.replace(/\n/g, ' · '));
+	check('there is no record button to press', (await provider.locator('button:has-text("Record")').count()) === 0);
+	const recorded = await readMeta(provider, project);
+	check(
+		'the save was recorded on the way in',
+		recorded?.rev === 2 && recorded?.dirty === false,
+		`rev ${recorded?.rev}, dirty ${recorded?.dirty}`
+	);
+	check(
+		'and nothing is left staging a pending change',
+		find(await opfs(provider), `outbox/${project}/pending.json`) === undefined
+	);
 
-	await provider.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+	await provider.goto(`${ORIGIN}/workspaces/`, { waitUntil: 'networkidle' });
 	await provider.waitForSelector('article');
 	const card = await provider.innerText('article');
-	// The owner and the revision are not on the card: on a page listing one person's workspaces, "owner:
-	// you · rev 2" answers nothing. They live on the workspace page — the panel checked below reports
-	// against rev 2 — and in meta.json, which was just rewritten.
-	check('the card shows the committed state', /committed/.test(card));
+	// The owner and the version number are not on the card: on a page listing one person's workspaces,
+	// "owner: you · rev 2" answers nothing. The card says the version is saved, and the workspace page
+	// has the rest.
+	check('the card shows the saved state', /saved/.test(card), card.replace(/\n/g, ' · '));
 	check(
-		'and the card leaves the owner and the revision to the workspace page',
+		'and the card leaves the owner and the version number to the workspace page',
 		!/owner:|rev \d/.test(card),
 		card.replace(/\n/g, ' · ')
 	);
 
 	step('Atelier Cloud: download every file in the workspace (the exit ramp)');
-	await provider.goto(`${ORIGIN}/cloud/workspace/${project}`, { waitUntil: 'networkidle' });
-	await provider.waitForSelector('h2:has-text("Changes")');
+	await provider.goto(`${ORIGIN}/workspaces/${project}`, { waitUntil: 'networkidle' });
+	await provider.waitForSelector('h2:has-text("Version")');
 	await provider.click('button:has-text("Download files")');
 	await provider.waitForTimeout(2500);
 	const named = () => downloads.map((download) => download.suggestedFilename()).join(', ') || 'none';
@@ -213,10 +219,10 @@ async function main() {
 	const zipped = archive ? await zipNames(archive) : [];
 	check('and the zip holds the workspace\'s document', zipped.includes('01-rgb-layered.pcraft'), zipped.join(', ') || 'none');
 
-	step('Atelier Cloud: discard puts the committed bytes back');
-	const committedBytes = (await opfs(provider)).find((entry) => entry.path === `projects/${project}/01-rgb-layered.pcraft`);
+	step('Atelier Cloud: a save made behind the provider is recorded by its next look');
+	const beforeHash = (await readMeta(provider, project))?.revision?.hash;
 	await provider.evaluate(async () => {
-		// Edit the document behind the editor's back, the way a save from a second tab would: the
+		// Edit the document behind the provider's back, the way a save from a second tab would: the
 		// provider must notice from the file alone, with nothing telling it.
 		const root = await navigator.storage.getDirectory();
 		const space = await root.getDirectoryHandle('atelier-cloud');
@@ -230,29 +236,13 @@ async function main() {
 		await stream.write(bytes);
 		await stream.close();
 	});
-	await provider.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-	await provider.waitForTimeout(300);
 	await provider.reload({ waitUntil: 'networkidle' });
-	await provider.waitForSelector('h2:has-text("Changes")');
-	const dirty = await provider.innerText('section.panel.changes');
-	check('a change made outside the browser UI is noticed', /uncommitted since rev 2/.test(dirty));
-
-	const previousBytes = (await opfs(provider)).find((entry) => entry.path === `projects/${project}/01-rgb-layered.pcraft.prev`);
-	provider.on('dialog', (dialog) => dialog.accept());
-	await provider.click('button:has-text("Discard local changes")');
-	await provider.waitForTimeout(1500);
-	const restored = (await opfs(provider)).find((entry) => entry.path === `projects/${project}/01-rgb-layered.pcraft`);
-	check('discard puts the previous bytes back', restored?.size === previousBytes?.size, `${restored?.size} B vs .prev ${previousBytes?.size} B`);
-	const told = await provider.innerText('body');
-	check(
-		'discard says what came back',
-		/discarded: the document is revision 2 again/i.test(told) || /they are not revision 2/i.test(told),
-		told.split('\n').find((line) => /Put back the previous bytes|Discarded/.test(line)) ?? 'nothing'
-	);
-	check(
-		'the panel agrees with what was restored',
-		/discarded: the document is revision 2 again/i.test(told) ? /Version up to date/.test(told) : /uncommitted since rev 2/.test(told)
-	);
+	await provider.waitForSelector('section.panel.version');
+	const later = await readMeta(provider, project);
+	check('a change made outside the browser UI is recorded', later?.rev === 3, `rev ${later?.rev}`);
+	check('and the version follows the bytes', later?.revision?.hash !== beforeHash);
+	const told = await provider.innerText('section.panel.version');
+	check('the page shows the recorded version, not a pending one', /[0-9]+ objects/.test(told), told.replace(/\n/g, ' · '));
 
 	step('The patch speaks the contract: reopen and check the saved bytes load');
 	const again = await context.newPage();
@@ -276,7 +266,7 @@ async function main() {
 	/** A fresh empty workspace, and the project id its Editor link carries. */
 	async function newEmptyWorkspace(name) {
 		await provider.bringToFront();
-		await provider.goto(`${ORIGIN}/cloud/`, { waitUntil: 'networkidle' });
+		await provider.goto(`${ORIGIN}/workspaces/`, { waitUntil: 'networkidle' });
 		await provider.click('button:has-text("New workspace")');
 		await provider.fill('input[type=text]', name);
 		await provider.click('label:has-text("An empty workspace")');
@@ -391,8 +381,8 @@ async function main() {
 	const BACK = { x: 1000, y: 14 };
 	await menu.page.bringToFront();
 	await menu.page.mouse.click(BACK.x, BACK.y);
-	await menu.page.waitForSelector('h2:has-text("Changes")', { timeout: 20_000 });
-	check('clicking it lands on the workspace page', menu.page.url().includes(`/cloud/workspace/${menuProject}`), menu.page.url());
+	await menu.page.waitForSelector('h2:has-text("Version")', { timeout: 20_000 });
+	check('clicking it lands on the workspace page', menu.page.url().includes(`/workspaces/${menuProject}`), menu.page.url());
 	const navEditor = await menu.page.getAttribute('nav a:has-text("Open in PhotoCraft")', 'href');
 	check("the nav's Open in PhotoCraft link opens the workspace that changed last", navEditor === `/photocraft/?project=${menuProject}`, navEditor ?? 'none');
 

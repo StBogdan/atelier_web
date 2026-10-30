@@ -9,7 +9,7 @@ repository. There is no CLA and nothing to sign.
 ## Getting it running
 
 ```sh
-./run.sh     # then open http://127.0.0.1:3000/cloud/
+./run.sh     # then open http://127.0.0.1:3000/workspaces/
 ```
 
 `run.sh` builds the cloud app, starts the editor container, and serves both from one origin. The first run

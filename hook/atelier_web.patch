@@ -157,7 +157,7 @@ index 000000000..ea1105f26
 +/// (The Hook Point). `None` unless this page was launched into a project, which leaves the screen
 +/// exactly as upstream draws it.
 +pub fn home_link() -> Option<(String, String)> {
-+    with_binding(|binding| ("Back to Atelier Cloud".to_owned(), format!("/cloud/workspace/{}", binding.project)))
++    with_binding(|binding| ("Back to Atelier Cloud".to_owned(), format!("/workspaces/{}", binding.project)))
 +}
 +
 +/// The project and document an `atelier-cloud://` path names (Saving), if it names one at all.

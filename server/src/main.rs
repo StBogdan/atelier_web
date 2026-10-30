@@ -6,7 +6,7 @@
 //!
 //! ```text
 //! http://127.0.0.1:3000/              → the landing page  (static from atelier_web/web/build/landing)
-//! http://127.0.0.1:3000/cloud/        → Atelier Cloud   (static files from atelier_web/web/build)
+//! http://127.0.0.1:3000/workspaces/  → Atelier Cloud   (static files from atelier_web/web/build)
 //! http://127.0.0.1:3000/photocraft/   → PhotoCraft      (proxied to PHOTOCRAFT_UPSTREAM)
 //! ```
 //!
@@ -20,6 +20,7 @@ use axum::{
     body::to_bytes,
     extract::{Request, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
+    middleware::{self, Next},
     response::{Html, IntoResponse, Json, Redirect, Response},
     routing::{any, get},
     Router,
@@ -129,19 +130,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Bing asks for its verification file at the site root, which is otherwise the landing page.
         // The file is content rather than a route: `web/static/` is copied into the served directory.
         .route_service("/BingSiteAuth.xml", ServeFile::new(web_dir.join("BingSiteAuth.xml")))
-        // `/cloud` without the trailing slash would otherwise 404: point it at the directory.
-        .route("/cloud", get(|| async { axum::response::Redirect::permanent("/cloud/") }))
+        // `/workspaces` without the trailing slash would otherwise 404: point it at the directory.
+        .route("/workspaces", get(|| async { axum::response::Redirect::permanent("/workspaces/") }))
         // The prerendered pages are written as `help.html` and `settings.html`, which the directory
         // service does not look for; the slash form redirects so there is one URL per page.
-        .route("/cloud/help/", get(|| async { axum::response::Redirect::permanent("/cloud/help") }))
-        .route("/cloud/settings/", get(|| async { axum::response::Redirect::permanent("/cloud/settings") }))
-        .route_service("/cloud/help", ServeFile::new(web_dir.join("help.html")))
-        .route_service("/cloud/settings", ServeFile::new(web_dir.join("settings.html")))
+        .route("/workspaces/help/", get(|| async { axum::response::Redirect::permanent("/workspaces/help") }))
+        .route(
+            "/workspaces/settings/",
+            get(|| async { axum::response::Redirect::permanent("/workspaces/settings") }),
+        )
+        .route_service("/workspaces/help", ServeFile::new(web_dir.join("help.html")))
+        .route_service("/workspaces/settings", ServeFile::new(web_dir.join("settings.html")))
         // The build's file names carry a content hash, so a year is safe for them. Everything else
         // revalidates, which is what makes a deploy visible on the next request rather than when a
         // browser decides its copy is old.
         .nest_service(
-            "/cloud/_app/",
+            "/workspaces/_app/",
             ServiceBuilder::new()
                 .layer(SetResponseHeaderLayer::overriding(
                     header::CACHE_CONTROL,
@@ -150,13 +154,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .service(ServeDir::new(web_dir.join("_app"))),
         )
         // The launcher, help and settings are prerendered (design, The Landing Page and Launcher), so
-        // they are files like any other, and a path that is not a file is a 404. That is what keeps
-        // `/cloud/<anything>` from answering 200 with the app shell, which is a soft 404 for every
-        // URL someone invents.
-        .nest_service("/cloud/", ServeDir::new(&web_dir).append_index_html_on_directories(true))
-        // A workspace id is not known at build time, so the client renders that route: only this
-        // prefix falls back to the shell, and only this prefix loses its 404.
-        .nest_service("/cloud/workspace/", ServeDir::new(&web_dir).fallback(ServeFile::new(&shell)))
+        // they are files like any other. Each is named here rather than handed to a directory
+        // service, because a directory service and the workspace route below would claim the same
+        // path — and because a path that is not one of these is a 404, not a 200 that says nothing.
+        .route_service("/workspaces/", ServeFile::new(web_dir.join("index.html")))
+        .route_service("/workspaces/favicon.svg", ServeFile::new(web_dir.join("favicon.svg")))
+        .nest_service("/workspaces/samples/", ServeDir::new(web_dir.join("samples")))
+        // A workspace id is not known at build time, so the client renders that route. Only the two
+        // shapes the app actually has serve the shell — a workspace, and the page that frames
+        // PdfCraft inside one — so an invented URL under this prefix still answers 404.
+        .route_service("/workspaces/{id}", ServeFile::new(&shell))
+        .route_service("/workspaces/{id}/edit/{editor}", ServeFile::new(&shell))
         // The landing page's own files: its screenshot and icon. The page itself is served at `/`.
         // Left indexable on purpose: the screenshot is worth finding in image search, and the
         // duplicate `landing/index.html` names `/` as its canonical.
@@ -175,6 +183,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Anything else is not a page. The old catch-all editor proxy made every invented URL an
         // indexable copy of the editor shell.
         .fallback(not_found)
+        // Before any of the above answers, send a page's duplicate file names to the one URL it has.
+        .layer(middleware::from_fn(one_address_per_page))
         // `if_not_present` leaves the editor's own cache headers and the hashed assets above alone.
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CACHE_CONTROL,
@@ -220,13 +230,13 @@ fn deployment_or_exit() -> Deployment {
 fn print_banner(addr: SocketAddr, web_dir: &std::path::Path, upstream: &str, pdfcraft: Option<&str>) {
     println!("Atelier web  →  http://{addr}/");
     println!("    /              the landing page (from {})", web_dir.display());
-    println!("    /cloud/        Atelier Cloud (static from {})", web_dir.display());
+    println!("    /workspaces/   Atelier Cloud (static from {})", web_dir.display());
     println!("    /photocraft/   PhotoCraft (proxy → {upstream})");
     match pdfcraft {
         Some(pdfcraft) => println!("    /pdfcraft/     PdfCraft (proxy → {pdfcraft})"),
         None => println!("    /pdfcraft/     not configured (set PDFCRAFT_UPSTREAM to enable it)"),
     }
-    println!("\nOpen http://{addr}/cloud/");
+    println!("\nOpen http://{addr}/workspaces/");
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -338,7 +348,7 @@ async fn robots(headers: HeaderMap) -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
         format!(
-            "User-agent: *\nAllow: /\nDisallow: /cloud/workspace/\nDisallow: /photocraft/\nDisallow: /pdfcraft/\n\nSitemap: {origin}/sitemap.xml\n"
+            "User-agent: *\nAllow: /\nDisallow: /workspaces/\nDisallow: /photocraft/\nDisallow: /pdfcraft/\n\nSitemap: {origin}/sitemap.xml\n"
         ),
     )
 }
@@ -348,7 +358,7 @@ async fn robots(headers: HeaderMap) -> impl IntoResponse {
 /// before OPFS is read.
 async fn sitemap(headers: HeaderMap) -> impl IntoResponse {
     let origin = site(&headers);
-    let urls: String = ["/", "/cloud/help"]
+    let urls: String = ["/", "/workspaces/help"]
         .iter()
         .map(|path| format!("  <url><loc>{origin}{path}</loc></url>\n"))
         .collect();
@@ -421,8 +431,67 @@ fn root_query_target(query: &str) -> String {
     if is_open_link(Some(query)) {
         format!("/photocraft/?{query}")
     } else {
-        format!("/cloud/?{query}")
+        format!("/workspaces/?{query}")
     }
+}
+
+/// One page, one URL. The build is a directory of files, so the directory service also answers the
+/// `.html` names behind the prerendered routes and a copy of the landing page under `landing/` and
+/// under `/workspaces/landing/`. Each duplicate carries a canonical pointing at its twin, which is how
+/// a page reaches Search Console as "Alternative page with proper canonical tag" rather than in the
+/// index: the tag says where the page is, and the other URL still answers 200. A permanent redirect
+/// settles it at the URL, so the twin never loads at all.
+async fn one_address_per_page(req: Request, next: Next) -> Response {
+    // The app moved from `/cloud/` to `/workspaces/`; a bookmark or a link from before the move is
+    // sent to the page it named, so the old names do not answer with a copy of anything.
+    if let Some(target) = moved_from_cloud(req.uri().path()) {
+        return slash_redirect(&target, req.uri().query());
+    }
+    match duplicate_page(req.uri().path()) {
+        Some(target) => slash_redirect(&target, req.uri().query()),
+        None => next.run(req).await,
+    }
+}
+
+/// Where a path under the app's old `/cloud/` prefix belongs now, or `None` for anything else. The
+/// inner `workspace/` segment goes with it: `/cloud/workspace/<id>` is `/workspaces/<id>`.
+fn moved_from_cloud(path: &str) -> Option<String> {
+    let rest = path.strip_prefix("/cloud")?;
+    let rest = match rest {
+        // `/cloud` and `/cloud/` both land on the directory in one hop, rather than through the
+        // `/workspaces` → `/workspaces/` redirect.
+        "" | "/" => "/".to_owned(),
+        _ => rest.strip_prefix("/workspace/").map_or_else(
+            || rest.to_owned(),
+            // A workspace, or a page inside one.
+            |id| format!("/{id}"),
+        ),
+    };
+    Some(format!("/workspaces{rest}"))
+}
+
+/// The one URL for a file that the build also writes under another name. `None` for a path that has
+/// only one address, which is every route the server names itself.
+fn duplicate_page(path: &str) -> Option<String> {
+    let target = match path {
+        "/landing/"
+        | "/landing/index.html"
+        | "/workspaces/landing/"
+        | "/workspaces/landing/index.html" => "/",
+        "/workspaces/index.html" => "/workspaces/",
+        "/workspaces/help.html" => "/workspaces/help",
+        "/workspaces/settings.html" => "/workspaces/settings",
+        // The client-rendered shell, which only a workspace's fallback request should reach.
+        "/workspaces/200.html" => "/workspaces/",
+        _ => {
+            // `web/static/` is copied into the build whole, so the landing page's own files are also
+            // served under `/workspaces/landing/`. The screenshot belongs to image search; one URL
+            // for it.
+            let rest = path.strip_prefix("/workspaces/landing/")?;
+            return Some(format!("/landing/{rest}"));
+        }
+    };
+    Some(target.to_owned())
 }
 
 /// The trailing slash decides whether an editor's relative asset URLs resolve under its prefix.
@@ -554,7 +623,7 @@ fn editor_unreachable(title: &str, prefix: &str, upstream: &str, target: &str, s
          <p>Atelier Cloud is running, but <code>{prefix}{target}</code> belongs to {title}, which this server proxies.</p>\
          <p>Start it with <code>./run.sh</code>, or by hand:</p>\
          {start}\
-         <p><code>/cloud/</code> works regardless.</p>\
+         <p><code>/workspaces/</code> works regardless.</p>\
          <details><summary>Proxy error</summary><pre>{error}</pre></details>"
     );
     (StatusCode::SERVICE_UNAVAILABLE, Html(body)).into_response()
@@ -620,6 +689,56 @@ mod tests {
             root_query_target("project=abc&document=doc.pcraft"),
             "/photocraft/?project=abc&document=doc.pcraft"
         );
-        assert_eq!(root_query_target("new=1"), "/cloud/?new=1");
+        assert_eq!(root_query_target("new=1"), "/workspaces/?new=1");
+    }
+
+    #[test]
+    fn the_build_s_second_name_for_a_page_redirects_to_the_first() {
+        for (path, target) in [
+            ("/landing/", "/"),
+            ("/landing/index.html", "/"),
+            ("/workspaces/landing/", "/"),
+            ("/workspaces/landing/index.html", "/"),
+            ("/workspaces/index.html", "/workspaces/"),
+            ("/workspaces/help.html", "/workspaces/help"),
+            ("/workspaces/settings.html", "/workspaces/settings"),
+            ("/workspaces/200.html", "/workspaces/"),
+            ("/workspaces/landing/og.png", "/landing/og.png"),
+        ] {
+            assert_eq!(duplicate_page(path).as_deref(), Some(target), "{path}");
+        }
+    }
+
+    #[test]
+    fn the_old_cloud_paths_point_at_the_page_that_replaced_them() {
+        for (path, target) in [
+            ("/cloud", "/workspaces/"),
+            ("/cloud/", "/workspaces/"),
+            ("/cloud/help", "/workspaces/help"),
+            ("/cloud/settings", "/workspaces/settings"),
+            ("/cloud/landing/og.png", "/workspaces/landing/og.png"),
+            ("/cloud/workspace/abc", "/workspaces/abc"),
+            ("/cloud/workspace/abc/edit/pdfcraft", "/workspaces/abc/edit/pdfcraft"),
+        ] {
+            assert_eq!(moved_from_cloud(path).as_deref(), Some(target), "{path}");
+        }
+        for path in ["/", "/photocraft/", "/workspaces/", "/landing/og.png"] {
+            assert_eq!(moved_from_cloud(path), None, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_page_with_one_address_is_left_alone() {
+        for path in [
+            "/",
+            "/workspaces/",
+            "/workspaces/help",
+            "/workspaces/settings",
+            "/workspaces/abc",
+            "/landing/og.png",
+            "/photocraft/",
+        ] {
+            assert_eq!(duplicate_page(path), None, "{path}");
+        }
     }
 }

@@ -1,0 +1,55 @@
+<script lang="ts">
+  /**
+   * The Atelier Cloud mark, drawn here so the app bar and the embedded editor's own bar carry the same
+   * one. `names` is the wordmark beside it; the editor's bar has room for the mark alone.
+   */
+  let { size = 28, names = true }: { size?: number; names?: boolean } =
+    $props();
+</script>
+
+<svg
+  class="mark"
+  viewBox="0 0 32 32"
+  width={size}
+  height={size}
+  aria-hidden="true"
+  focusable="false"
+>
+  <rect width="32" height="32" rx="7" fill="#2f6feb" />
+  <g transform="translate(1.69 1.38) scale(0.78)">
+    <path
+      d="M10.7 8 2 32M10.7 8 34.7 32M5.3 22.9H25.6"
+      fill="none"
+      stroke="#fff"
+      stroke-width="3.2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <g
+      transform="translate(20.55 7.43) scale(0.72) rotate(45 10 5.5)"
+      fill="none"
+      stroke="#fff"
+      stroke-width="2.8"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M4.5 11A4.5 4.5 0 0 1 4.5 2A5.6 5.6 0 0 1 15.2 1.2A4.6 4.6 0 0 1 19.6 8.6A3.1 3.1 0 0 1 16.9 11Z"
+      />
+    </g>
+  </g>
+</svg>
+
+{#if names}
+  <span class="names">
+    <strong>Atelier Cloud</strong>
+    <small>cloudspace for browser apps</small>
+  </span>
+{/if}
+
+<style>
+  .mark {
+    display: block;
+    flex: none;
+    color: var(--accent);
+  }
+</style>

@@ -3,7 +3,7 @@
  * (design, Delta Sync). Two things follow, and both matter here:
  *
  * - The object set of a revision is the entry-name set, read from the central directory. No
- *   decompression, no hashing: the numbers in the Changes panel are exact and nearly free
+ *   decompression, no hashing: an object count and byte sum are exact and nearly free
  *   (design, Where Cloud State Is Surfaced).
  * - The entry names *are* the hashes, so the provider never computes BLAKE3 itself.
  */
@@ -191,62 +191,4 @@ export async function readEntry(
     .stream()
     .pipeThrough(new DecompressionStream("deflate-raw"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-export interface Difference {
-  added: ZipEntry[];
-  changed: ZipEntry[];
-  removed: number;
-  unchanged: number;
-  unchangedBytes: number;
-  bytes: number;
-}
-
-/**
- * The difference between the committed revision's object set and the current one, in the terms
- * the Changes panel shows (design, Delta Sync, Where Cloud State Is Surfaced).
- */
-export function difference(
-  previous: Record<string, number>,
-  next: Map<string, number>,
-  entries: ZipEntry[],
-): Difference {
-  const byName = new Map(entries.map((entry) => [entry.name, entry]));
-  const added: ZipEntry[] = [];
-  const changed: ZipEntry[] = [];
-  let bytes = 0;
-  let unchanged = 0;
-  let unchangedBytes = 0;
-  for (const [name, size] of next) {
-    const before = previous[name];
-    if (before === undefined) {
-      added.push(
-        byName.get(name) ?? {
-          name,
-          size,
-          stored: size,
-          method: 0,
-          headerOffset: 0,
-        },
-      );
-      bytes += size;
-    } else if (before !== size) {
-      changed.push(
-        byName.get(name) ?? {
-          name,
-          size,
-          stored: size,
-          method: 0,
-          headerOffset: 0,
-        },
-      );
-      bytes += size;
-    } else {
-      unchanged++;
-      unchangedBytes += size;
-    }
-  }
-  let removed = 0;
-  for (const name of Object.keys(previous)) if (!next.has(name)) removed++;
-  return { added, changed, removed, unchanged, unchangedBytes, bytes };
 }

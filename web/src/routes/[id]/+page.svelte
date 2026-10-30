@@ -7,28 +7,24 @@
   import Icon from "$lib/Icon.svelte";
   import BucketFields from "$lib/BucketFields.svelte";
   import Problem from "$lib/Problem.svelte";
-  import { bytes, objects, plural, since } from "$lib/format";
+  import { bytes, since } from "$lib/format";
   import {
     downloadWorkspace,
     downloadWorkspaceFiles,
     uploadDocument,
   } from "$lib/actions";
   import {
-    commit,
-    discard,
-    documentKind,
     ensureSpace,
     hash,
     inspect,
     objectKey,
-    pendingChange,
     readMeta,
+    recordIfDirty,
     removeDocument,
     removeProject,
     rename,
     renameDocument,
     restoreDocument,
-    type Change,
     type Meta,
     type WorkspaceDocument,
   } from "$lib/contract";
@@ -48,6 +44,7 @@
   } from "$lib/bucket";
   import { resolveTarget } from "$lib/sigv4";
   import { editorFor, editorHref, editorsFor } from "$lib/editors";
+  import { lastOpened, rememberOpened } from "$lib/recent";
   import { ensurePersistence, refresh } from "$lib/session";
 
   const id = $derived(page.params.id ?? "");
@@ -55,12 +52,9 @@
   let meta = $state<Meta | null>(null);
   /** The documents this workspace holds, from `inspect` (design, Documents). */
   let documents = $state<WorkspaceDocument[]>([]);
-  /** The one the project's revision describes, which the panels act on. */
-  let recordedDocument = $state<string | null>(null);
   /** The document a row is renaming, and the name it is being given. */
   let renamingDocument = $state<string | null>(null);
   let documentName = $state("");
-  let change = $state<Change | null>(null);
   let bucket = $state<BucketConfig | null>(null);
   /** What the bucket panel last failed with: an error as thrown, so a `Problem` can be drawn as one. */
   let bucketProblem = $state<unknown>(null);
@@ -90,22 +84,40 @@
   let now = $state(Date.now());
 
   const remote = $derived(meta?.sync?.remote ?? null);
-  /** The document the workspace shows: the one a revision describes, else the first it holds. */
-  const shown = $derived(
-    documents.find((document) => document.name === recordedDocument) ??
-      documents[0] ??
-      null,
+
+  /** How many documents the workspace holds, and what they add up to on disk. */
+  const totalSize = $derived(
+    documents.reduce((sum, document) => sum + document.size, 0),
   );
+
+  /** The document this browser opened here last, or `null` when it never did, or it is gone. */
+  let opened = $state<string | null>(null);
+  const lastOpenedDocument = $derived(
+    documents.find((document) => document.name === opened) ?? null,
+  );
+
+  /**
+   * What the header's Open action targets: the document opened here last, else the first the
+   * workspace holds in name order. A workspace whose files change under it falls back rather than
+   * pointing at a document that is no longer there.
+   */
+  const openTarget = $derived(lastOpenedDocument ?? documents[0] ?? null);
 
   /** The editor one document opens in. The workspace's recorded default decides only when none is named. */
   const editorForDocument = (document?: string) =>
-    editorFor(document ?? shown?.name ?? meta?.document, meta?.editor);
+    editorFor(document ?? openTarget?.name ?? meta?.document, meta?.editor);
 
-  /** Where one document is opened; the workspace's shown document when none is named. */
+  /** Where one document is opened; the header's target when none is named. */
   const editorUrl = (document?: string) =>
     editorHref(editorForDocument(document), id, document);
   /** What the header's Open action targets, named under the button so a multi-file workspace is unambiguous. */
-  const openDocumentName = $derived(shown?.name ?? meta?.document ?? null);
+  const openDocumentName = $derived(openTarget?.name ?? meta?.document ?? null);
+
+  /** Remember the document an action opened, so the header's button follows the one in use. */
+  function remember(document: string) {
+    opened = document;
+    rememberOpened(id, document);
+  }
   const primaryEditor = $derived(
     editorForDocument(openDocumentName ?? undefined),
   );
@@ -115,8 +127,8 @@
       (editor) => editor.id !== primaryEditor.id,
     ),
   );
-  /** The bytes on disk right now, as the Changes panel already knows them. */
-  const currentHash = $derived(change?.hash ?? meta?.revision?.hash ?? null);
+  /** The bytes of the version on disk, which is what an upload would send. */
+  const currentHash = $derived(meta?.revision?.hash ?? null);
 
   /**
    * Whether the bucket is missing these bytes — which is the only reason to upload, and the only reason
@@ -129,23 +141,6 @@
 
   /** The attached bucket's own page in Cloudflare, when that is where it lives. */
   const dashboard = $derived(bucket ? r2DashboardUrl(bucket) : null);
-
-  /**
-   * One short line about what is not in the diff, or nothing at all when there is nothing to say. It names
-   * no paths: the reader is deciding whether to record, not reading our file layout.
-   */
-  const diffNote = $derived.by(() => {
-    if (!change || change.kind === "whole") return null;
-    const parts: string[] = [];
-    if (change.difference.unchanged) {
-      parts.push(
-        `${plural(change.difference.unchanged, "object")} unchanged (${bytes(change.difference.unchangedBytes)})`,
-      );
-    }
-    if (change.difference.removed)
-      parts.push(`${plural(change.difference.removed, "object")} unused`);
-    return parts.join(" · ") || null;
-  });
 
   /**
    * What the attach form would attach and write to, resolved exactly the way `attachBucket` resolves
@@ -170,21 +165,27 @@
     const space = await ensureSpace();
     await loadBucket();
     const found = await readMeta(space, id);
-    meta = found;
     if (!found) {
+      meta = null;
       problem = "this workspace has no meta.json";
       return;
     }
     newName = found.name;
-    // Which documents the workspace holds is a listing of the project directory, not metadata.
-    const workspace = await inspect(space, id);
-    documents = workspace.documents;
-    recordedDocument = workspace.document;
+    // A save is a version as soon as a provider page sees it, and this is one of those pages: record
+    // what the editor wrote before showing what the workspace holds.
     try {
-      change = await pendingChange(space, id, found);
+      await recordIfDirty(space, id);
     } catch (e) {
       problem = e;
     }
+    const current = (await readMeta(space, id)) ?? found;
+    // Which documents the workspace holds is a listing of the project directory, not metadata.
+    const workspace = await inspect(space, id);
+    // Everything the header says is assigned at once, so it appears with its count rather than
+    // filling in a line at a time.
+    meta = current;
+    documents = workspace.documents;
+    opened = lastOpened(id);
     now = Date.now();
   }
 
@@ -214,44 +215,10 @@
     }
   }
 
-  const commitRevision = () =>
-    run("commit", async () => {
-      await commit(await ensureSpace(), id);
-      await load();
-      await refresh();
-    });
-
-  const discardChanges = () =>
-    run("discard", async () => {
-      const confirmed = window.confirm(
-        `Put back the previous bytes, ${meta?.document ?? "the document"}.prev?\n\nThe editor keeps one save back beside the document, so this undoes the last save. Download first if you are not sure.`,
-      );
-      if (!confirmed) return;
-      const outcome = await discard(await ensureSpace(), id);
-      notice =
-        outcome === "revision"
-          ? `Discarded: the document is revision ${meta?.rev} again.`
-          : `Put back the previous bytes, one save back. They are not revision ${meta?.rev}, so the document is still uncommitted: the editor's .prev holds one save, not the last commit.`;
-      await load();
-      await refresh();
-    });
-
   /** Save every document this workspace holds, as one zip. */
   const saveAll = () =>
     run("download", async () => {
       await downloadWorkspaceFiles(await ensureSpace(), id);
-    });
-
-  /**
-   * Record a document as this workspace's revision. A workspace may hold several files and its
-   * revision describes one of them, so the row is how a document other than the recorded one is
-   * kept. `commit` moves the revision and the card's status onto the document it records.
-   */
-  const recordDocument = (document: WorkspaceDocument) =>
-    run("commit", async () => {
-      await commit(await ensureSpace(), id, document.name);
-      await load();
-      await refresh();
     });
 
   /** Save one document of this workspace to the computer, whichever one it is. */
@@ -407,7 +374,7 @@
       const fetched = await readObject(attachment, document.logical);
       await restoreDocument(space, id, fetched);
       choosing = false;
-      notice = `Loaded ${document.key} from the bucket. It is uncommitted until you record a version.`;
+      notice = `Loaded ${document.key} from the bucket. It is this workspace's version now.`;
       await load();
       await refresh();
     });
@@ -438,8 +405,7 @@
   }
 
   /** The other direction: fetch the bucket's copy and make it this workspace's document. It is a
-   * whole-document replace, so it asks first, and the answer afterwards is plain about what the
-   * workspace is now: uncommitted, until it is recorded.
+   * whole-document replace, so it asks first. The copy that lands is recorded like any other save.
    */
   const downloadFromBucket = () =>
     run("fetch", async () => {
@@ -459,7 +425,7 @@
         return;
       const fetched = await readObject(attachment, from);
       await restoreDocument(space, id, fetched);
-      notice = `Restored ${from} (${bytes(fetched.length)}) into this workspace. It is uncommitted until you record a version.`;
+      notice = `Restored ${from} (${bytes(fetched.length)}) into this workspace.`;
       await load();
       await refresh();
     });
@@ -536,9 +502,16 @@
         </h1>
       {/if}
       <p class="muted small">
-        {shown?.name ?? "no document yet"} · rev {meta.rev} · {bytes(
-          shown?.size ?? 0,
-        )} · created {since(meta.createdAt, now)}
+        {#if documents.length}
+          {documents.length === 1
+            ? "1 document"
+            : `${documents.length} documents`} · {bytes(totalSize)} ·
+          {meta.revision
+            ? `saved ${since(meta.sync.at, now)}`
+            : "no version yet"}
+        {:else}
+          No documents yet
+        {/if}
       </p>
     </div>
     <div class="row actions">
@@ -548,6 +521,7 @@
           href={editorUrl(openDocumentName ?? undefined)}
           target="_blank"
           rel="noopener"
+          onclick={() => openDocumentName && remember(openDocumentName)}
         >
           <span class="label">
             <Icon name="edit" />
@@ -582,7 +556,9 @@
                 <a
                   href={editorHref(editor, id, openDocumentName ?? undefined)}
                   target="_blank"
-                  rel="noopener">{editor.title}</a
+                  rel="noopener"
+                  onclick={() => openDocumentName && remember(openDocumentName)}
+                  >{editor.title}</a
                 >
               {/each}
             </div>
@@ -599,113 +575,42 @@
     <p class="banner">{notice}</p>
   {/if}
 
-  {#snippet commitAction()}
-    <button
-      class:primary={Boolean(change)}
-      onclick={commitRevision}
-      disabled={busy !== null || !change}
-    >
-      <Icon name="commit" />
-      {busy === "commit"
-        ? "Recording…"
-        : change
-          ? "Record version"
-          : "Up to date"}
-    </button>
-  {/snippet}
-
-  {#snippet uploadAction()}
-    <button
-      class:primary={uploadWanted}
-      onclick={uploadToBucket}
-      disabled={busy !== null || !bucket || !meta?.document}
-    >
-      <Icon name="upload" />
-      {busy === "upload" ? "Uploading…" : "Upload to bucket"}
-    </button>
-    {#if !bucket}
-      <span class="muted small">No bucket attached</span>
-    {/if}
-  {/snippet}
-
-  <section class="panel changes">
-    {#if change}
-      <h2>
-        Changes
-        <span class="chip status">uncommitted since rev {meta.rev}</span>
-        <span class="muted">({since(meta.updatedAt, now)})</span>
-      </h2>
-      <table>
-        <tbody>
-          <tr>
-            <td class="mono">{change.document}</td>
-            <td
-              >{change.kind === "whole"
-                ? "whole document"
-                : objects(
-                    change.difference.added.length,
-                    change.difference.changed.length,
-                  )}</td
-            >
-            <td class="right"
-              >{bytes(
-                change.kind === "whole" ? change.size : change.difference.bytes,
-              )}</td
-            >
-          </tr>
-          {#if change.kind === "objects" && !change.difference.added.length && !change.difference.changed.length}
-            <tr>
-              <td class="mono">meta.json</td>
-              <td>document renamed or re-saved in place</td>
-              <td class="right">—</td>
-            </tr>
-          {/if}
-        </tbody>
-      </table>
-      {#if diffNote}
-        <p class="muted small">{diffNote}</p>
-      {/if}
-      <div class="row">
-        {@render commitAction()}
-        {@render uploadAction()}
-        <button class="danger" onclick={discardChanges} disabled={busy !== null}
-          ><Icon name="discard" /> Discard local changes…</button
-        >
-        <button class="push" onclick={saveAll} disabled={busy !== null}
-          ><Icon name="download" /> Download files</button
-        >
-      </div>
-    {:else}
-      <h2>
-        Changes
-        <span class="chip status ok">Version up to date</span>
-      </h2>
+  <section class="panel version">
+    <h2>Version</h2>
+    {#if meta.revision}
       <p class="muted small">
-        {#if meta.revision}
-          <span class="mono">{meta.document}</span> · Recorded {since(
-            meta.sync.at,
-            now,
-          )} ·
-          {meta.revision.kind === "whole"
-            ? "whole document"
-            : `${Object.keys(meta.revision.objects).length} objects`} ·
-          {bytes(meta.revision.size)} ·
-          <span class="mono">{meta.revision.hash.slice(0, 22)}…</span>
-        {:else if documents.length}
-          No recordable document here yet, so there is nothing to compare: an
-          editor writes a <code>.pcraft</code> or a <code>.pdf</code> when it saves
-          into this workspace.
-        {/if}
+        {meta.revision.kind === "whole"
+          ? "whole document"
+          : `${Object.keys(meta.revision.objects).length} objects`} ·
+        {bytes(meta.revision.size)} ·
+        <span class="mono">{meta.revision.hash.slice(0, 22)}…</span>
       </p>
-      <div class="row">
-        {@render commitAction()}
-        {@render uploadAction()}
-        <button class="push" onclick={saveAll} disabled={busy !== null}
-          ><Icon name="download" /> Download files</button
-        >
-      </div>
+    {:else if documents.length}
+      <p class="muted small">
+        No recordable document here yet: an editor writes a <code>.pcraft</code>
+        or a <code>.pdf</code> when it saves into this workspace.
+      </p>
+    {:else}
+      <p class="muted small">This workspace holds no document yet.</p>
     {/if}
+    <div class="row">
+      <button
+        class:primary={uploadWanted}
+        onclick={uploadToBucket}
+        disabled={busy !== null || !bucket || !meta.document}
+      >
+        <Icon name="upload" />
+        {busy === "upload" ? "Uploading…" : "Upload to bucket"}
+      </button>
+      {#if !bucket}
+        <span class="muted small">No bucket attached</span>
+      {/if}
+      <button class="push" onclick={saveAll} disabled={busy !== null}
+        ><Icon name="download" /> Download files</button
+      >
+    </div>
   </section>
+
   <section class="panel documents">
     <h2>
       Documents
@@ -761,7 +666,7 @@
                 {/if}
               </td>
               <td class="right">{bytes(document.size)}</td>
-              <td class="right">
+              <td class="right file-actions">
                 {#if editors.length > 1}
                   <details class="open-menu">
                     <summary class="button">Open</summary>
@@ -770,7 +675,9 @@
                         <a
                           href={editorHref(editor, id, document.name)}
                           target="_blank"
-                          rel="noopener">{editor.title}</a
+                          rel="noopener"
+                          onclick={() => remember(document.name)}
+                          >{editor.title}</a
                         >
                       {/each}
                     </div>
@@ -782,19 +689,7 @@
                     target="_blank"
                     rel="noopener"
                     title="Open in {editorForDocument(document.name).title}"
-                    >Open</a
-                  >
-                {/if}
-                <button
-                  onclick={() => saveDocument(document)}
-                  disabled={busy !== null}>Download</button
-                >
-                {#if document.name !== recordedDocument && documentKind(document.name) !== "none"}
-                  <button
-                    onclick={() => recordDocument(document)}
-                    disabled={busy !== null}
-                    title="Record {document.name} as this workspace's revision"
-                    ><Icon name="commit" /> Record</button
+                    onclick={() => remember(document.name)}>Open</a
                   >
                 {/if}
                 <button
@@ -807,6 +702,13 @@
                   onclick={() => deleteDocument(document)}
                   disabled={busy !== null}>Delete</button
                 >
+                <button
+                  class="download"
+                  onclick={() => saveDocument(document)}
+                  disabled={busy !== null}
+                  title="Download {document.name} to this computer"
+                  ><Icon name="download" /> Download</button
+                >
               </td>
             </tr>
           {/each}
@@ -814,22 +716,6 @@
       </table>
     {/if}
   </section>
-
-  {#if change}
-    <section class="panel">
-      <h2>Uncommitted revision</h2>
-      <dl>
-        <dt>document</dt>
-        <dd class="mono">{change.document}</dd>
-        <dt>bytes</dt>
-        <dd>{change.size} ({bytes(change.size)})</dd>
-        <dt>hash</dt>
-        <dd class="mono">{change.hash.slice(0, 22)}…</dd>
-        <dt>modified</dt>
-        <dd>{new Date(change.modified).toLocaleString()}</dd>
-      </dl>
-    </section>
-  {/if}
 
   {#snippet bucketForm()}
     <form
@@ -1031,6 +917,53 @@
 {/if}
 
 <style>
+  /* The page is one tone: its sections sit on the page itself, squared and divided by a hairline.
+     Nothing in the middle of the page is a surface, so there is no box to read as a box. */
+  .panel {
+    background: none;
+    border: 0;
+    border-top: 1px solid var(--hairline);
+    border-radius: 0;
+    box-shadow: none;
+    padding: 1.15rem 0 1.5rem;
+  }
+
+  /* A section's name is a small, tracked-out label; the table or form under it carries the weight. */
+  .panel h2 {
+    font-size: 0.72rem;
+    font-weight: 650;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin: 0 0 0.8rem;
+  }
+
+  /* What a section is called stays a label; the values beside it keep their own case. */
+  details.panel > summary .muted {
+    font-size: 0.82rem;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  /* Column names go above a rule, quiet and tracked out; the rows are the content. */
+  .panel th {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding-bottom: 0.4rem;
+  }
+
+  /* A notice or a failure is a line on the page, not another rounded card. */
+  .banner {
+    border-radius: 0;
+  }
+
+  /* The preview is the workspace's own, squared like the rest of the page. */
+  .top :global(.thumb) {
+    border-radius: 0;
+  }
+
   /* The same compact size as the workspace cards' actions, so a button reads the same wherever it
      is pressed. `rename` keeps its own quieter treatment below. */
   button,
@@ -1042,7 +975,8 @@
     display: flex;
     gap: 1.1rem;
     align-items: flex-start;
-    margin-bottom: 1.25rem;
+    margin-bottom: 0;
+    padding-block: 1.1rem 1.35rem;
   }
 
   .titles {
@@ -1121,26 +1055,6 @@
     vertical-align: middle;
   }
 
-  .changes table {
-    margin-bottom: 0.5rem;
-  }
-
-  .changes h2 {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .chip.status {
-    font-size: 0.75rem;
-    padding: 0.05em 0.55em;
-  }
-
-  .changes .right {
-    text-align: right;
-  }
-
   .attach {
     display: grid;
     gap: 0.5rem;
@@ -1155,6 +1069,17 @@
   /* The one action that leaves with the whole workspace, kept at the far end of the row. */
   .push {
     margin-left: auto;
+  }
+
+  /* A file row's actions: the three that act on the file stay together, and the one that takes a
+     copy off this machine sits at the end of them, carrying the same glyph as the page's other
+     downloads. */
+  .file-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    white-space: nowrap;
   }
 
   details.panel > summary {
@@ -1204,17 +1129,22 @@
 
   dl {
     display: grid;
-    grid-template-columns: 7rem 1fr;
-    gap: 0.25rem 0.75rem;
-    margin: 0 0 1rem;
+    grid-template-columns: 7.5rem 1fr;
+    gap: 0.3rem 0.9rem;
+    margin: 0 0 1.1rem;
   }
 
   dt {
     color: var(--dim);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    line-height: 1.6;
   }
 
   dd {
     margin: 0;
+    line-height: 1.6;
     overflow-wrap: anywhere;
   }
 
