@@ -136,7 +136,7 @@ bound to a project opens it the way it always did, unbound and unsaved.
 
 - **No new crates.** OPFS is `web-sys`: `FileSystemDirectoryHandle`, `FileSystemFileHandle`,
   `FileSystemWritableFileStream`. Those features are the whole `Cargo.toml` hunk, so the wasm dependency
-  graph is unchanged, and CI holds the release build to a 29 MiB wasm budget.
+  graph is unchanged, and CI holds the release build to a 32 MiB wasm budget.
 - **`js_sys::Reflect` for two APIs.** `navigator.locks.request` and `BroadcastChannel` go through
   `Reflect`, because the typed `LockManager` bindings sit behind `web_sys_unstable_apis`, a cfg this build
   does not set.
@@ -167,7 +167,7 @@ PHOTOCRAFT_DIR=... ./apply.sh check <ref>     # against another checkout or ref
 own `packaging/env.sh` does for a release. Without it the About dialog reports the last *release*
 number and "(dev build)", which is misleading: PhotoCraft's version is bumped only at a release, so a
 build of the commit before v0.8.2 says `0.7.0 (dev build)` even though it is newer than `v0.7.0`.
-Stamped, the same line reads `0.17.0 (b8c3f3aa8, 2026-10-30)` and names what it was built from.
+Stamped, the same line reads `0.21.0 (efb7ebd0c, 2026-11-07)` and names what it was built from.
 
 Keep the pinned submodule clean. Use a scratch checkout:
 
@@ -198,11 +198,30 @@ edit is therefore not a way to prove the build did not change; comparing the pat
 
 ## When upstream moves
 
-The patch is written against `b8c3f3aa8e2918032cadc0e042664414a03be333` (`v0.17.0`), the
+The patch is written against `efb7ebd0c0dab1fc108ee4642aa47c22694271a8` (`v0.21.0`), the
 commit the outer repository pins. Drift shows up as `apply.sh check` failing against a newer ref.
-Checked on 2026-10-30, it applies cleanly to the pin.
+Checked on 2026-11-07, it applies cleanly to the pin.
 
-The move from `v0.16.0` was the largest so far, and worth knowing before the next one:
+The move from `v0.17.0` was the largest so far, 9597 commits, and worth knowing before the next one:
+
+- **Six files conflicted; the rest applied.** `Cargo.toml`, `web.rs`, `app/frame.rs`, `lib.rs`,
+  `menus/invoke.rs` and `services.rs` needed a hand; `main.rs`, `app.rs`, `app/files.rs`,
+  `menus/items.rs`, `panels.rs`, `panels/title_bar.rs` and both new modules took line offsets.
+- **v0.21.0 grew its own inbox plumbing.** `PlaceInbox` holds canvas drops, `place_inbox_takes` bounds
+  them and `queue_web_places` drains them, so the patch's inline place drain in `app/frame.rs` is gone:
+  the drain keeps only the `Inbox` triple, and the drop site pushes `(name, bytes, None)` into
+  upstream's branches rather than the patch's own `if place` block.
+- **The floating windows moved behind Home.** `app/frame.rs` now stages the tool windows inside
+  `if !home { … }`, so the workspace door is drawn after that block, where the patch put it before.
+- **Three lists grew at the patch's lines.** `Cargo.toml` keeps upstream's `web-sys` line with the
+  patch's additions; `lib.rs` keeps `ClipboardGetSvgFn`, `OpenExternalSvgFn` and `TabletPollFn` beside
+  the `Workspace*` names; `services.rs` keeps `TabletPollFn` beside the `WorkspaceOpen` types.
+- **`ExternalVectorSource`, `ExternalSvgSession` and `TabletPollFn` landed in `services.rs`** around
+  the `Inbox` line, so that hunk is upstream's block with the `Inbox` triple spliced in.
+- **`menus/invoke.rs` gained an arm where the patch adds one.** `file.import.variableDataSets` sits
+  where `file.openWorkspace` goes; upstream's arm stays first.
+
+The move before that, from `v0.16.0` to `v0.17.0`, was the largest at the time:
 
 - **Every `crates/ui-egui` hunk conflicted, because the files moved.** `lib.rs` kept `PhotocraftApp`
   but its `Services` types went to `services.rs`; `menus.rs` became `menus/` (`invoke.rs`, `items.rs`);
@@ -228,7 +247,7 @@ after the title bar. A 3-way merge needs the pinned ref in the object database, 
 the checkout is a shallow clone of another branch:
 
 ```sh
-git -C /tmp/photocraft-hook fetch --depth 1 origin b8c3f3aa8e2918032cadc0e042664414a03be333
+git -C /tmp/photocraft-hook fetch --depth 1 origin efb7ebd0c0dab1fc108ee4642aa47c22694271a8
 ```
 
 Re-apply by hand when upstream moves inside a hunk. `git diff` skips an untracked file, so `git add -N`

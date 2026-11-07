@@ -53,8 +53,8 @@ a first-class artifact here:
 - Edit the patch, not a checkout. `hook/README.md` says how.
 - Keep it inside its documented footprint. `patch.yml` asserts that in CI, and a red build is the point:
   drift from upstream should be a red build, not a surprise.
-- The wasm budget is a hard gate (25 MiB, Cloudflare's per-file limit). The patch adds no wasm
-  dependencies; keep it that way.
+- The wasm budget is a hard gate (`WASM_LIMIT` in `patch.yml`, set just above the current build). The
+  patch adds no wasm dependencies; keep it that way.
 
 ## What not to commit
 

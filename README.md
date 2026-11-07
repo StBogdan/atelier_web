@@ -9,7 +9,7 @@ browser's own storage, and the documents you care about go to a bucket that is y
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 [![Server: Rust + axum](https://img.shields.io/badge/server-Rust%20%2B%20axum-dea584?logo=rust&logoColor=white)](server)
 [![App: SvelteKit 2](https://img.shields.io/badge/app-SvelteKit%202-ff3e00?logo=svelte&logoColor=white)](web)
-[![Editor: PhotoCraft v0.17.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.17.0-4b5563)](https://github.com/storytold/photocraft)
+[![Editor: PhotoCraft v0.21.0](https://img.shields.io/badge/editor-PhotoCraft%20v0.21.0-4b5563)](https://github.com/storytold/photocraft)
 
 <img src="docs/workspaces.png" alt="The Atelier Cloud workspace list, with six workspaces and their document, save state and actions" width="880">
 
@@ -367,7 +367,7 @@ web at it:
 
 ```sh
 cd ../photocraft
-git worktree add --detach /tmp/photocraft-hook b8c3f3aa8e2918032cadc0e042664414a03be333
+git worktree add --detach /tmp/photocraft-hook efb7ebd0c0dab1fc108ee4642aa47c22694271a8
 cd ../atelier_web
 CARGO_TARGET_DIR=../photocraft/target PHOTOCRAFT_DIR=/tmp/photocraft-hook ./hook/apply.sh build
 cd /tmp/photocraft-hook/dist/web && python3 -m http.server 8765
