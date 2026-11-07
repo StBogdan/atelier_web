@@ -193,7 +193,11 @@ step('Several documents at once, in several formats');
 	await cloud.waitForTimeout(600);
 	const chosen = await cloud.textContent('.option:has-text("documents from this computer")');
 	check('the dialog counts what was chosen', /3 documents from this computer/.test(chosen ?? ''), chosen?.trim().slice(0, 90));
-	check('and says a non-.pcraft is kept as it is', /saved as it is/.test(chosen ?? ''));
+	check(
+		'and lists each document by name',
+		/01-rgb-layered\.pcraft/.test(chosen ?? '') && /atelier-test\.png/.test(chosen ?? ''),
+		chosen?.trim().slice(0, 160),
+	);
 	await cloud.click('button:has-text("Create")');
 	await cloud.waitForSelector(`article h2 a:has-text("${many}")`);
 	const card = await cloud.textContent(`article:has-text("${many}")`);

@@ -1,0 +1,28 @@
+# Atelier Cloud
+
+> Atelier Cloud runs PhotoCraft and PdfCraft in the browser tab. Documents are opened from the
+> visitor's own machine and edited there: no upload, no account. PdfCraft is the PDF workbench, and
+> the tutorials below are short, tested walkthroughs for it.
+
+## What PdfCraft does in the browser
+
+- Combine files into one PDF, split a document, and reorder or delete pages.
+- Fill interactive PDF forms and place a typed, drawn or scanned signature.
+- Redact text and images, then rewrite the file so the removed content is gone.
+- Encrypt a PDF with a password, and restrict printing, copying and changes.
+- Stamp page numbers into the footer, and flatten a filled form into page content.
+- Recognise text in scans, reduce file size, and export to Word, PowerPoint, HTML or text.
+
+## Tutorials
+
+- [Add page numbers to a PDF](https://ateliercloud.eu/blog/add-page-numbers-to-a-pdf): Stamp page numbers into the footer of every page, and flatten a filled form so the values become part of the page.
+- [Fill in and sign a PDF form](https://ateliercloud.eu/blog/fill-and-sign-a-pdf-form): Fill interactive PDF forms, add free text, and place a signature in the browser. The document never leaves your machine.
+- [Merge and split PDFs in the browser](https://ateliercloud.eu/blog/merge-and-split-pdfs): Combine several PDFs into one file, or cut one PDF into parts, without installing anything or uploading the documents.
+- [Password protect a PDF](https://ateliercloud.eu/blog/password-protect-a-pdf): Encrypt a PDF with a password in the browser, and decide what a reader may print, copy or change. The file is never uploaded.
+- [Redact a PDF before you share it](https://ateliercloud.eu/blog/redact-a-pdf-before-sharing): Black out names, addresses and account numbers, and remove the text underneath from the file itself.
+
+## Pages
+
+- [Home](https://ateliercloud.eu/): what the two editors do, and where files are kept.
+- [Tutorials](https://ateliercloud.eu/blog/): the full list.
+- [Help](https://ateliercloud.eu/workspaces/help): workspaces, versions and the editors.

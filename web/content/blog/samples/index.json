@@ -1,0 +1,71 @@
+{
+  "presets": [
+    {
+      "id": "merge-and-split",
+      "name": "Merge and split",
+      "editor": "pdfcraft",
+      "files": [
+        {
+          "name": "Invoice 2026-04.pdf",
+          "path": "merge/invoice.pdf"
+        },
+        {
+          "name": "Contract draft.pdf",
+          "path": "merge/contract.pdf"
+        },
+        {
+          "name": "Quarterly report.pdf",
+          "path": "merge/report.pdf"
+        }
+      ]
+    },
+    {
+      "id": "fill-and-sign",
+      "name": "Expense claim",
+      "editor": "pdfcraft",
+      "files": [
+        {
+          "name": "Expense claim.pdf",
+          "path": "fill/expense-claim.pdf"
+        }
+      ]
+    },
+    {
+      "id": "redact",
+      "name": "Client intake",
+      "editor": "pdfcraft",
+      "files": [
+        {
+          "name": "Client intake.pdf",
+          "path": "redact/client-intake.pdf"
+        }
+      ]
+    },
+    {
+      "id": "password-protect",
+      "name": "Bank statement",
+      "editor": "pdfcraft",
+      "files": [
+        {
+          "name": "Bank statement.pdf",
+          "path": "protect/bank-statement.pdf"
+        }
+      ]
+    },
+    {
+      "id": "page-numbers",
+      "name": "Tenancy agreement",
+      "editor": "pdfcraft",
+      "files": [
+        {
+          "name": "Tenancy agreement.pdf",
+          "path": "number/tenancy-agreement.pdf"
+        },
+        {
+          "name": "Expense claim.pdf",
+          "path": "fill/expense-claim.pdf"
+        }
+      ]
+    }
+  ]
+}

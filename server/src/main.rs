@@ -14,11 +14,11 @@
 //! fails silently. Always use this one (design, [The One-Origin Development Setup](../../../docs/atelier_web_design.md),
 //! "Invariant: always open the front port").
 
-use std::{env, net::IpAddr, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{env, net::IpAddr, net::SocketAddr, path::Path, path::PathBuf, time::Duration};
 
 use axum::{
     body::to_bytes,
-    extract::{Request, State},
+    extract::{Path as Slug, Request, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Json, Redirect, Response},
@@ -60,6 +60,8 @@ struct App {
     landing: Option<Vec<u8>>,
     /// The editors this deployment hosts, which `/api/version` reports.
     editors: Vec<Editor>,
+    /// The built site, which holds the prerendered blog beside the landing page and the app.
+    web_dir: PathBuf,
     http: reqwest::Client,
     /// Which edition this is, and the two answers that follow from it.
     deployment: Deployment,
@@ -67,12 +69,19 @@ struct App {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let port: u16 = env::var("ATELIER_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(3000);
+    let port: u16 = env::var("ATELIER_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(3000);
     // Loopback by default, which is right for the one-origin development setup and for a deployment
     // behind a reverse proxy. A container has no loopback to share with its host, so it sets this to
     // `0.0.0.0` (see the Dockerfile).
-    let bind: IpAddr = env::var("ATELIER_BIND").ok().and_then(|b| b.parse().ok()).unwrap_or(IpAddr::from([127, 0, 0, 1]));
-    let upstream = env::var("PHOTOCRAFT_UPSTREAM").unwrap_or_else(|_| "http://127.0.0.1:8080".to_owned());
+    let bind: IpAddr = env::var("ATELIER_BIND")
+        .ok()
+        .and_then(|b| b.parse().ok())
+        .unwrap_or(IpAddr::from([127, 0, 0, 1]));
+    let upstream =
+        env::var("PHOTOCRAFT_UPSTREAM").unwrap_or_else(|_| "http://127.0.0.1:8080".to_owned());
     let upstream = upstream.trim_end_matches('/').to_owned();
     let pdfcraft_upstream = env::var("PDFCRAFT_UPSTREAM")
         .ok()
@@ -103,8 +112,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deployment = deployment_or_exit();
 
     let editors = vec![
-        Editor { id: "photocraft", title: "PhotoCraft", upstream: Some(upstream.clone()) },
-        Editor { id: "pdfcraft", title: "PdfCraft", upstream: pdfcraft_upstream.clone() },
+        Editor {
+            id: "photocraft",
+            title: "PhotoCraft",
+            upstream: Some(upstream.clone()),
+        },
+        Editor {
+            id: "pdfcraft",
+            title: "PdfCraft",
+            upstream: pdfcraft_upstream.clone(),
+        },
     ];
 
     let app = App {
@@ -112,6 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pdfcraft: pdfcraft_upstream.clone(),
         landing,
         editors,
+        web_dir: web_dir.clone(),
         http: reqwest::Client::new(),
         deployment: deployment.clone(),
     };
@@ -129,18 +147,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/sitemap.xml", get(sitemap))
         // Bing asks for its verification file at the site root, which is otherwise the landing page.
         // The file is content rather than a route: `web/static/` is copied into the served directory.
-        .route_service("/BingSiteAuth.xml", ServeFile::new(web_dir.join("BingSiteAuth.xml")))
+        .route_service(
+            "/BingSiteAuth.xml",
+            ServeFile::new(web_dir.join("BingSiteAuth.xml")),
+        )
+        // What an answer engine reads to learn what the site is (llmstxt.org). The blog build writes
+        // it into `web/static/`, which the UI build copies into the served directory beside this one.
+        .route_service("/llms.txt", ServeFile::new(web_dir.join("llms.txt")))
         // `/workspaces` without the trailing slash would otherwise 404: point it at the directory.
-        .route("/workspaces", get(|| async { axum::response::Redirect::permanent("/workspaces/") }))
+        .route(
+            "/workspaces",
+            get(|| async { axum::response::Redirect::permanent("/workspaces/") }),
+        )
         // The prerendered pages are written as `help.html` and `settings.html`, which the directory
         // service does not look for; the slash form redirects so there is one URL per page.
-        .route("/workspaces/help/", get(|| async { axum::response::Redirect::permanent("/workspaces/help") }))
+        .route(
+            "/workspaces/help/",
+            get(|| async { axum::response::Redirect::permanent("/workspaces/help") }),
+        )
         .route(
             "/workspaces/settings/",
             get(|| async { axum::response::Redirect::permanent("/workspaces/settings") }),
         )
-        .route_service("/workspaces/help", ServeFile::new(web_dir.join("help.html")))
-        .route_service("/workspaces/settings", ServeFile::new(web_dir.join("settings.html")))
+        .route_service(
+            "/workspaces/help",
+            ServeFile::new(web_dir.join("help.html")),
+        )
+        .route_service(
+            "/workspaces/settings",
+            ServeFile::new(web_dir.join("settings.html")),
+        )
         // The build's file names carry a content hash, so a year is safe for them. Everything else
         // revalidates, which is what makes a deploy visible on the next request rather than when a
         // browser decides its copy is old.
@@ -158,13 +194,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // service, because a directory service and the workspace route below would claim the same
         // path — and because a path that is not one of these is a 404, not a 200 that says nothing.
         .route_service("/workspaces/", ServeFile::new(web_dir.join("index.html")))
-        .route_service("/workspaces/favicon.svg", ServeFile::new(web_dir.join("favicon.svg")))
-        .nest_service("/workspaces/samples/", ServeDir::new(web_dir.join("samples")))
+        .route_service(
+            "/workspaces/favicon.svg",
+            ServeFile::new(web_dir.join("favicon.svg")),
+        )
+        .nest_service(
+            "/workspaces/samples/",
+            ServeDir::new(web_dir.join("samples")),
+        )
         // A workspace id is not known at build time, so the client renders that route. Only the two
         // shapes the app actually has serve the shell — a workspace, and the page that frames
         // PdfCraft inside one — so an invented URL under this prefix still answers 404.
         .route_service("/workspaces/{id}", ServeFile::new(&shell))
         .route_service("/workspaces/{id}/edit/{editor}", ServeFile::new(&shell))
+        // The blog is prerendered to files at build time, one page per post, so a crawler reads an
+        // article rather than an app shell. `/blog/` is the list, `index.html` is that list on disk,
+        // and a post is its slug, which is the one address its `.html` file redirects to.
+        .route(
+            "/blog",
+            get(|| async { axum::response::Redirect::permanent("/blog/") }),
+        )
+        .route_service("/blog/", ServeFile::new(web_dir.join("blog/index.html")))
+        .nest_service("/blog/images/", ServeDir::new(web_dir.join("blog/images")))
+        // The documents a tutorial was written against, so its button can open a workspace holding
+        // them. They are content, copied out of `content/blog/samples/` by the same build.
+        .nest_service(
+            "/blog/samples/",
+            ServeDir::new(web_dir.join("blog/samples")),
+        )
+        .route("/blog/{slug}", get(blog_post))
         // The landing page's own files: its screenshot and icon. The page itself is served at `/`.
         // Left indexable on purpose: the screenshot is worth finding in image search, and the
         // duplicate `landing/index.html` names `/` as its canonical.
@@ -227,10 +285,21 @@ fn deployment_or_exit() -> Deployment {
     }
 }
 
-fn print_banner(addr: SocketAddr, web_dir: &std::path::Path, upstream: &str, pdfcraft: Option<&str>) {
+fn print_banner(
+    addr: SocketAddr,
+    web_dir: &std::path::Path,
+    upstream: &str,
+    pdfcraft: Option<&str>,
+) {
     println!("Atelier web  →  http://{addr}/");
-    println!("    /              the landing page (from {})", web_dir.display());
-    println!("    /workspaces/   Atelier Cloud (static from {})", web_dir.display());
+    println!(
+        "    /              the landing page (from {})",
+        web_dir.display()
+    );
+    println!(
+        "    /workspaces/   Atelier Cloud (static from {})",
+        web_dir.display()
+    );
     println!("    /photocraft/   PhotoCraft (proxy → {upstream})");
     match pdfcraft {
         Some(pdfcraft) => println!("    /pdfcraft/     PdfCraft (proxy → {pdfcraft})"),
@@ -285,7 +354,11 @@ async fn version(State(app): State<App>) -> Json<Version> {
     for editor in &app.editors {
         editors.push(hosted_editor(&app.http, editor).await);
     }
-    Json(Version { service: profile::SERVICE, commit: build_commit(), editors })
+    Json(Version {
+        service: profile::SERVICE,
+        commit: build_commit(),
+        editors,
+    })
 }
 
 async fn hosted_editor(http: &reqwest::Client, editor: &Editor) -> HostedEditor {
@@ -323,14 +396,20 @@ fn provenance(body: &[u8]) -> (Option<String>, Option<String>) {
     let Ok(parsed) = serde_json::from_slice::<EditorVersion>(body) else {
         return (None, None);
     };
-    (named(parsed.version.as_deref()), named(parsed.commit.as_deref()))
+    (
+        named(parsed.version.as_deref()),
+        named(parsed.commit.as_deref()),
+    )
 }
 
 /// The commit this build came from, as `ATELIER_BUILD_COMMIT` recorded it: the deploy sets it for the
 /// compile, and a development run sets it for the process. `None` when neither did, which the page shows
 /// as unknown.
 fn build_commit() -> Option<String> {
-    recorded(env::var("ATELIER_BUILD_COMMIT").ok().as_deref(), option_env!("ATELIER_BUILD_COMMIT"))
+    recorded(
+        env::var("ATELIER_BUILD_COMMIT").ok().as_deref(),
+        option_env!("ATELIER_BUILD_COMMIT"),
+    )
 }
 
 fn recorded(runtime: Option<&str>, compiled: Option<&str>) -> Option<String> {
@@ -338,37 +417,139 @@ fn recorded(runtime: Option<&str>, compiled: Option<&str>) -> Option<String> {
 }
 
 fn named(value: Option<&str>) -> Option<String> {
-    value.map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned)
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
-/// A workspace is someone's own, and the editor is an app shell with nothing to index, so both are
-/// paths crawlers are asked to leave alone.
+/// The pages a crawler should index. The launcher and settings are `noindex`: they draw this
+/// browser's storage, which is nobody else's result to find, and their HTML says nothing useful
+/// before OPFS is read. A page joins this list in the same commit as the route that serves it, so the
+/// sitemap never names a URL that answers 404.
+const SITEMAP_PATHS: &[&str] = &["/", "/workspaces/help"];
+
+/// Prefixes crawlers are asked to leave alone: a workspace is someone's own, and the editors are app
+/// shells with nothing to index.
+const ROBOTS_DISALLOW: &[&str] = &["/workspaces/", "/photocraft/", "/pdfcraft/"];
+
+/// Every page the sitemap lists is allowed here by name. A URL that robots disallows cannot be
+/// crawled, so listing it in the sitemap would be a contradiction; robots matches the longest rule,
+/// and `/workspaces/help` is longer than `/workspaces/`.
+fn robots_txt(origin: &str) -> String {
+    let mut out = String::from("User-agent: *\nAllow: /\n");
+    for path in SITEMAP_PATHS.iter().filter(|path| **path != "/") {
+        out.push_str(&format!("Allow: {path}\n"));
+    }
+    for path in ROBOTS_DISALLOW {
+        out.push_str(&format!("Disallow: {path}\n"));
+    }
+    out.push_str(&format!("\nSitemap: {origin}/sitemap.xml\n"));
+    out
+}
+
+fn sitemap_xml(origin: &str, pages: &[SitemapPage]) -> String {
+    let urls: String = pages
+        .iter()
+        .map(|page| match page.lastmod.as_deref() {
+            Some(date) => format!(
+                "  <url><loc>{origin}{}</loc><lastmod>{date}</lastmod></url>\n",
+                page.path
+            ),
+            None => format!("  <url><loc>{origin}{}</loc></url>\n", page.path),
+        })
+        .collect();
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n{urls}</urlset>\n"
+    )
+}
+
 async fn robots(headers: HeaderMap) -> impl IntoResponse {
-    let origin = site(&headers);
     (
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-        format!(
-            "User-agent: *\nAllow: /\nDisallow: /workspaces/\nDisallow: /photocraft/\nDisallow: /pdfcraft/\n\nSitemap: {origin}/sitemap.xml\n"
-        ),
+        robots_txt(&site(&headers)),
     )
 }
 
-/// The two pages a crawler should index. The launcher and settings are `noindex`: they draw this
-/// browser's storage, which is nobody else's result to find, and their HTML says nothing useful
-/// before OPFS is read.
-async fn sitemap(headers: HeaderMap) -> impl IntoResponse {
+async fn sitemap(State(app): State<App>, headers: HeaderMap) -> impl IntoResponse {
     let origin = site(&headers);
-    let urls: String = ["/", "/workspaces/help"]
-        .iter()
-        .map(|path| format!("  <url><loc>{origin}{path}</loc></url>\n"))
-        .collect();
+    let paths = sitemap_paths(&app.web_dir).await;
     (
         [(header::CONTENT_TYPE, "application/xml; charset=utf-8")],
-        format!(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
-             <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n{urls}</urlset>\n"
-        ),
+        sitemap_xml(&origin, &paths),
     )
+}
+
+/// One URL in the sitemap, with the day its words last changed when the build knows it.
+struct SitemapPage {
+    path: String,
+    lastmod: Option<String>,
+}
+
+/// Every URL a crawler should have: the pages this server names itself, then the blog as the build
+/// wrote it. The posts are read from the directory rather than listed here, so a post cannot exist
+/// without appearing in the sitemap, and a deleted one stops being advertised. The dates come from
+/// `blog/lastmod.json`, which the blog build writes from each post's frontmatter; without that file
+/// the sitemap simply leaves `lastmod` out, which is allowed.
+async fn sitemap_paths(web_dir: &Path) -> Vec<SitemapPage> {
+    let dates = blog_dates(web_dir).await;
+    let page = |path: String| {
+        let lastmod = dates.get(&path).cloned();
+        SitemapPage { path, lastmod }
+    };
+    let mut pages: Vec<SitemapPage> = SITEMAP_PATHS
+        .iter()
+        .map(|path| page((*path).to_owned()))
+        .collect();
+    pages.push(page("/blog/".to_owned()));
+    let mut posts = Vec::new();
+    if let Ok(mut entries) = tokio::fs::read_dir(web_dir.join("blog")).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Some(slug) = name.strip_suffix(".html") {
+                if slug != "index" && !slug.is_empty() {
+                    posts.push(format!("/blog/{slug}"));
+                }
+            }
+        }
+    }
+    posts.sort();
+    pages.extend(posts.into_iter().map(page));
+    pages
+}
+
+/// The dates the blog build recorded, path → ISO date. Only a value shaped like a date is kept: the
+/// file is read straight into an XML element, and a publisher's typo must not become markup.
+async fn blog_dates(web_dir: &Path) -> std::collections::HashMap<String, String> {
+    let Ok(text) = tokio::fs::read_to_string(web_dir.join("blog/lastmod.json")).await else {
+        return Default::default();
+    };
+    let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, String>>(&text) else {
+        return Default::default();
+    };
+    map.into_iter()
+        .filter(|(path, date)| {
+            path.starts_with('/')
+                && path
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.'))
+                && is_iso_date(date)
+        })
+        .collect()
+}
+
+/// `YYYY-MM-DD`, the only form a `lastmod` needs. A full timestamp is allowed by the format, but a
+/// date is what the frontmatter carries.
+fn is_iso_date(date: &str) -> bool {
+    let bytes = date.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
 }
 
 /// The origin the request arrived on. nginx passes the public name in `Host`, and the characters
@@ -483,7 +664,15 @@ fn duplicate_page(path: &str) -> Option<String> {
         "/workspaces/settings.html" => "/workspaces/settings",
         // The client-rendered shell, which only a workspace's fallback request should reach.
         "/workspaces/200.html" => "/workspaces/",
+        "/blog/index.html" => "/blog/",
         _ => {
+            // A post's file name is not its address: the slug alone reaches it.
+            if let Some(slug) = path
+                .strip_prefix("/blog/")
+                .and_then(|rest| rest.strip_suffix(".html"))
+            {
+                return Some(format!("/blog/{slug}"));
+            }
             // `web/static/` is copied into the build whole, so the landing page's own files are also
             // served under `/workspaces/landing/`. The screenshot belongs to image search; one URL
             // for it.
@@ -519,6 +708,23 @@ fn editor_target(path: &str, query: Option<&str>, prefix: &str) -> String {
     }
 }
 
+/// One prerendered post. The slug is held to the characters a page name uses before it reaches the
+/// filesystem, so no request can read a file outside the blog's directory.
+async fn blog_post(State(app): State<App>, Slug(slug): Slug<String>) -> Response {
+    let plain = !slug.is_empty()
+        && slug.len() <= 120
+        && slug
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+    if !plain {
+        return not_found().await;
+    }
+    match tokio::fs::read(app.web_dir.join("blog").join(format!("{slug}.html"))).await {
+        Ok(page) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], page).into_response(),
+        Err(_) => not_found().await,
+    }
+}
+
 async fn not_found() -> Response {
     (
         StatusCode::NOT_FOUND,
@@ -551,7 +757,11 @@ async fn proxy(app: &App, req: Request, title: &str, prefix: &str, upstream: &st
         .http
         .request(req.method().clone(), format!("{upstream}{target}"))
         .headers(forward_request_headers(req.headers()))
-        .body(to_bytes(req.into_body(), MAX_BODY).await.unwrap_or_default())
+        .body(
+            to_bytes(req.into_body(), MAX_BODY)
+                .await
+                .unwrap_or_default(),
+        )
         .send()
         .await;
 
@@ -607,13 +817,27 @@ fn forward_response_headers(headers: &HeaderMap) -> HeaderMap {
 fn is_hop_by_hop(name: &HeaderName) -> bool {
     matches!(
         name.as_str(),
-        "connection" | "keep-alive" | "proxy-authenticate" | "proxy-authorization" | "te" | "trailer" | "transfer-encoding" | "upgrade"
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
     )
 }
 
 /// A helpful page instead of a bare 502 when PhotoCraft is not running. That is the most common
 /// state during development, so it should say how to fix it.
-fn editor_unreachable(title: &str, prefix: &str, upstream: &str, target: &str, start: &str, error: &str) -> Response {
+fn editor_unreachable(
+    title: &str,
+    prefix: &str,
+    upstream: &str,
+    target: &str,
+    start: &str,
+    error: &str,
+) -> Response {
     let body = format!(
         "<!doctype html><meta charset=utf-8><title>{title} not reachable</title>\
          <style>body{{font:15px/1.5 -apple-system,system-ui,sans-serif;margin:3rem auto;max-width:44rem;padding:0 1rem}}\
@@ -633,10 +857,135 @@ fn editor_unreachable(title: &str, prefix: &str, upstream: &str, target: &str, s
 mod tests {
     use super::*;
 
+    /// robots gives a path to whichever rule matches the most characters, so an allowed page inside a
+    /// disallowed prefix is expressed by a longer `Allow`.
+    fn crawler_may_fetch(path: &str) -> bool {
+        let longest = |prefixes: &[&'static str], path: &str| {
+            prefixes
+                .iter()
+                .filter(|prefix| path.starts_with(**prefix))
+                .map(|prefix| prefix.len())
+                .max()
+                .unwrap_or(0)
+        };
+        longest(SITEMAP_PATHS, path) >= longest(ROBOTS_DISALLOW, path)
+    }
+
+    #[test]
+    fn every_page_in_the_sitemap_may_be_crawled() {
+        for path in SITEMAP_PATHS {
+            assert!(
+                crawler_may_fetch(path),
+                "{path} is in the sitemap, so robots.txt must not block it"
+            );
+        }
+        assert!(crawler_may_fetch("/blog/"), "the blog is content");
+        assert!(
+            crawler_may_fetch("/blog/merge-and-split-pdfs"),
+            "a post is content"
+        );
+        assert!(
+            !crawler_may_fetch("/workspaces/2f0c"),
+            "a workspace is not for crawlers"
+        );
+        assert!(
+            !crawler_may_fetch("/pdfcraft/"),
+            "the editor has nothing to index"
+        );
+    }
+
+    #[test]
+    fn robots_names_this_origin() {
+        let text = robots_txt("https://ateliercloud.eu");
+        assert!(
+            text.contains("Sitemap: https://ateliercloud.eu/sitemap.xml"),
+            "{text}"
+        );
+        assert!(text.contains("Allow: /workspaces/help"), "{text}");
+    }
+
+    #[test]
+    fn the_sitemap_lists_one_url_per_page() {
+        let paths = ["/", "/blog/", "/blog/one-post"].map(|path| SitemapPage {
+            path: path.to_owned(),
+            lastmod: None,
+        });
+        let xml = sitemap_xml("https://ateliercloud.eu", &paths);
+        assert_eq!(xml.matches("<loc>").count(), paths.len(), "{xml}");
+        assert!(
+            xml.contains("<loc>https://ateliercloud.eu/blog/one-post</loc>"),
+            "{xml}"
+        );
+        assert!(
+            !xml.contains("<lastmod>"),
+            "no date is better than a made-up one: {xml}"
+        );
+    }
+
+    #[test]
+    fn the_sitemap_carries_the_date_a_page_changed() {
+        let paths = [SitemapPage {
+            path: "/blog/one-post".to_owned(),
+            lastmod: Some("2026-11-01".to_owned()),
+        }];
+        let xml = sitemap_xml("https://ateliercloud.eu", &paths);
+        assert!(xml.contains("<lastmod>2026-11-01</lastmod>"), "{xml}");
+    }
+
+    #[test]
+    fn only_a_date_reaches_the_sitemap() {
+        assert!(is_iso_date("2026-11-01"));
+        assert!(!is_iso_date("2026-11-01</lastmod><script>"));
+        assert!(!is_iso_date("1 Nov 2026"));
+        assert!(!is_iso_date("2026-1-1"));
+    }
+
+    /// The posts come from the build directory, so the list is whatever the last build wrote.
+    #[tokio::test]
+    async fn the_sitemap_lists_the_blog_the_build_wrote() {
+        let dir = std::env::temp_dir().join(format!("atelier-blog-paths-{}", std::process::id()));
+        let blog = dir.join("blog");
+        std::fs::create_dir_all(blog.join("images")).unwrap();
+        std::fs::write(blog.join("index.html"), "<!doctype html>").unwrap();
+        std::fs::write(blog.join("a-post.html"), "<!doctype html>").unwrap();
+        std::fs::write(blog.join("notes.txt"), "not a page").unwrap();
+        std::fs::write(
+            blog.join("lastmod.json"),
+            r#"{"/blog/a-post": "2026-11-01", "/blog/gone": "2026-10-01"}"#,
+        )
+        .unwrap();
+        let paths = sitemap_paths(&dir).await;
+        std::fs::remove_dir_all(&dir).ok();
+        let names: Vec<&str> = paths.iter().map(|page| page.path.as_str()).collect();
+        assert!(names.contains(&"/"), "{names:?}");
+        assert!(names.contains(&"/blog/"), "{names:?}");
+        assert!(names.contains(&"/blog/a-post"), "{names:?}");
+        assert!(
+            !names.iter().any(|path| path.contains("index")),
+            "{names:?}"
+        );
+        assert!(
+            !names.iter().any(|path| path.ends_with("notes")),
+            "{names:?}"
+        );
+        let post = paths
+            .iter()
+            .find(|page| page.path == "/blog/a-post")
+            .unwrap();
+        assert_eq!(
+            post.lastmod.as_deref(),
+            Some("2026-11-01"),
+            "the built date is carried through"
+        );
+    }
+
     #[test]
     fn a_host_header_cannot_put_markup_in_the_sitemap() {
         let mut headers = HeaderMap::new();
-        headers.insert(header::HOST, HeaderValue::from_static("example.com</loc><script>"));
+        headers.insert(
+            header::HOST,
+            HeaderValue::from_static("example.com</loc><script>"),
+        );
         assert_eq!(site(&headers), "https://example.comlocscript");
     }
 
@@ -655,7 +1004,11 @@ mod tests {
                 "/assets/app.js"
             );
             assert_eq!(
-                editor_target(&format!("{prefix}/"), Some("project=abc&document=doc.pcraft"), prefix),
+                editor_target(
+                    &format!("{prefix}/"),
+                    Some("project=abc&document=doc.pcraft"),
+                    prefix
+                ),
                 "/?project=abc&document=doc.pcraft"
             );
         }
@@ -665,7 +1018,10 @@ mod tests {
     fn a_build_names_the_commit_its_deploy_recorded() {
         assert_eq!(recorded(Some("abc1234"), None).as_deref(), Some("abc1234"));
         assert_eq!(recorded(None, Some("def5678")).as_deref(), Some("def5678"));
-        assert_eq!(recorded(Some("  "), Some("def5678")).as_deref(), Some("def5678"));
+        assert_eq!(
+            recorded(Some("  "), Some("def5678")).as_deref(),
+            Some("def5678")
+        );
         assert_eq!(recorded(None, None), None);
     }
 
@@ -680,7 +1036,10 @@ mod tests {
     fn an_editor_that_published_nothing_readable_is_unknown_rather_than_wrong() {
         assert_eq!(provenance(b"not json"), (None, None));
         assert_eq!(provenance(br#"{}"#), (None, None));
-        assert_eq!(provenance(br#"{"version":" ","commit":null}"#), (None, None));
+        assert_eq!(
+            provenance(br#"{"version":" ","commit":null}"#),
+            (None, None)
+        );
     }
 
     #[test]
@@ -718,7 +1077,10 @@ mod tests {
             ("/cloud/settings", "/workspaces/settings"),
             ("/cloud/landing/og.png", "/workspaces/landing/og.png"),
             ("/cloud/workspace/abc", "/workspaces/abc"),
-            ("/cloud/workspace/abc/edit/pdfcraft", "/workspaces/abc/edit/pdfcraft"),
+            (
+                "/cloud/workspace/abc/edit/pdfcraft",
+                "/workspaces/abc/edit/pdfcraft",
+            ),
         ] {
             assert_eq!(moved_from_cloud(path).as_deref(), Some(target), "{path}");
         }

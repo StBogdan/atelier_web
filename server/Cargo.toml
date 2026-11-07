@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "fs"] }
 # No TLS features: the upstream is a local dev process (the editor container or `trunk serve`),
 # and a lighter dependency tree keeps the first build quick. HTTP/1 is always available; pointing
 # PHOTOCRAFT_UPSTREAM at an https:// URL needs `rustls-tls` added here.

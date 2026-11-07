@@ -206,6 +206,13 @@ async function outboxDir(
   );
 }
 
+/**
+ * Where the landing page leaves the documents it was handed, before this page turns them into a
+ * workspace. Under `tmp/` because it is staging and nothing else: a handoff nobody collected is
+ * swept like any other leftover.
+ */
+export const HANDOFF_DIR = "handoff";
+
 /** Staging files are transient: anything left behind is from a tab that did not finish. */
 async function sweepStaging(space: Directory): Promise<void> {
   const staging = await directory(space, "tmp", true);
@@ -215,6 +222,33 @@ async function sweepStaging(space: Directory): Promise<void> {
     if (info && info.modified < cutoff)
       await remove(staging, name).catch(() => {});
   }
+  // A directory has no timestamp of its own, so the newest document it holds is what ages it.
+  const handoff = await directory(staging, HANDOFF_DIR).catch(() => null);
+  if (!handoff) return;
+  let newest = 0;
+  for (const name of await files(handoff)) {
+    const info = await stat(handoff, name);
+    if (info) newest = Math.max(newest, info.modified);
+  }
+  if (newest < cutoff) await remove(staging, HANDOFF_DIR, true).catch(() => {});
+}
+
+/**
+ * The documents a drop on the landing page left behind, in name order, and then nothing: they are
+ * read once, by the page that makes them a workspace. A `File` cannot survive a navigation, so the
+ * bytes on this machine are the handoff between the two pages.
+ */
+export async function takeHandoff(
+  space: Directory,
+): Promise<{ name: string; bytes: Uint8Array }[]> {
+  const staging = await directory(space, "tmp", true);
+  const handoff = await directory(staging, HANDOFF_DIR).catch(() => null);
+  if (!handoff) return [];
+  const staged: { name: string; bytes: Uint8Array }[] = [];
+  for (const name of await files(handoff))
+    staged.push({ name, bytes: await readBytes(handoff, name) });
+  await remove(staging, HANDOFF_DIR, true).catch(() => {});
+  return staged;
 }
 
 /**

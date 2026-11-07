@@ -1,8 +1,9 @@
 <script lang="ts">
   /**
    * The glyphs the pages use: an arrow leaving, and an arrow arriving in, a tray; the way into the
-   * editor; and the bucket a workspace may be attached to. Drawn here rather than taken from an icon
-   * set, so the app stays dependent on nothing but itself.
+   * editor; the bucket a workspace may be attached to; and the cross that takes a chosen document
+   * back out of the new-workspace dialog. Drawn here rather than taken from an icon set, so the app
+   * stays dependent on nothing but itself.
    */
   let {
     name,
@@ -17,7 +18,8 @@
       | "warn"
       | "documents"
       | "moon"
-      | "sun";
+      | "sun"
+      | "close";
     size?: number;
   } = $props();
 
@@ -49,6 +51,7 @@
     ],
     info: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18", "M12 11v5", "M12 8h.01"],
     warn: ["M12 4 2.8 20h18.4L12 4Z", "M12 10v4", "M12 17h.01"],
+    close: ["M6.5 6.5l11 11", "M17.5 6.5l-11 11"],
     // The theme switch: the moon to go dark, the sun to come back.
     moon: ["M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"],
     sun: [

@@ -22,10 +22,10 @@ and unmodified, bar a small patch this repository applies to it from source ([`h
 
 Both halves live here, and both are reached through **one process on one origin**:
 
-| | What | Where |
-| --- | --- | --- |
-| **Atelier web** | the server: health, capabilities, the cloud app, and the editor proxy | [`server/`](server) — Rust, axum |
-| **Atelier Cloud** | the app: workspace list, workspace detail, settings, help | [`web/`](web) — SvelteKit, static, launcher and prose pages prerendered |
+|                   | What                                                                  | Where                                                                   |
+| ----------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **Atelier web**   | the server: health, capabilities, the cloud app, and the editor proxy | [`server/`](server) — Rust, axum                                        |
+| **Atelier Cloud** | the app: workspace list, workspace detail, settings, help             | [`web/`](web) — SvelteKit, static, launcher and prose pages prerendered |
 
 > [!WARNING]
 > **Atelier Cloud is alpha software.** It is early, unfinished work, offered as is and with no warranty of
@@ -64,28 +64,29 @@ credential is the browser it was given to.
 - Workspaces live in OPFS, under `atelier-cloud/`, so they survive a reload, a second tab and an evicted
   cache — and they never leave the machine unless you put them in a bucket.
 - Make one from a bundled sample, from a `.pcraft` on your disk, from a document a bucket already holds, or
-  empty.
+  empty — and drop documents on the new-workspace dialog rather than picking them one at a time.
 - A list and a grid layout, both drawn on the page rather than in cards, with thumbnails, sizes and when
   each workspace last changed.
 - The launcher reports storage health: what this origin uses, whether it is persistent, and which origin
   it is — because one origin is what makes both apps share one OPFS.
 - `/` is a static landing page for the product: what a workspace is, what each editor does, and where the
-  files go. It is one HTML file in [`web/static/landing/`](web/static/landing), needs no JavaScript, and is
-  served from memory by Atelier web.
+  files go. It is one HTML file in [`web/static/landing/`](web/static/landing), draws without JavaScript,
+  and is served from memory by Atelier web. Its one script, the dashed block under the hero, turns dropped
+  documents into a workspace without a visit to the launcher.
 
 **A version on every save**
 
 - Saving in an editor is what records a version. Atelier Cloud looks at the workspace on load, when the
   tab regains focus, every few seconds while a page is open, and the moment the editor says it has saved,
-  so there is no *Record* button to press.
+  so there is no _Record_ button to press.
 - Each version keeps the document's object count, byte sum and hash, read from the `.pcraft` central
   directory: a STORE-mode ZIP whose entry names are BLAKE3 hashes. No decompression, no upload.
-- *Download files* hands you every document in the workspace as one zip.
+- _Download files_ hands you every document in the workspace as one zip.
 
 **The editor, on the same origin**
 
-- *Open* navigates to the patched editor with the workspace loaded; `File ▸ Save` writes back into OPFS.
-- The editor's title bar carries a *Back to Atelier Cloud* link, after its other controls.
+- _Open_ navigates to the patched editor with the workspace loaded; `File ▸ Save` writes back into OPFS.
+- The editor's title bar carries a _Back to Atelier Cloud_ link, after its other controls.
 
 **A bucket per workspace, with no secret on the server**
 
@@ -98,11 +99,11 @@ credential is the browser it was given to.
 
 ### Requirements
 
-| | For | Needed |
-| --- | --- | --- |
-| Rust (stable) | the server | always |
-| Node 22+ and npm | the cloud app | always |
-| Docker or Colima | a prebuilt editor container | optional |
+|                                                         | For                                         | Needed   |
+| ------------------------------------------------------- | ------------------------------------------- | -------- |
+| Rust (stable)                                           | the server                                  | always   |
+| Node 22+ and npm                                        | the cloud app                               | always   |
+| Docker or Colima                                        | a prebuilt editor container                 | optional |
 | `trunk`, the `wasm32-unknown-unknown` target, `python3` | the patched editor, for the end-to-end flow | optional |
 
 ### Run it
@@ -148,23 +149,23 @@ point Atelier web at it:
 PHOTOCRAFT_UPSTREAM=http://127.0.0.1:8765 ./run.sh
 ```
 
-Neither path needs a bucket, and neither is configured with one: a bucket belongs to a *workspace* and is
+Neither path needs a bucket, and neither is configured with one: a bucket belongs to a _workspace_ and is
 attached with the user's own credential ([Buckets](#buckets)).
 
 ### What you should see
 
-| URL | What |
-| --- | --- |
-| <http://127.0.0.1:3000/> | the public landing page: the product in one static page, no workspace needed |
-| <http://127.0.0.1:3000/workspaces/> | Atelier Cloud: the workspace list and storage health |
-| <http://127.0.0.1:3000/workspaces/&lt;id&gt; | one workspace: its version, upload to the bucket, and download |
-| <http://127.0.0.1:3000/workspaces/settings> | storage, persistence, what the cloudspace holds, and the build: its commit and each editor's version |
-| <http://127.0.0.1:3000/workspaces/help> | where the work lives, then FAQ and troubleshooting: bucket setup, CORS, and the errors that read like credentials |
-| <http://127.0.0.1:3000/photocraft/> | PhotoCraft; launched into a workspace, its title bar links back to it |
-| <http://127.0.0.1:3000/pdfcraft/> | PdfCraft; the workspace page frames it through the bridge |
-| <http://127.0.0.1:3000/workspaces/&lt;id&gt;/edit/pdfcraft> | the full-viewport cloud page around PdfCraft: back link, the open document as a picker for the rest, save state |
-| <http://127.0.0.1:3000/api/health> | `{"service":"atelier-web","status":"ok","hello":"world"}` |
-| <http://127.0.0.1:3000/api/version> | the commit this build came from, and the version each hosted editor reports |
+| URL                                                         | What                                                                                                              |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| <http://127.0.0.1:3000/>                                    | the public landing page: the product in one static page, no workspace needed                                      |
+| <http://127.0.0.1:3000/workspaces/>                         | Atelier Cloud: the workspace list and storage health                                                              |
+| <http://127.0.0.1:3000/workspaces/&lt;id&gt;                | one workspace: its version, upload to the bucket, and download                                                    |
+| <http://127.0.0.1:3000/workspaces/settings>                 | storage, persistence, what the cloudspace holds, and the build: its commit and each editor's version              |
+| <http://127.0.0.1:3000/workspaces/help>                     | where the work lives, then FAQ and troubleshooting: bucket setup, CORS, and the errors that read like credentials |
+| <http://127.0.0.1:3000/photocraft/>                         | PhotoCraft; launched into a workspace, its title bar links back to it                                             |
+| <http://127.0.0.1:3000/pdfcraft/>                           | PdfCraft; the workspace page frames it through the bridge                                                         |
+| <http://127.0.0.1:3000/workspaces/&lt;id&gt;/edit/pdfcraft> | the full-viewport cloud page around PdfCraft: back link, the open document as a picker for the rest, save state   |
+| <http://127.0.0.1:3000/api/health>                          | `{"service":"atelier-web","status":"ok","hello":"world"}`                                                         |
+| <http://127.0.0.1:3000/api/version>                         | the commit this build came from, and the version each hosted editor reports                                       |
 
 `/workspaces/`, `/workspaces/settings` and `/workspaces/help` are prerendered at build time, so the HTML a
 client receives already holds the page: its title, description, headings and copy. A workspace id is not
@@ -178,7 +179,7 @@ The app used to answer under `/cloud/`. A link from before the move redirects pe
 ### One origin, or the two apps cannot see each other
 
 > [!IMPORTANT]
-> Reach everything through **:3000**. OPFS is keyed by *origin* (`scheme://host:port`), so
+> Reach everything through **:3000**. OPFS is keyed by _origin_ (`scheme://host:port`), so
 > <http://127.0.0.1:8080/> is a different origin with a different, empty OPFS: the two apps cannot see each
 > other's data, and nothing reports an error. Atelier web exists precisely to prevent this.
 
@@ -188,25 +189,31 @@ says how to start one.
 ## Workspaces
 
 **Making one.** The launcher offers a bundled document, an empty workspace, a `.pcraft` from your
-computer, or — with a bucket's fields filled in — a document that bucket already holds. A first workspace
-needs a document and a browser cannot convert a PSD, so three `.pcraft` documents are kept under
-[`web/static/samples/`](web/static/samples); they are generated from [`file_samples/`](file_samples) with the
-editor's own headless CLI ([Samples](#samples)):
+computer, or — with a bucket's fields filled in — a document that bucket already holds. Documents from this
+computer arrive through the picker or by being dropped on the dialog, which lists them one row each, with a
+size and a way to take one back out. A first workspace needs a document and a browser cannot convert a PSD,
+so three `.pcraft` documents are kept under [`web/static/samples/`](web/static/samples); they are generated
+from [`file_samples/`](file_samples) with the editor's own headless CLI ([Samples](#samples)):
 
 ```sh
 cd file_samples && ./to-pcraft.sh          # needs ../photocraft/target/release/photocraft-cli
 ```
 
-**Opening one.** *Open* navigates to `/photocraft/?project=<id>`. The patched editor reads `provider.json`,
+**Making one from the front door.** The landing page's dashed block takes dropped documents. The page copies
+them into `atelier-cloud/tmp/handoff/` in OPFS and sends the browser to `/workspaces/?start=1`, where the
+launcher names the workspace after the first document, picks the editor its extension claims, creates it,
+and opens the editor. Nothing is uploaded, and a handoff nobody collected is swept after an hour.
+
+**Opening one.** _Open_ navigates to `/photocraft/?project=<id>`. The patched editor reads `provider.json`,
 finds the project's single `*.pcraft`, takes the shared Web Lock, and hands the bytes to its own import path.
 Saving in that session writes back to `atelier-cloud://<id>/<name>.pcraft`, which the patch turns into a write
 into OPFS, keeping the previous bytes beside the document.
 
-The nav's *Open in PhotoCraft* action carries the same `?project=<id>` and `&document=<name>`, for the
+The nav's _Open in PhotoCraft_ action carries the same `?project=<id>` and `&document=<name>`, for the
 workspace that changed most recently and the document its version describes, so it lands in the editor with
-something to show. It opens a new tab, like the row's *Open in PhotoCraft* and the workspace page's *Open in
-PhotoCraft*: the launcher survives the trip, and the provider's unload guard is never asked to warn about a
-navigation that puts nothing at risk. With no workspace yet the action reads *In new workspace* and opens
+something to show. It opens a new tab, like the row's _Open in PhotoCraft_ and the workspace page's _Open in
+PhotoCraft_: the launcher survives the trip, and the provider's unload guard is never asked to warn about a
+navigation that puts nothing at risk. With no workspace yet the action reads _In new workspace_ and opens
 the new-workspace dialog instead. Opening `:3000/photocraft/` without a project is the bare editor: no
 document, no link. A PDF opens in PdfCraft through `/workspaces/<id>/edit/pdfcraft`, a cloud page that
 frames `/pdfcraft/` and speaks its `postMessage` bridge. That page fills the viewport; the document named in
@@ -215,7 +222,7 @@ its bar is itself the control that lists the workspace's other files, and choosi
 ## Buckets
 
 A workspace can be given a bucket of its own — an S3-compatible one, with an access key pair you supply — and
-its document uploaded to and downloaded from it by the browser. The *Bucket* panel on the workspace page
+its document uploaded to and downloaded from it by the browser. The _Bucket_ panel on the workspace page
 takes an endpoint, a bucket, a region, a key prefix and an access key pair, and the dialog that makes a
 workspace takes the same fields, so a workspace can be made with a bucket rather than opened and given one.
 The document is written as `<prefix><project>/<document>`.
@@ -228,7 +235,7 @@ Two things are worth knowing before you attach one:
   credentials.
 
 [`docs/buckets.md`](docs/buckets.md) is the reference: what the panel writes, what one upload does, how
-*Download* and *Choose from bucket…* behave, where the key lives, and the CORS policy to paste into R2.
+_Download_ and _Choose from bucket…_ behave, where the key lives, and the CORS policy to paste into R2.
 
 ## How it works
 
@@ -246,8 +253,38 @@ it holds no credential of any kind. It serves:
 - Every page has one URL. The build's `.html` names, and the copy of the landing page that SvelteKit puts
   under `/workspaces/landing/`, redirect permanently to the route each duplicates, so a crawler never reaches a
   page whose canonical names a different address.
+- `/blog/` and `/blog/<slug>` — the tutorials. `scripts/blog.mjs` renders `content/blog/*.md` into
+  `static/blog/` during `npm run build`, and the server serves those files beside the landing page, so a
+  crawler reads an article without running the app. Adding a post is adding one Markdown file with
+  frontmatter: the index, the "more tutorials" links and the sitemap follow from it. The provenance
+  line at the end of a post is written from that frontmatter too, so `updated` and `pdfcraft` are
+  required and the build stops without them.
+- The pictures are captured at a size the script chooses rather than the size of a preview pane.
+  `npm run shot` drives the installed Chrome, and its `--press`, `--type`, `--drop`, `--wait` and
+  `--tap` steps reach the states a post describes. The blog's own captures use `--dsf 2` at a
+  `2560x1440` viewport, then `--scale 0.5`. `--tap x,y[,ms]` presses the canvas through pointer events,
+  the only route a dialog or a form field takes, because the driver's own clicks never arrive: the
+  coordinate is half the CSS pixel of the capture, and the optional third value holds the button
+  down for a check box.
+- The pictures in a post are the app's own screenshots with the badges and arrows added by
+  `npm run annotate -- shot.png out.png --mark "1@badgeX,badgeY:left,top,right,bottom"`. A mark draws
+  the numbered badge, a ring around the control and an arrow between them; `--crop` and `--scale` cut
+  a 2x capture down to the element and the size a page needs; `--grid` prints coordinates over a fresh
+  capture so a box can be read off the picture. An output name ending in `.webp` asks for WebP, which
+  is what a page should be served: the same picture at about a tenth of the bytes. The generator reads
+  each picture's size and writes `width`, `height`, `loading="lazy"` and `decoding="async"` onto the tag,
+  so the text does not jump while the pictures arrive.
 - `/robots.txt` and `/sitemap.xml` — built from the request's own `Host`, so a second deployment advertises
-  itself. Workspaces are disallowed and settings is left out of the sitemap.
+  itself. Workspaces are disallowed and settings is left out of the sitemap; the help page is listed, and
+  allowed by name because the workspace prefix around it is disallowed. Each blog URL carries the
+  `<lastmod>` the build recorded in `static/blog/lastmod.json`, taken from the post's `updated` frontmatter,
+  so a redeploy that changed no words does not claim every page is new.
+- The landing page's `#tutorials` list is written by the same build, between two `tutorials:start`
+  and `tutorials:end` markers, so the homepage links every article rather than only the list. That is
+  the one tracked file the blog build edits, and it rewrites it only when the posts change.
+- `/llms.txt` — the summary a non-Google answer engine reads (llmstxt.org): what the editors do, then one
+  line per tutorial. `scripts/blog.mjs` writes it from the same list of posts the index shows, so a new
+  post appears in it without a second edit.
 - `/BingSiteAuth.xml` — the file Bing Webmaster Tools asks for to verify the site. It lives in
   [`web/static/`](web/static) so every deployment carries it.
 - `/photocraft/…` — reverse-proxied to `PHOTOCRAFT_UPSTREAM`, so the editor is on our origin. The prefix is
@@ -268,10 +305,10 @@ The cloud app talks to OPFS, to this origin's own files, and — only when asked
 [`../docs/atelier_design.md`](../docs/atelier_design.md) has the detail: what lives where, which side writes
 which file, the lock names, and which messages are advisory only. The short version:
 
-| Side | Owns |
-| --- | --- |
-| Atelier Cloud | everything under `atelier-cloud/` except the document: `provider.json`, the catalog, `meta.json`, `bucket.json`, `thumb.png` |
-| The editor patch | `projects/<id>/<name>.pcraft` and its `.prev`, and nothing else |
+| Side             | Owns                                                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Atelier Cloud    | everything under `atelier-cloud/` except the document: `provider.json`, the catalog, `meta.json`, `bucket.json`, `thumb.png` |
+| The editor patch | `projects/<id>/<name>.pcraft` and its `.prev`, and nothing else                                                              |
 
 [`web/src/lib/contract.ts`](web/src/lib/contract.ts) is the provider's side of that, and
 [`web/src/lib/pcraft.ts`](web/src/lib/pcraft.ts) reads a `.pcraft`'s central directory. That is what makes a
@@ -279,16 +316,16 @@ recorded version exact, object count and all.
 
 ## Configuration
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `ATELIER_PORT` | `3000` | Port Atelier web listens on. |
-| `ATELIER_BIND` | `127.0.0.1` | Address to bind. Loopback by default; a container sets `0.0.0.0`. |
-| `PHOTOCRAFT_UPSTREAM` | `http://127.0.0.1:8080` | Where PhotoCraft is served from. |
-| `PDFCRAFT_UPSTREAM` | unset | Where PdfCraft is served from. Unset means `/pdfcraft/` answers 404. |
-| `ATELIER_WEB_DIR` | `web/build` | Directory served at `/workspaces/`. |
-| `ATELIER_BUILD_COMMIT` | unset | The commit Settings ▸ Build reports. Read when the binary is compiled and at run time; unset shows unknown. `run.sh` and `deploy.sh` set it. |
-| `ATELIER_PROFILE` | `standalone` | `standalone`, or `hosted` to put a service behind identity and storage. `self-hosted` is accepted for the first. |
-| `ATELIER_CENTRAL_URL` | — | That service's public base URL. Required by `hosted`, ignored otherwise. |
+| Variable               | Default                 | Meaning                                                                                                                                      |
+| ---------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ATELIER_PORT`         | `3000`                  | Port Atelier web listens on.                                                                                                                 |
+| `ATELIER_BIND`         | `127.0.0.1`             | Address to bind. Loopback by default; a container sets `0.0.0.0`.                                                                            |
+| `PHOTOCRAFT_UPSTREAM`  | `http://127.0.0.1:8080` | Where PhotoCraft is served from.                                                                                                             |
+| `PDFCRAFT_UPSTREAM`    | unset                   | Where PdfCraft is served from. Unset means `/pdfcraft/` answers 404.                                                                         |
+| `ATELIER_WEB_DIR`      | `web/build`             | Directory served at `/workspaces/`.                                                                                                          |
+| `ATELIER_BUILD_COMMIT` | unset                   | The commit Settings ▸ Build reports. Read when the binary is compiled and at run time; unset shows unknown. `run.sh` and `deploy.sh` set it. |
+| `ATELIER_PROFILE`      | `standalone`            | `standalone`, or `hosted` to put a service behind identity and storage. `self-hosted` is accepted for the first.                             |
+| `ATELIER_CENTRAL_URL`  | —                       | That service's public base URL. Required by `hosted`, ignored otherwise.                                                                     |
 
 `hosted` is a seam for a service that does not exist in this repository: the default runs everything
 itself and needs no configuration at all.
@@ -362,7 +399,7 @@ cd test && npm run attach                  # the bucket flow, against a local S3
 
 `npm run attach` needs no bucket, no account and no credentials. The stub is started with credentials that
 exist nowhere else — not in an environment, not in a file — so a signature it accepts is proof that the
-*browser* signed with the credential the form was given. It asserts the round trip byte for byte, that
+_browser_ signed with the credential the form was given. It asserts the round trip byte for byte, that
 `meta.json` records the bucket's ETag, that the attachment survives a reload without re-entering the secret,
 that what is stored is a non-extractable `CryptoKey` and not the secret, and that the page never asks the
 server about a bucket:
@@ -388,11 +425,11 @@ and is allowed to fail: drift from upstream should be a red build, not a surpris
 [`file_samples/`](file_samples) holds three documents, so there is something to open before anything has been
 imported. Each covers a different code path, and all three load with the editor's own importer:
 
-| File | What it exercises |
-| --- | --- |
-| `01-rgb-layered.psd` | the common case: 300×200 RGB, 8-bit, 3 pixel layers |
-| `02-layer-groups.psd` | layer structure: 300×200 RGB, 8-bit, one group |
-| `03-psb.psb` | the PSB (version 2) reader: 413×413 RGB, 8-bit |
+| File                  | What it exercises                                   |
+| --------------------- | --------------------------------------------------- |
+| `01-rgb-layered.psd`  | the common case: 300×200 RGB, 8-bit, 3 pixel layers |
+| `02-layer-groups.psd` | layer structure: 300×200 RGB, 8-bit, one group      |
+| `03-psb.psb`          | the PSB (version 2) reader: 413×413 RGB, 8-bit      |
 
 `to-pcraft.sh` converts them into the `.pcraft` documents under
 [`web/static/samples/`](web/static/samples), which are what a new workspace starts from. Inspect any of them

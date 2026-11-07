@@ -1,4 +1,6 @@
 node_modules/
 .svelte-kit/
 build/
+# Rendered from content/blog by scripts/blog.mjs on every build.
+static/blog/
 vite.config.ts.timestamp-*

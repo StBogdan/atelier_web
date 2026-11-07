@@ -9,7 +9,7 @@
       name="description"
       content="PhotoCraft online and free: open PSD, PSB and .pcraft files in your browser, or work on PDFs in PdfCraft. No install, no account, no upload to our servers."
     />
-    <link rel="canonical" href="https://ateliercloud.tech/" />
+    <link rel="canonical" href="https://ateliercloud.eu/" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -21,7 +21,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Atelier Cloud" />
     <meta property="og:locale" content="en" />
-    <meta property="og:url" content="https://ateliercloud.tech/" />
+    <meta property="og:url" content="https://ateliercloud.eu/" />
     <meta
       property="og:title"
       content="PhotoCraft online, free: a Photoshop alternative in your browser"
@@ -32,7 +32,7 @@
     />
     <meta
       property="og:image"
-      content="https://ateliercloud.tech/landing/og.png"
+      content="https://ateliercloud.eu/landing/og.png"
     />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
@@ -52,7 +52,7 @@
     />
     <meta
       name="twitter:image"
-      content="https://ateliercloud.tech/landing/og.png"
+      content="https://ateliercloud.eu/landing/og.png"
     />
     <script type="application/ld+json">
       {
@@ -60,23 +60,23 @@
         "@graph": [
           {
             "@type": "Organization",
-            "@id": "https://ateliercloud.tech/#organization",
+            "@id": "https://ateliercloud.eu/#organization",
             "name": "Atelier Cloud",
-            "url": "https://ateliercloud.tech/",
-            "logo": "https://ateliercloud.tech/landing/logo-1024.png",
+            "url": "https://ateliercloud.eu/",
+            "logo": "https://ateliercloud.eu/landing/logo-1024.png",
             "sameAs": ["https://github.com/StBogdan/atelier_web"]
           },
           {
             "@type": "WebSite",
-            "@id": "https://ateliercloud.tech/#website",
+            "@id": "https://ateliercloud.eu/#website",
             "name": "Atelier Cloud",
-            "url": "https://ateliercloud.tech/",
+            "url": "https://ateliercloud.eu/",
             "inLanguage": "en",
-            "publisher": { "@id": "https://ateliercloud.tech/#organization" }
+            "publisher": { "@id": "https://ateliercloud.eu/#organization" }
           },
           {
             "@type": "SoftwareApplication",
-            "@id": "https://ateliercloud.tech/#app",
+            "@id": "https://ateliercloud.eu/#app",
             "name": "Atelier Cloud",
             "alternateName": ["PhotoCraft", "PhotoCraft online", "Hosted PhotoCraft"],
             "isBasedOn": {
@@ -84,7 +84,7 @@
               "name": "PhotoCraft",
               "url": "https://github.com/storytold/photocraft"
             },
-            "url": "https://ateliercloud.tech/workspaces/",
+            "url": "https://ateliercloud.eu/workspaces/",
             "applicationCategory": "MultimediaApplication",
             "operatingSystem": "Any",
             "browserRequirements": "The Origin Private File System and WebAssembly",
@@ -94,7 +94,7 @@
               "price": "0",
               "priceCurrency": "USD"
             },
-            "screenshot": "https://ateliercloud.tech/landing/workspaces.png",
+            "screenshot": "https://ateliercloud.eu/landing/workspaces.png",
             "featureList": [
               "Open PSD, PSB and .pcraft documents in PhotoCraft",
               "Read, organise, combine and split PDFs in PdfCraft",
@@ -103,11 +103,11 @@
               "Send a document to your own S3-compatible bucket",
               "No install, no account, free while in alpha"
             ],
-            "publisher": { "@id": "https://ateliercloud.tech/#organization" }
+            "publisher": { "@id": "https://ateliercloud.eu/#organization" }
           },
           {
             "@type": "FAQPage",
-            "@id": "https://ateliercloud.tech/#questions",
+            "@id": "https://ateliercloud.eu/#questions",
             "mainEntity": [
               {
                 "@type": "Question",
@@ -286,6 +286,9 @@
       .bar .wrap {
         display: flex;
         align-items: center;
+        /* The nav is the one part of the bar whose width follows how many links exist, so a row that
+           no longer fits puts it on a second line instead of clipping its last link. */
+        flex-wrap: wrap;
         gap: 1.25rem;
         min-height: 3.25rem;
         padding-block: 0.35rem;
@@ -329,6 +332,10 @@
       .bar nav {
         display: flex;
         align-items: center;
+        /* One link more than fits wraps to a second line rather than clipping the last one: the
+           nav is the only part of the bar whose width depends on how many links exist. */
+        flex-wrap: wrap;
+        justify-content: flex-end;
         gap: 0.15rem;
         margin-left: auto;
         min-width: 0;
@@ -455,6 +462,118 @@
       .fineprint a {
         color: var(--link);
         text-underline-offset: 2px;
+      }
+
+      /* The tutorials: one line per walkthrough, so the homepage points at each article rather than
+         at the list. The build keeps this list in step with content/blog; do not edit it by hand. */
+      .tutorials {
+        list-style: none;
+        padding: 0;
+        margin: 2rem 0 0;
+      }
+
+      .tutorials li {
+        padding: 1.1rem 0;
+        border-top: 1px solid var(--rule);
+      }
+
+      .tutorials a {
+        color: var(--link);
+        text-decoration: none;
+        font-size: 1.1rem;
+        font-weight: 650;
+      }
+
+      .tutorials p {
+        margin: 0.35rem 0 0;
+        color: var(--dim);
+      }
+
+      /* The one place on this page that does something rather than describing something: a target
+         drawn the way the app draws its file drop, wide enough to hit without aiming. It is hidden in
+         the markup and shown by the script, because without the Origin Private File System and its
+         writable handles there is nothing behind it to open. */
+      .start {
+        padding: 0 0 3.5rem;
+      }
+
+      .start .wrap {
+        display: grid;
+      }
+
+      .starter {
+        position: relative;
+        display: grid;
+        justify-items: center;
+        gap: 0.4rem;
+        padding: 2.25rem 1.25rem;
+        border: 2px dashed var(--field-line);
+        border-radius: var(--radius-lg);
+        color: var(--dim);
+        text-align: center;
+        cursor: pointer;
+      }
+
+      .starter[hidden] {
+        display: none;
+      }
+
+      .starter:hover,
+      .starter.is-dragging {
+        border-color: var(--accent);
+        color: var(--ink);
+      }
+
+      /* The picker inside the block is what the keyboard reaches, and it is invisible; the ring belongs
+         to the block around it. */
+      .starter:focus-within {
+        border-color: var(--accent);
+        color: var(--ink);
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+
+      .starter.is-dragging {
+        background: color-mix(in srgb, var(--accent) 10%, transparent);
+      }
+
+      .starter.is-armed {
+        cursor: progress;
+      }
+
+      .starter-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--ink);
+      }
+
+      .starter-hint {
+        max-width: 36rem;
+        font-size: 0.88rem;
+        line-height: 1.55;
+        color: var(--faint);
+      }
+
+      .starter-state:empty {
+        display: none;
+      }
+
+      .starter-state {
+        margin-top: 0.2rem;
+        font-size: 0.85rem;
+        color: var(--link);
+      }
+
+      /* The picker is what a click and the keyboard reach; the block around it is the shape of the
+         target, and `focus-within` above is where that shows. */
+      .starter input[type="file"] {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        opacity: 0;
       }
 
       /* The framed screenshot */
@@ -886,9 +1005,11 @@
       }
 
       .credits {
+        grid-column: 1 / -1;
         display: grid;
         gap: 0.85rem;
-        max-width: 46rem;
+        padding-top: 1.4rem;
+        border-top: 1px solid var(--rule);
       }
 
       .disclaimer {
@@ -899,22 +1020,18 @@
       }
 
       .copyright {
-        grid-column: 1 / -1;
-        padding-top: 1rem;
-        border-top: 1px solid var(--rule);
+        justify-self: end;
         font-size: 0.76rem;
       }
 
       .credit {
         margin: 0;
-        display: grid;
-        grid-template-columns: 7.5rem 1fr;
-        gap: 0.2rem 1rem;
         font-size: 0.8rem;
         line-height: 1.55;
       }
 
       .credit strong {
+        display: block;
         color: var(--dim);
         font-weight: 600;
       }
@@ -930,6 +1047,7 @@
       }
 
       .credit span {
+        display: block;
         color: var(--faint);
       }
 
@@ -991,6 +1109,16 @@
         .editors {
           grid-template-columns: 1fr;
         }
+
+        /* The nav and the copyright stop sharing a row here: the credits below are already one
+           column, and side-by-side rows above them only squeeze the links. */
+        footer .wrap {
+          grid-template-columns: 1fr;
+        }
+
+        .copyright {
+          justify-self: start;
+        }
       }
 
       @media (max-width: 700px) {
@@ -1009,14 +1137,6 @@
         .note {
           flex-direction: column;
           gap: 0.6rem;
-        }
-
-        .credit {
-          grid-template-columns: 1fr;
-        }
-
-        footer .wrap {
-          grid-template-columns: 1fr;
         }
       }
 
@@ -1077,6 +1197,7 @@
           <a href="#how">How it works</a>
           <a href="#files">Where files go</a>
           <a href="#questions">Questions</a>
+          <a href="/blog/">Tutorials</a>
           <a
             class="gh"
             href="https://github.com/StBogdan/atelier_web"
@@ -1144,7 +1265,7 @@
           <figure class="shot">
             <div class="chrome" aria-hidden="true">
               <span class="dots"><span></span><span></span><span></span></span>
-              <span class="url">ateliercloud.tech/workspaces/</span>
+              <span class="url">ateliercloud.eu/workspaces/</span>
             </div>
             <picture>
               <source
@@ -1169,6 +1290,21 @@
               Six workspaces, each with its document, its state and the actions you can run on it.
             </figcaption>
           </figure>
+        </div>
+      </section>
+
+      <section id="start" class="start">
+        <div class="wrap">
+          <label class="starter" id="starter" hidden>
+            <input type="file" id="starter-input" multiple />
+            <span class="starter-title">Drag items here to start</span>
+            <span class="starter-hint"
+              >They stay on this machine. A PSD, PSB or PDF becomes a workspace in
+              PhotoCraft or PdfCraft, with nothing uploaded and nothing to
+              install.</span
+            >
+            <span class="starter-state" id="starter-state" role="status"></span>
+          </label>
         </div>
       </section>
 
@@ -1312,6 +1448,47 @@
           <p class="fineprint">
             PhotoCraft and PdfCraft are separate open-source projects by the
             ArtCraft Team. See <a href="#credits">credits</a>.
+          </p>
+        </div>
+      </section>
+
+      <section id="tutorials" class="tinted">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>PdfCraft tutorials</h2>
+            <p>
+              Short, tested walkthroughs for the PDF workbench. Every step names
+              the control you click, and the pictures come from the app itself.
+            </p>
+          </div>
+
+          <!-- tutorials:start -->
+          <ul class="tutorials">
+            <li>
+              <a href="/blog/add-page-numbers-to-a-pdf">Add page numbers to a PDF</a>
+              <p>Stamp page numbers into the footer of every page, and flatten a filled form so the values become part of the page.</p>
+            </li>
+            <li>
+              <a href="/blog/fill-and-sign-a-pdf-form">Fill in and sign a PDF form</a>
+              <p>Fill interactive PDF forms, add free text, and place a signature in the browser. The document never leaves your machine.</p>
+            </li>
+            <li>
+              <a href="/blog/merge-and-split-pdfs">Merge and split PDFs in the browser</a>
+              <p>Combine several PDFs into one file, or cut one PDF into parts, without installing anything or uploading the documents.</p>
+            </li>
+            <li>
+              <a href="/blog/password-protect-a-pdf">Password protect a PDF</a>
+              <p>Encrypt a PDF with a password in the browser, and decide what a reader may print, copy or change. The file is never uploaded.</p>
+            </li>
+            <li>
+              <a href="/blog/redact-a-pdf-before-sharing">Redact a PDF before you share it</a>
+              <p>Black out names, addresses and account numbers, and remove the text underneath from the file itself.</p>
+            </li>
+          </ul>
+          <!-- tutorials:end -->
+
+          <p class="fineprint">
+            <a href="/blog/">All tutorials</a>
           </p>
         </div>
       </section>
@@ -1545,58 +1722,167 @@
 
     <footer id="credits">
       <div class="wrap">
+        <nav aria-label="Elsewhere">
+          <a href="/workspaces/">Workspaces</a>
+          <a href="/workspaces/help">Help</a>
+          <a href="/blog/">Tutorials</a>
+          <a href="/#editors">PhotoCraft</a>
+          <a href="https://github.com/StBogdan/atelier_web">Source</a>
+          <a
+            class="report"
+            href="https://github.com/StBogdan/atelier_web/issues/new"
+            target="_blank"
+            rel="noopener">Report an issue</a
+          >
+        </nav>
+        <span class="copyright">
+          Atelier Cloud © 2026 the Atelier authors
+        </span>
         <div class="credits">
-        <p class="credit">
-          <strong>
-            <a href="https://github.com/StBogdan/atelier_web">Atelier Cloud</a>
-          </strong>
-          <span>
-            The workspace library, launcher and server. © 2026 the Atelier
-            authors, MIT licensed.
-          </span>
-        </p>
-        <p class="credit">
-          <strong>
-            <a href="https://github.com/storytold/photocraft">PhotoCraft</a>
-          </strong>
-          <span>
-            The photo editor, a separate open-source project. © 2026 the
-            ArtCraft Team and the PhotoCraft contributors. Its authors license
-            it under MIT or Apache-2.0.
-          </span>
-        </p>
-        <p class="credit">
-          <strong>
-            <a href="https://github.com/storytold/pdfcraft">PdfCraft</a>
-          </strong>
-          <span>
-            The PDF workbench, a separate open-source project. © 2026 the
-            ArtCraft Team and the PdfCraft contributors. Its authors license it
-            under MIT or Apache-2.0.
-          </span>
-        </p>
-        <p class="disclaimer">
-          Atelier Cloud is independent of the ArtCraft Team and is not endorsed
-          by it or affiliated with it. The PhotoCraft and PdfCraft names and
-          wordmarks belong to the ArtCraft Team.
-        </p>
-      </div>
-      <nav aria-label="Elsewhere">
-        <a href="/workspaces/">Workspaces</a>
-        <a href="/workspaces/help">Help</a>
-        <a href="/#editors">PhotoCraft</a>
-        <a href="https://github.com/StBogdan/atelier_web">Source</a>
-        <a
-          class="report"
-          href="https://github.com/StBogdan/atelier_web/issues/new"
-          target="_blank"
-          rel="noopener">Report an issue</a
-        >
-      </nav>
-      <span class="copyright">
-        Atelier Cloud © 2026 the Atelier authors
-      </span>
+          <p class="credit">
+            <strong>
+              <a href="https://github.com/StBogdan/atelier_web">Atelier Cloud</a>
+            </strong>
+            <span>
+              The workspace library, launcher and server. © 2026 the Atelier
+              authors, MIT licensed.
+            </span>
+          </p>
+          <p class="credit">
+            <strong>
+              <a href="https://github.com/storytold/photocraft">PhotoCraft</a>
+            </strong>
+            <span>
+              The photo editor, a separate open-source project. © 2026 the
+              ArtCraft Team and the PhotoCraft contributors. Its authors license
+              it under MIT or Apache-2.0.
+            </span>
+          </p>
+          <p class="credit">
+            <strong>
+              <a href="https://github.com/storytold/pdfcraft">PdfCraft</a>
+            </strong>
+            <span>
+              The PDF workbench, a separate open-source project. © 2026 the
+              ArtCraft Team and the PdfCraft contributors. Its authors license
+              it under MIT or Apache-2.0.
+            </span>
+          </p>
+          <p class="disclaimer">
+            Atelier Cloud is independent of the ArtCraft Team and is not
+            endorsed by it or affiliated with it. The PhotoCraft and PdfCraft
+            names and wordmarks belong to the ArtCraft Team.
+          </p>
+        </div>
       </div>
     </footer>
+
+    <script>
+      /* The page's one action. A dropped or chosen document is copied into this origin's OPFS, the
+         store the cloud app already reads, and /workspaces/ then makes it a workspace and opens the
+         editor. Nothing is uploaded: the bytes never leave the browser.
+
+         The handoff is one directory, read once by the page that turns it into a workspace. That page
+         deletes it as it goes, and sweeps one nobody collected after an hour. */
+      (function () {
+        var starter = document.getElementById("starter");
+        var input = document.getElementById("starter-input");
+        var state = document.getElementById("starter-state");
+        if (!starter || !input || !state) return;
+        if (!(navigator.storage && navigator.storage.getDirectory)) return;
+
+        var SPACE = "atelier-cloud";
+        var HANDOFF = "handoff";
+        var armed = false;
+
+        /* A document's name: no path in it, and no leading or trailing dots. The same rule as
+           `sanitiseDocumentName` in the cloud app, which is what the workspace is built with. */
+        function safeName(name) {
+          return name
+            .replace(/^[\s.]+|[\s]+$/g, "")
+            .replace(/[/\\]/g, "-")
+            .replace(/\.+$/, "");
+        }
+
+        function isFiles(event) {
+          var types = event.dataTransfer && event.dataTransfer.types;
+          return !!types && Array.prototype.indexOf.call(types, "Files") !== -1;
+        }
+
+        function say(text) {
+          state.textContent = text || "";
+        }
+
+        async function copy(files) {
+          var root = await navigator.storage.getDirectory();
+          var space = await root.getDirectoryHandle(SPACE, { create: true });
+          var tmp = await space.getDirectoryHandle("tmp", { create: true });
+          // One drop is one handoff: what a previous one left behind is replaced, not added to.
+          await tmp.removeEntry(HANDOFF, { recursive: true }).catch(function () {});
+          var handoff = await tmp.getDirectoryHandle(HANDOFF, { create: true });
+          for (var i = 0; i < files.length; i++) {
+            var file = files[i];
+            if (!file) continue;
+            say("Copying " + file.name + "…");
+            var handle = await handoff.getFileHandle(
+              safeName(file.name) || file.name,
+              { create: true },
+            );
+            var writer = await handle.createWritable();
+            await writer.write(await file.arrayBuffer());
+            await writer.close();
+          }
+        }
+
+        async function start(files) {
+          if (armed || !files || !files.length) return;
+          armed = true;
+          starter.classList.add("is-armed");
+          try {
+            await copy(files);
+            say("Opening your workspace…");
+            location.assign("/workspaces/?start=1");
+          } catch (error) {
+            say(
+              "This browser would not store the file. Choose it in your workspaces instead.",
+            );
+            starter.classList.remove("is-armed");
+            armed = false;
+          }
+        }
+
+        starter.hidden = false;
+
+        input.addEventListener("change", function () {
+          var chosen = input.files
+            ? Array.prototype.slice.call(input.files)
+            : [];
+          input.value = "";
+          void start(chosen);
+        });
+
+        /* A drag anywhere on the page is the same drop. The alternative is what a drop with no
+           handler does: the browser opens the file and the page is gone. */
+        window.addEventListener("dragover", function (event) {
+          if (!isFiles(event)) return;
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+          starter.classList.add("is-dragging");
+        });
+
+        window.addEventListener("dragleave", function (event) {
+          // `dragleave` also fires moving between elements; only leaving the page ends the drag.
+          if (event.relatedTarget) return;
+          starter.classList.remove("is-dragging");
+        });
+
+        window.addEventListener("drop", function (event) {
+          event.preventDefault();
+          starter.classList.remove("is-dragging");
+          var dropped = event.dataTransfer && event.dataTransfer.files;
+          void start(dropped ? Array.prototype.slice.call(dropped) : []);
+        });
+      })();
+    </script>
   </body>
 </html>

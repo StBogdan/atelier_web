@@ -100,11 +100,18 @@ impl Deployment {
 
     /// The same, from values already in hand — which is what the tests use, so they never touch the
     /// process environment.
-    pub fn from_parts(profile: Option<&str>, central_url: Option<&str>) -> Result<Self, ConfigError> {
+    pub fn from_parts(
+        profile: Option<&str>,
+        central_url: Option<&str>,
+    ) -> Result<Self, ConfigError> {
         let profile = match profile {
             None => Profile::default(),
             Some(value) => Profile::parse(value).ok_or_else(|| {
-                ConfigError::invalid("ATELIER_PROFILE", value, "expected `standalone` or `hosted`")
+                ConfigError::invalid(
+                    "ATELIER_PROFILE",
+                    value,
+                    "expected `standalone` or `hosted`",
+                )
             })?,
         };
 
@@ -113,7 +120,10 @@ impl Deployment {
         let central = match (profile, non_empty(central_url)) {
             (Profile::Hosted, Some(url)) => {
                 let url = url.trim_end_matches('/').to_owned();
-                Some(Central { login: format!("{url}/auth/login"), url })
+                Some(Central {
+                    login: format!("{url}/auth/login"),
+                    url,
+                })
             }
             (Profile::Hosted, None) => {
                 return Err(ConfigError::missing(
@@ -167,11 +177,19 @@ pub struct ConfigError {
 
 impl ConfigError {
     fn invalid(variable: &'static str, value: &str, detail: &'static str) -> Self {
-        Self { variable, value: Some(value.to_owned()), detail }
+        Self {
+            variable,
+            value: Some(value.to_owned()),
+            detail,
+        }
     }
 
     fn missing(variable: &'static str, detail: &'static str) -> Self {
-        Self { variable, value: None, detail }
+        Self {
+            variable,
+            value: None,
+            detail,
+        }
     }
 }
 
@@ -191,12 +209,20 @@ mod tests {
     use super::*;
 
     fn json(profile: Option<&str>, central: Option<&str>) -> serde_json::Value {
-        serde_json::to_value(Deployment::from_parts(profile, central).unwrap().capabilities()).unwrap()
+        serde_json::to_value(
+            Deployment::from_parts(profile, central)
+                .unwrap()
+                .capabilities(),
+        )
+        .unwrap()
     }
 
     #[test]
     fn no_configuration_is_the_self_hosted_edition() {
-        assert_eq!(Deployment::from_parts(None, None).unwrap().profile, Profile::Standalone);
+        assert_eq!(
+            Deployment::from_parts(None, None).unwrap().profile,
+            Profile::Standalone
+        );
         assert_eq!(
             json(None, None),
             serde_json::json!({
@@ -212,18 +238,26 @@ mod tests {
 
     #[test]
     fn standalone_ignores_a_central_url_rather_than_using_it() {
-        let deployment = Deployment::from_parts(Some("standalone"), Some("https://central.test")).unwrap();
+        let deployment =
+            Deployment::from_parts(Some("standalone"), Some("https://central.test")).unwrap();
         assert!(deployment.central.is_none());
         assert_eq!(deployment.capabilities().central, None);
     }
 
     #[test]
     fn hosted_names_central_and_where_to_sign_in() {
-        let deployment = Deployment::from_parts(Some("hosted"), Some("https://central.test/")).unwrap();
+        let deployment =
+            Deployment::from_parts(Some("hosted"), Some("https://central.test/")).unwrap();
         assert_eq!(deployment.profile, Profile::Hosted);
         // The trailing slash is dropped, so the login URL never doubles it.
-        assert_eq!(deployment.central.as_ref().unwrap().url, "https://central.test");
-        assert_eq!(deployment.central.as_ref().unwrap().login, "https://central.test/auth/login");
+        assert_eq!(
+            deployment.central.as_ref().unwrap().url,
+            "https://central.test"
+        );
+        assert_eq!(
+            deployment.central.as_ref().unwrap().login,
+            "https://central.test/auth/login"
+        );
         assert_eq!(
             json(Some("hosted"), Some("https://central.test/")),
             serde_json::json!({
@@ -247,7 +281,9 @@ mod tests {
             );
         }
         assert_eq!(
-            Deployment::from_parts(Some(" HOSTED "), Some("https://central.test")).unwrap().profile,
+            Deployment::from_parts(Some(" HOSTED "), Some("https://central.test"))
+                .unwrap()
+                .profile,
             Profile::Hosted
         );
     }

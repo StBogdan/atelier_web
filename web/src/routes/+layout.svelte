@@ -78,6 +78,7 @@
           aria-current={here.startsWith(`${base}/help`) ? "page" : undefined}
           >Help</a
         >
+        <a href="/blog/">Tutorials</a>
         {#if $capabilitiesReady && $capabilities.central}
           <a
             href={$capabilities.central.login}

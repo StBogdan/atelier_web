@@ -26,8 +26,9 @@
     createProject,
     documentFileName,
     ensureSpace,
-    isPcraftName,
     removeProject,
+    sanitiseDocumentName,
+    takeHandoff,
     type Workspace,
   } from "$lib/contract";
   import {
@@ -63,6 +64,8 @@
   let dialog = $state<HTMLDialogElement | null>(null);
   let name = $state("");
   let busy = $state(false);
+  /** Whether a drop from the landing page is being turned into a workspace on this page. */
+  let starting = $state(false);
   let problem = $state<unknown>(null);
   let samples = $state<Sample[]>([]);
   let source = $state<"empty" | "sample" | "file" | "bucket">("empty");
@@ -76,6 +79,8 @@
   /** The documents chosen from this computer, in the order they were picked. */
   let files = $state<File[]>([]);
   let fileInput = $state<HTMLInputElement | null>(null);
+  /** Whether a drag carrying files is over the dialog, so the drop block can say it will take them. */
+  let dragging = $state(false);
   /**
    * The dialog's optional bucket. These are the same fields the workspace page's *Bucket* panel takes, so
    * a workspace can be given its bucket as it is made rather than opened and given one afterwards — and
@@ -253,6 +258,7 @@
     source = canUseSample ? "sample" : "empty";
     sample = samples[0]?.file ?? "";
     files = [];
+    dragging = false;
     if (fileInput) fileInput.value = "";
     withBucket = false;
     bucketForm = {
@@ -276,8 +282,59 @@
    * its own interactive descendants, so a disabled field swallowed the click and no picker appeared.
    */
   function chooseFile(event: Event & { currentTarget: HTMLInputElement }) {
+    addFiles(event.currentTarget.files);
+    // The list, not the field, is what the dialog reads: emptying it lets the same file be picked
+    // again, which would otherwise fire no change event at all.
+    event.currentTarget.value = "";
+  }
+
+  /**
+   * Take documents from anywhere that offers them — the picker or a drop — into the one list the
+   * dialog creates from. A name already in the list is the same document, so it is replaced rather
+   * than held twice under one name in the workspace.
+   */
+  function addFiles(incoming: FileList | null) {
+    const added = [...(incoming ?? [])];
+    if (!added.length) return;
     source = "file";
-    files = [...(event.currentTarget.files ?? [])];
+    const kept = files.filter(
+      (held) => !added.some((next) => next.name === held.name),
+    );
+    files = [...kept, ...added];
+  }
+
+  function removeFile(index: number) {
+    files = files.filter((_, at) => at !== index);
+  }
+
+  /** A drag has to be carrying files: text or a link dropped on the window is not a document. */
+  function carriesFiles(event: DragEvent): boolean {
+    return event.dataTransfer?.types.includes("Files") ?? false;
+  }
+
+  /**
+   * The dialog is modal, so a drag anywhere in the window is over it, and a drop it does not claim
+   * would open the file in this tab and take the dialog with it. Claiming the whole window is also
+   * the simplest rule to explain: what you drop is added, wherever you let go.
+   */
+  function onDragOver(event: DragEvent) {
+    if (!dialog?.open || !carriesFiles(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    dragging = true;
+  }
+
+  function onDragLeave(event: DragEvent) {
+    // `dragleave` also fires moving between elements; only leaving the page ends the drag.
+    if (event.relatedTarget) return;
+    dragging = false;
+  }
+
+  function onDrop(event: DragEvent) {
+    if (!dialog?.open || !carriesFiles(event)) return;
+    event.preventDefault();
+    dragging = false;
+    if (!busy) addFiles(event.dataTransfer?.files ?? null);
   }
 
   /** A PdfCraft workspace starts empty or from a PDF, so the bundled PhotoCraft documents do not apply. */
@@ -404,6 +461,122 @@
     // that flush, so `replaceState` has something to update.
     void tick().then(() => replaceState(`${base}/`, {}));
   });
+
+  /**
+   * The landing page's drop block leaves its documents in the space's `tmp/handoff/`, because a `File`
+   * cannot survive a navigation. This is where they become a workspace: named after the first
+   * document, in the editor that claims it, and open before the visitor has to read anything. With
+   * nothing staged — a reload, or a handoff already swept — the dialog is what this page can still
+   * offer.
+   */
+  onMount(() => {
+    if (!page.url.searchParams.has("start")) return;
+    void tick().then(() => replaceState(`${base}/`, {}));
+    void startFromHandoff();
+  });
+
+  /**
+   * A tutorial's button links here with `?sample=<id>`. The files a post was written against are in
+   * `static/blog/samples/`, listed by `index.json`, so the visitor lands in the editor with the same
+   * documents open rather than being asked to find their own.
+   */
+  onMount(() => {
+    const sample = page.url.searchParams.get("sample");
+    if (!sample) return;
+    void tick().then(() => replaceState(`${base}/`, {}));
+    void startFromSample(sample);
+  });
+
+  async function startFromSample(id: string) {
+    starting = true;
+    failure = null;
+    status = "Gathering the files this tutorial uses…";
+    try {
+      await ensurePersistence();
+      const space = await ensureSpace();
+      const presets: {
+        id: string;
+        name: string;
+        editor: string;
+        files: { name: string; path: string }[];
+      }[] = await fetch("/blog/samples/index.json")
+        .then((r) => {
+          if (!r.ok) throw new Error(`the sample list answered ${r.status}`);
+          return r.json();
+        })
+        .then((list) => list.presets ?? []);
+      const preset = presets.find((candidate) => candidate.id === id);
+      if (!preset) throw new Error(`there is no sample called ${id}`);
+      const documents = [];
+      for (const file of preset.files) {
+        const response = await fetch(`/blog/samples/${file.path}`);
+        if (!response.ok)
+          throw new Error(`${file.name} answered ${response.status}`);
+        documents.push({
+          name: file.name,
+          bytes: new Uint8Array(await response.arrayBuffer()),
+        });
+      }
+      const editor = editorById(preset.editor) ?? editorFor(documents[0].name);
+      status = `Starting ${preset.name}…`;
+      const created = await createProject(space, {
+        name: preset.name,
+        editor: editor.id,
+        documents,
+      });
+      await refresh();
+      location.assign(
+        editorHref(editor, created.id, created.document ?? documents[0].name),
+      );
+    } catch (e) {
+      status = null;
+      failure = e;
+    } finally {
+      starting = false;
+    }
+  }
+
+  /** A workspace name from the document it starts with: the file's own name, without its extension. */
+  function workspaceNameFor(fileName: string): string {
+    return (
+      sanitiseDocumentName(fileName)
+        .replace(/\.[^.]+$/, "")
+        .trim() || "Untitled workspace"
+    );
+  }
+
+  async function startFromHandoff() {
+    starting = true;
+    failure = null;
+    status = "Starting your workspace…";
+    try {
+      await ensurePersistence();
+      const space = await ensureSpace();
+      const documents = await takeHandoff(space);
+      if (!documents.length) {
+        status = null;
+        open();
+        return;
+      }
+      const first = documents[0];
+      const editor = editorFor(first.name);
+      status = `Starting ${first.name}…`;
+      const created = await createProject(space, {
+        name: workspaceNameFor(first.name),
+        editor: editor.id,
+        documents,
+      });
+      await refresh();
+      location.assign(
+        editorHref(editor, created.id, created.document ?? first.name),
+      );
+    } catch (e) {
+      status = null;
+      failure = e;
+    } finally {
+      starting = false;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -415,6 +588,12 @@
     content="Open PSD, PSB and .pcraft files in PhotoCraft, an open-source photo editor that runs in the browser. Each workspace keeps its own document and revisions, and can upload to a bucket you own."
   />
 </svelte:head>
+
+<svelte:window
+  ondragover={onDragOver}
+  ondragleave={onDragLeave}
+  ondrop={onDrop}
+/>
 
 <div class="head">
   <h1>
@@ -464,7 +643,9 @@
       and copy it to storage you control. There is nothing to install.
     </p>
     <div class="row">
-      <button class="cta" onclick={open}>New workspace</button>
+      <button class="cta" onclick={open} disabled={starting}
+        >New workspace</button
+      >
       <a class="button" href="{base}/settings">Local storage</a>
     </div>
     <p class="muted small">
@@ -574,16 +755,6 @@
     purpose. A workspace lives in this browser and can be cleared at any time,
     so keep your own copies of anything that matters.
   </p>
-  <p class="small muted">
-    The editor is <b>PhotoCraft</b>, the ArtCraft Team's editor. Copyright ©
-    2026 ArtCraft Team and the PhotoCraft contributors. Source code, licence
-    texts and the full attribution list:
-    <a
-      href="https://github.com/storytold/photocraft"
-      target="_blank"
-      rel="noopener">github.com/storytold/photocraft</a
-    >.
-  </p>
   <p>
     <a
       class="button"
@@ -592,6 +763,42 @@
       rel="noopener">Report an issue</a
     >
   </p>
+  <div class="credits">
+    <p class="credit">
+      <strong>
+        <a href="https://github.com/StBogdan/atelier_web">Atelier Cloud</a>
+      </strong>
+      <span>
+        The workspace library, launcher and server. © 2026 the Atelier authors,
+        MIT licensed.
+      </span>
+    </p>
+    <p class="credit">
+      <strong>
+        <a href="https://github.com/storytold/photocraft">PhotoCraft</a>
+      </strong>
+      <span>
+        The photo editor, a separate open-source project. © 2026 the ArtCraft
+        Team and the PhotoCraft contributors. Its authors license it under MIT
+        or Apache-2.0.
+      </span>
+    </p>
+    <p class="credit">
+      <strong>
+        <a href="https://github.com/storytold/pdfcraft">PdfCraft</a>
+      </strong>
+      <span>
+        The PDF workbench, a separate open-source project. © 2026 the ArtCraft
+        Team and the PdfCraft contributors. Its authors license it under MIT or
+        Apache-2.0.
+      </span>
+    </p>
+    <p class="disclaimer">
+      Atelier Cloud is independent of the ArtCraft Team and is not endorsed by
+      it or affiliated with it. The PhotoCraft and PdfCraft names and wordmarks
+      belong to the ArtCraft Team.
+    </p>
+  </div>
 </footer>
 
 <dialog bind:this={dialog}>
@@ -631,29 +838,54 @@
           {/each}
         </select>
       </label>
-      <label class="option">
-        <input type="radio" value="file" bind:group={source} />
-        {files.length > 1
-          ? `${files.length} documents from this computer`
-          : "A document from this computer"}
-        <input
-          type="file"
-          multiple
-          accept={documentAccept}
-          bind:this={fileInput}
-          onchange={chooseFile}
-        />
-        {#if files.length}
+      <div class="option option-file">
+        <label class="pick">
+          <input type="radio" value="file" bind:group={source} />
+          {files.length > 1
+            ? `${files.length} documents from this computer`
+            : "A document from this computer"}
+        </label>
+        <label class="drop" class:dragging>
+          <input
+            type="file"
+            multiple
+            accept={documentAccept}
+            bind:this={fileInput}
+            onchange={chooseFile}
+            disabled={busy}
+          />
+          <span class="drop-title">
+            {dragging
+              ? "Drop to add them"
+              : files.length
+                ? "Add more documents"
+                : "Drag documents here"}
+          </span>
           <span class="muted small"
-            >{files
-              .map((chosen) => chosen.name)
-              .join(", ")}{selectedEditor.id === DEFAULT_EDITOR.id &&
-            files.some((chosen) => !isPcraftName(chosen.name))
-              ? " (saved as it is)"
-              : ""}</span
+            >or click to choose them from this computer</span
           >
+        </label>
+        {#if files.length}
+          <ul class="picked">
+            {#each files as chosen, index (chosen.name)}
+              <li>
+                <span class="mono small">{chosen.name}</span>
+                <span class="muted small">{bytes(chosen.size)}</span>
+                <button
+                  type="button"
+                  class="remove"
+                  aria-label="Remove {chosen.name}"
+                  title="Remove {chosen.name}"
+                  onclick={() => removeFile(index)}
+                  disabled={busy}
+                >
+                  <Icon name="close" size={12} />
+                </button>
+              </li>
+            {/each}
+          </ul>
         {/if}
-      </label>
+      </div>
       <label class="option">
         <input
           type="radio"
@@ -720,7 +952,9 @@
       <button
         class="cta"
         onclick={create}
-        disabled={busy || (source === "bucket" && !chosen)}
+        disabled={busy ||
+          (source === "bucket" && !chosen) ||
+          (source === "file" && !files.length)}
       >
         {busy ? "Creating…" : "Create"}
       </button>
@@ -786,6 +1020,52 @@
 
   .notice .button {
     margin-top: 0.8rem;
+  }
+
+  /* The landing page's credits, in the same words and the same order: the app runs the editor and
+     the PDF workbench, so it says who made them and under what licence. A name sits above its own
+     description and the block takes the page's width, so a narrow viewport wraps the sentence
+     instead of squeezing it into a column. */
+  .credits {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 1.8rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--hairline);
+    font-size: 0.8rem;
+    line-height: 1.55;
+  }
+
+  .credits p {
+    max-width: none;
+    margin: 0;
+  }
+
+  .credit strong {
+    display: block;
+    color: var(--dim);
+    font-weight: 600;
+  }
+
+  .credit span {
+    display: block;
+    color: var(--faint);
+  }
+
+  .disclaimer {
+    font-size: 0.76rem;
+    color: var(--faint);
+  }
+
+  .credits a {
+    color: var(--dim);
+    text-decoration: none;
+  }
+
+  .credits a:hover {
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
 
   .controls {
@@ -1171,6 +1451,109 @@
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
+  }
+
+  /* The file choice is the one with a target drawn around it: the radio names it, and the block below
+     is what a drop lands on, so it stacks and takes the dialog's whole width. */
+  .option-file {
+    display: grid;
+    gap: 0.5rem;
+    align-items: start;
+  }
+
+  .pick {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* The drag is claimed by the dialog rather than the block, so the block says what will happen while
+     the pointer is anywhere over the dialog: the result is the same wherever the drop lands. */
+  .drop {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: 0.15rem;
+    padding: 1.5rem 1rem;
+    border: 2px dashed var(--field-line);
+    border-radius: var(--radius-lg);
+    color: var(--dim);
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .drop:hover,
+  .drop.dragging {
+    border-color: var(--accent);
+    color: var(--ink);
+  }
+
+  /* The picker inside the block is what the keyboard reaches, and it is invisible; the ring belongs to
+     the block around it. */
+  .drop:focus-within {
+    border-color: var(--accent);
+    color: var(--ink);
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .drop.dragging {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+
+  .drop-title {
+    font-weight: 560;
+  }
+
+  /* Out of the way but focusable: the block is the target, and the picker is what the block forwards
+     a click to. */
+  .drop input[type="file"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+  }
+
+  .picked {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .picked li {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+
+  /* A long name gives way with an ellipsis before the facts beside it do. */
+  .picked .mono {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .picked .muted {
+    flex: 0 0 auto;
+  }
+
+  /* Taking one back is a small action on its row rather than a second button beside Create. A square
+     box, so the cross sits on the row's centre line whatever the glyph's own metrics are. */
+  .picked .remove {
+    margin-left: auto;
+    flex: 0 0 auto;
+    width: 1.6rem;
+    height: 1.6rem;
+    min-height: 1.6rem;
+    padding: 0;
+    color: var(--dim);
   }
 
   legend {

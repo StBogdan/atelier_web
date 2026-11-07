@@ -22,6 +22,16 @@ const config = {
       precompress: false,
       strict: false,
     }),
+    // The launcher links to `/blog/`, which is the site's articles rather than this app: they are
+    // rendered from `content/blog/` by `scripts/blog.mjs` and served beside the landing page. The
+    // crawler that follows links during prerendering has no such route here, so the link is
+    // recognised and left alone; every other broken link still fails the build.
+    prerender: {
+      handleHttpError: ({ path, message }) => {
+        if (path === "/blog" || path.startsWith("/blog/")) return;
+        throw new Error(message);
+      },
+    },
   },
 };
 

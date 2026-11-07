@@ -1,0 +1,53 @@
+%PDF-1.7
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+3 0 obj
+<< /Length 1695 >>
+stream
+BT /F2 20 Tf 1 0 0 1 60 772 Tm (Exemplu Bank) Tj ET
+BT /F2 14 Tf 1 0 0 1 60 738 Tm (Current account statement) Tj ET
+BT /F1 10 Tf 1 0 0 1 60 715 Tm (Account 4471 2208 9931 Sort code 20-14-77 Statement period 1 to 31 March 2026) Tj ET
+BT /F2 11 Tf 1 0 0 1 60 684 Tm (Balance brought forward: 2,481.10 GBP) Tj ET
+BT /F2 12 Tf 1 0 0 1 60 658 Tm (Transactions) Tj ET
+BT /F1 10.5 Tf 1 0 0 1 60 632 Tm (02 Mar Salary, Meridian Systems Ltd, credit 3,150.00, balance 5,631.10) Tj ET
+BT /F1 10.5 Tf 1 0 0 1 60 616 Tm (03 Mar Rent, Harlow Living Ltd, debit 1,240.00, balance 4,391.10) Tj ET
+BT /F1 10.5 Tf 1 0 0 1 60 600 Tm (05 Mar Council tax, Ashfield Council, debit 168.40, balance 4,222.70) Tj ET
+BT /F1 10.5 Tf 1 0 0 1 60 584 Tm (09 Mar Groceries, Fairway Market, debit 74.15, balance 4,148.55) Tj ET
+BT /F1 10.5 Tf 1 0 0 1 60 569 Tm (12 Mar Energy, Northwind Power, debit 96.20, balance 4,052.35) Tj ET
+BT /F1 10.5 Tf 1 0 0 1 60 553 Tm (14 Mar Card payment, Harrow Tools, debit 212.99, balance 3,839.36) Tj ET
+BT /F1 10.5 Tf 1 0 0 1 60 537 Tm (18 Mar Transfer to savings, debit 500.00, balance 3,339.36) Tj ET
+BT /F1 10.5 Tf 1 0 0 1 60 521 Tm (23 Mar Refund, Harrow Tools, credit 212.99, balance 3,552.35) Tj ET
+BT /F1 10.5 Tf 1 0 0 1 60 506 Tm (27 Mar Insurance, Larch Mutual, debit 88.50, balance 3,463.85) Tj ET
+BT /F1 10.5 Tf 1 0 0 1 60 490 Tm (31 Mar Account fee, debit 6.00, balance 3,457.85) Tj ET
+BT /F2 11 Tf 1 0 0 1 60 474 Tm (Closing balance: 3,457.85 GBP) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 448 Tm (Please check this statement and report any error within 30 days. Exemplu Bank is a trading name of) Tj ET
+BT /F1 9 Tf 1 0 0 1 60 434 Tm (Exemplu Group plc, registered in England 09112837.) Tj ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 5 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 3 0 R >>
+endobj
+5 0 obj
+<< /Type /Pages /Count 1 /Kids [4 0 R] >>
+endobj
+6 0 obj
+<< /Type /Catalog /Pages 5 0 R >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000106 00000 n 
+0000000208 00000 n 
+0000001955 00000 n 
+0000002091 00000 n 
+0000002148 00000 n 
+trailer
+<< /Size 7 /Root 6 0 R >>
+startxref
+2197
+%%EOF
